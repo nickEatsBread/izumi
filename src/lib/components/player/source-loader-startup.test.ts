@@ -4,14 +4,20 @@ import { describe, expect, it } from 'vitest'
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 const loader = read('./SourceLoader.svelte')
-const css = read('../../../app.css')
+const feedback = read('../PlayFeedback.svelte')
+const spinner = read('../Spinner.svelte')
 const play = read('../../stremio/play.ts')
 
 describe('connecting loader startup', () => {
   it('uses one compositor-driven loader before and after the lazy component swap', () => {
-    expect(loader).toContain('class="bar-loader h-1 w-40')
-    expect(loader).not.toContain('<animate')
-    expect(css).toMatch(/\.bar-loader::before[\s\S]*will-change: transform/)
+    for (const screen of [loader, feedback]) {
+      expect(screen).toContain('<Spinner size="player" />')
+      // Equal rows either side keep the ring on the screen's centre, where the player's ring appears.
+      expect(screen).toContain('grid-rows-[1fr_auto_1fr]')
+      expect(screen).toContain('data-part="play.loader.bar" class="row-start-2')
+    }
+    expect(spinner).not.toContain('<animate')
+    expect(spinner).toContain('class="shrink-0 animate-spin will-change-transform')
   })
 
   it('commits the loader without charging playback two animation frames', () => {

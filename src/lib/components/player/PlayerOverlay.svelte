@@ -68,6 +68,7 @@
   import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
@@ -389,10 +390,6 @@
   // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
   const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported))
   const drmWebview = $derived(drmActive && !drmNative)
-  // mpv's Game-mode spinner (gm_osd.rs loading_overlay): 24 segments, the head opaque at the top and
-  // each one behind it (anticlockwise) fading by the same ASS alphas, 00 to D8.
-  const GM_RING = Array.from({ length: 24 }, (_, i) =>
-    [1, 0.95, 0.9, 0.84, 0.75, 0.65, 0.55, 0.43, 0.31, 0.22, 0.15][Math.min((24 - i) % 24, 10)])
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell
   // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
@@ -2110,24 +2107,16 @@
       class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
       class:bg-black={!firstFrame}
     >
-      <!-- Game mode: stepped spin (8 frames/s) — a continuously-animating spinner makes every
-           overlay snapshot differ, so the unchanged-frame skip never fires exactly when the
-           device is busiest (buffering). Desktop keeps the smooth spin. -->
-      <div
-        class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"
-        style={gmMode ? 'animation-timing-function: steps(8)' : ''}
-      ></div>
+      <!-- One ring for every playback wait, the same as the connecting screen's and in the same
+           place, so starting playback shows one loader from the press to the picture. -->
+      <Spinner size="player" />
     </div>
   {:else if loading && !firstFrame && $gmFrozenFrame == null}
     <!-- Game mode before mpv's window is up (a protected stream fetches its licence first): mpv's
-         own spinner cannot draw yet, so the page draws the same ring in the same place
-         (gm_osd.rs loading_overlay) and the handover to it does not show. -->
+         own spinner cannot draw yet, so the page draws the same ring in the same place, colour and
+         turn (Spinner `player`) and the handover to it does not show. -->
     <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
-      <svg viewBox="-32 -32 64 64" class="size-[3.2rem] animate-spin" style="animation-timing-function: steps(24)" aria-hidden="true">
-        {#each GM_RING as opacity, i (i)}
-          <line x1="0" y1="-24" x2="0" y2="-31" stroke="white" stroke-width="2.5" {opacity} transform="rotate({i * 15})" />
-        {/each}
-      </svg>
+      <Spinner size="player" />
     </div>
   {/if}
 

@@ -550,7 +550,7 @@ State values:
 | `options.sheet` | slot | The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button, and a series page opens on its desktop More (`detail.action` with `data-action="more"`): the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu. |  |
 | `options.panel` | part | The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`. |  |
 | `list.loading` | slot | The list editor (`Edit list`) while it reads the entry for the title from your trackers, so a save never starts from a blank status: the dimmed layer and panel with a `spinner`. |  |
-| `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge. |  |
+| `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge; data-variant player is the playback ring, in the player accent, from the press to the first frame. |  |
 | `sources` | slot | The source picker; data-variant is dialog, phone or panel (the Game mode side panel), and data-state is loading while sources are being found. |  |
 | `sources.status` | part | The line under the picker title: a spinner and Finding sources, then the counts. |  |
 | `sources.list` | part | The scrolling list of sources. |  |
@@ -564,7 +564,7 @@ State values:
 | `play.backdrop` | part | The blurred artwork behind the connecting screen. |  |
 | `play.loader` | part | The connecting screen's centred column. |  |
 | `play.loader.title` | part | The series title on the connecting screen. |  |
-| `play.loader.bar` | part | The connecting screen's sweeping bar; its ::before is the moving segment. |  |
+| `play.loader.bar` | part | The loading slot of the connecting screen, holding the playback spinner (the same ring the player shows until the first frame). |  |
 | `play.loader.caption` | part | What is happening: Connecting, Switching source or Preparing download. |  |
 | `play.loader.detail` | part | The release name on the connecting screen. |  |
 | `options.title` | part | The options menu heading (the title's name). The device-lists picker ("Save to lists") is the same sheet. |  |

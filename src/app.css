@@ -236,11 +236,9 @@ html.gamemode main img { transition: none !important; animation: none !important
   animation-timing-function: steps(8, end) !important;
   contain: paint;
 }
-/* The source loader's left-right bar in pure CSS, for the two paths that cannot run the Lottie
-   version: the eagerly-bundled PlayFeedback stand-in (import-free by design) and the game-mode
-   mid-playback branch of SourceLoader. Transform-only, same reasoning as `.indeterminate` — the
-   segment composites without repainting the track, so it's as cheap as the stepped ring it
-   replaces while finally looking like the loader it stands in for. */
+/* A left-right bar in pure CSS for the Android waits (the pending pill, connection status, watch
+   details); playback start shows the player's ring instead. Transform-only, same reasoning as
+   `.indeterminate` — the segment composites without repainting the track. */
 @keyframes bar-sweep { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
 .bar-loader { position: relative; overflow: hidden; contain: paint; }
 .bar-loader::before {

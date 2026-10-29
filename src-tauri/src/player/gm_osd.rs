@@ -9,7 +9,7 @@
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gtk::glib;
 use tauri::{AppHandle, Manager};
@@ -365,7 +365,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         draw(
             &app,
             &draw_state,
-            spinner_phase(t0),
+            spinner_phase(),
             motion,
             play,
             &mut shown,
@@ -676,8 +676,15 @@ fn hold_lite(app: &AppHandle, on: bool) {
     }
 }
 
-fn spinner_phase(t0: Instant) -> u32 {
-    ((t0.elapsed().as_secs_f64() * OSD_FPS as f64) as u32) % OSD_FPS as u32
+/// The spinner's turn from the wall clock rather than from this loop's start, so it is in step with
+/// the page's copies of it (Spinner.svelte `player`), which this window covers when it maps: the
+/// hand-off then shows no jump.
+fn spinner_phase() -> u32 {
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_millis();
+    ms * OSD_FPS as u32 / 1000
 }
 
 /// The scrub bar's on-screen geometry: (x, y-centre, width, height). Prefers the HTML seek bar's

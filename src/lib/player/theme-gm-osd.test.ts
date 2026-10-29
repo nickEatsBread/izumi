@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assColor } from './theme-gm-osd'
+import { assColor, osdSpinnerColor } from './theme-gm-osd'
 
 describe('assColor', () => {
   it('turns computed rgb into ASS BGR hex', () => {
@@ -21,5 +21,16 @@ describe('assColor', () => {
     for (const value of ['rgba(0, 0, 0, 0)', 'oklch(0.7 0.2 40)', 'color(display-p3 1 0 0)', '', 'rgb(1, 2)', 'rgb(1, 2, x)', 'rgb(1, 2, 3, 4, 5)', '#f47521']) {
       expect(assColor(value)).toBe('')
     }
+  })
+})
+
+describe('osdSpinnerColor', () => {
+  it('gives the page the exact colour mpv draws its spinner in', () => {
+    expect(osdSpinnerColor('2175F4')).toBe('#F47521')
+    expect(osdSpinnerColor(assColor('rgb(10, 200, 30)'))).toBe('#0AC81E')
+  })
+
+  it('falls back to the OSD white, as mpv does, when no theme sets an accent', () => {
+    expect(osdSpinnerColor('')).toBe('#fff')
   })
 })

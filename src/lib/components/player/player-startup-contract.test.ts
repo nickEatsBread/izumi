@@ -20,7 +20,12 @@ describe('player startup', () => {
   })
 
   it('draws mpv\'s Game-mode spinner itself until mpv can', () => {
-    expect(overlay).toContain('{:else if loading && !firstFrame && $gmFrozenFrame == null}')
-    expect(overlay).toContain('{#each GM_RING as opacity, i (i)}')
+    const gm = overlay.slice(overlay.indexOf('{:else if loading && !firstFrame && $gmFrozenFrame == null}'))
+    expect(gm.slice(0, gm.indexOf('{/if}'))).toContain('<Spinner size="player" />')
+  })
+
+  it('shows the connecting screen\'s ring for every other playback wait too', () => {
+    const live = overlay.slice(overlay.indexOf('{#if loading && !gmBitmapMode}'))
+    expect(live.slice(0, live.indexOf('{:else if'))).toContain('<Spinner size="player" />')
   })
 })

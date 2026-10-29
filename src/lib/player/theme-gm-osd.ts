@@ -15,6 +15,13 @@ export function assColor(computed: string): string {
     .toUpperCase()
 }
 
+/** The CSS colour mpv's spinner draws in for an OSD accent (`BBGGRR`), for the page's copies of that
+ *  spinner (Spinner.svelte `player`). Without an accent it is the OSD's own white rather than the
+ *  primary colour: the light palette's primary is near-black, which would vanish on the loading black. */
+export function osdSpinnerColor(themeAccent: string): string {
+  return themeAccent ? `#${themeAccent.slice(4, 6)}${themeAccent.slice(2, 4)}${themeAccent.slice(0, 2)}` : '#fff'
+}
+
 /** The active theme's accent (seek bar fill and knob, focused control, spinner) and focus ring: the
  *  theme's `player.seekbarColor`, else its primary, and its ring. Both '' without a theme, so izumi's
  *  own white stays. */

@@ -6,10 +6,11 @@
   // resume episode is right regardless of which tracker owns the show.
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
-  import { title as mediaTitle, cardCover, mediaHref, resumeEp } from '$lib/anilist/media'
+  import { title as mediaTitle, banner, cardCover, cover, mediaHref, resumeEp } from '$lib/anilist/media'
   import { episodeSummary } from '$lib/anilist/episode-labels'
   import { getEpisodeMeta } from '$lib/anizip'
   import { positionPercent, positions, progressKey } from '$lib/player/progress'
+  import { connecting } from '$lib/player/session'
   import { hideSpoilers } from '$lib/settings/ui'
   import type { PlayState } from '$lib/stremio/play'
   import type { Media } from '$lib/anilist/types'
@@ -88,11 +89,26 @@
   async function play() {
     h.tap()
     resolving = true
+    // The connecting screen goes up with the press, not once the playback module has loaded: on the
+    // Deck the card's spinner was all a controller press showed for 1.25 s while that import ran (a
+    // controller press has no pointerdown to start it early). resumeEpisode then sets the same
+    // screen with its own cancel, so this stand-in is replaced without a visible change.
+    let cancelled = false
+    const pending = {
+      title: name,
+      art: banner(media) || cover(media),
+      media,
+      episode: ep,
+      cancel: () => { cancelled = true; connecting.set(null); resolving = false },
+    }
+    connecting.set(pending)
     try {
       const { resumeEpisode } = await loadPlayback()
+      if (cancelled) return
       await resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' })
     } catch {
       resolving = false
+      connecting.update((c) => (c === pending ? null : c))
     }
   }
 </script>
