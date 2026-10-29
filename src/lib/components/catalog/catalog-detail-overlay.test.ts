@@ -27,9 +27,9 @@ describe('catalog title page under a theme overlay layout', () => {
     expect(detail).toContain('<ThemeNode node={detailTheme.header} model={mediaDisplayModel(media)} />')
   })
 
-  it('shows Save as a round icon button with an accessible name', () => {
-    expect(detail).toContain("aria-label={savedLocally ? 'Saved' : 'Save to lists'}")
-    expect(detail).toContain("{#if !themedOverlay}{savedLocally ? 'Saved' : 'Save'}{/if}")
+  it('shows the Watchlist as a round icon button with an accessible name', () => {
+    expect(detail).toContain("aria-label={watchlisted ? 'In Watchlist' : 'Add to Watchlist'}")
+    expect(detail).toContain("{#if !themedOverlay}{watchlisted ? 'In Watchlist' : 'Watchlist'}{/if}")
     // The trailer button beside it takes the same round shape.
     expect(detail.match(/class=\{themedOverlay \? 'grid h-12 w-12 place-items-center rounded-full bg-white\/15/g)).toHaveLength(2)
     expect(anime).toContain('title="Save to lists"\n                  class="grid h-12 w-12 place-items-center rounded-full')
@@ -78,5 +78,16 @@ describe('catalog title page follows the theme series page', () => {
     expect(detail).toContain('{#if detailThemed}')
     expect(detail).toContain('<Carousel title="Recommendations">')
     expect(detail).toContain('<h2 data-part="detail.heading" class="mb-4 text-xl font-black">Cast & crew</h2>')
+  })
+})
+
+describe('the Watchlist button on a catalog title page', () => {
+  const detail = read('./CatalogMediaDetail.svelte')
+  it("saves to izumi's Watchlist and the source's own in one press, and never disables itself", () => {
+    expect(detail).toContain('setMediaInLocalList(media, WATCHLIST_ID, want)')
+    expect(detail).toContain('sourceListed = await setSourceWatchlist(watchlistUrl, want)')
+    expect(detail).toContain('sourceListed = before')
+    expect(detail).not.toMatch(/data-action="watchlist"[^>]*disabled=/)
+    expect(detail).not.toContain('data-action="save"')
   })
 })

@@ -30,7 +30,7 @@
   import MediaRatings from './MediaRatings.svelte'
   import CatalogAwards from './CatalogAwards.svelte'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
-  import { localLibrary, mediaIsSaved } from '$lib/library/local-lists'
+  import { WATCHLIST_ID, localLibrary, mediaIsInLocalList, mediaIsSaved, setMediaInLocalList } from '$lib/library/local-lists'
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { pendingCompanionPlayback, type PendingCompanionPlayback } from '$lib/companion/client'
   import { companionPlaybackTarget } from '$lib/companion/playback'
@@ -178,6 +178,8 @@
   })
   const watchlistUrl = $derived(media?.sourceFacts?.watchlistUrl)
   const onSourceList = $derived(sourceListed ?? media?.sourceFacts?.watchlist ?? false)
+  /** One Watchlist for the title: izumi's own, and the source's when the source keeps one. */
+  const watchlisted = $derived(!!media && (mediaIsInLocalList($localLibrary, media, WATCHLIST_ID) || (!!watchlistUrl && onSourceList)))
 
   // A source keeps the viewer's progress itself: once the player closes, its episode progress and
   // where to resume have changed there, so the page reads them again (quietly, keeping the page).
@@ -274,10 +276,10 @@
     }
     groups.push({
       options: [
-        ...(watchlistUrl ? [{
-          id: 'watchlist', label: onSourceList ? 'Remove from Watchlist' : 'Add to Watchlist', icon: onSourceList ? BookmarkCheck : BookmarkPlus,
-          disabled: sourceListBusy, onselect: () => void toggleSourceList(),
-        }] : []),
+        {
+          id: 'watchlist', label: watchlisted ? 'Remove from Watchlist' : 'Add to Watchlist', icon: watchlisted ? BookmarkCheck : BookmarkPlus,
+          disabled: sourceListBusy, onselect: () => void toggleWatchlist(),
+        },
         { id: 'lists', label: savedLocally ? 'Saved to your lists' : 'Save to a list', icon: savedLocally ? ListChecks : ListPlus, onselect: () => { optionsOpen = false; showLocalLists = true } },
         { id: 'tracker', label: 'Track on AniList / MyAnimeList', detail: trackerNote || undefined, icon: ListChecks, keepOpen: true, onselect: () => void trackOnLists() },
       ],
@@ -310,12 +312,20 @@
     return groups
   })
 
-  async function toggleSourceList() {
-    if (!watchlistUrl || sourceListBusy) return
+  // Saving flips at once on both lists. izumi's list is local and cannot fail; a source that refuses
+  // puts its own list back as it was and says why.
+  async function toggleWatchlist() {
+    if (!media || sourceListBusy) return
+    const want = !watchlisted
+    setMediaInLocalList(media, WATCHLIST_ID, want)
+    if (!watchlistUrl) return
+    const before = onSourceList
+    sourceListed = want
     sourceListBusy = true
     try {
-      sourceListed = await setSourceWatchlist(watchlistUrl, !onSourceList)
+      sourceListed = await setSourceWatchlist(watchlistUrl, want)
     } catch (reason) {
+      sourceListed = before
       playState = { status: 'error', message: reason instanceof Error ? reason.message : String(reason) }
     } finally {
       sourceListBusy = false
@@ -483,16 +493,11 @@
             {/if}
             <button data-part="button" data-variant="secondary" data-action="more" data-focusable onclick={openOptions} aria-label="More options" title="More options"
                     class="grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent"><Ellipsis size={20} /></button>
-            {#if watchlistUrl}
-              <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={onSourceList ? 'saved' : undefined} data-focusable disabled={sourceListBusy} onclick={toggleSourceList}
-                      class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold disabled:opacity-60">
-                {#if onSourceList}<Check size={18} />{:else}<Plus size={18} />{/if}{onSourceList ? 'In Watchlist' : 'Watchlist'}
-              </button>
-            {/if}
-            <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={() => (showLocalLists = true)}
-                    aria-label={savedLocally ? 'Saved' : 'Save to lists'} title="Save to lists"
+            <!-- One press saves to izumi's Watchlist and the source's own; other lists are in the ☰ menu. -->
+            <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} aria-busy={sourceListBusy} onclick={toggleWatchlist}
+                    aria-label={watchlisted ? 'In Watchlist' : 'Add to Watchlist'} title={watchlisted ? 'In Watchlist' : 'Add to Watchlist'}
                     class={themedOverlay ? 'grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
-              {#if savedLocally}<BookmarkCheck size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<BookmarkPlus size={18} />{/if}{#if !themedOverlay}{savedLocally ? 'Saved' : 'Save'}{/if}
+              {#if watchlisted}<Check size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<Plus size={18} />{/if}{#if !themedOverlay}{watchlisted ? 'In Watchlist' : 'Watchlist'}{/if}
             </button>
             {#if media.trailer?.id}
               <button
