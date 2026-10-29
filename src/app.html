@@ -27,7 +27,9 @@
     <script>
       try {
         var store = window.localStorage, info = store.getItem('startup-animation-info-v1')
-        if (location.pathname.indexOf('/app') === 0 && info && info !== 'null'
+        // Rust names the video at every desktop launch; the cached info covers Android, and a cache
+        // emptied while the file was away (a cleared one was never filled again) no longer drops it.
+        if (location.pathname.indexOf('/app') === 0 && (window.__IZUMI_STARTUP_URL__ || (info && info !== 'null'))
           && store.getItem('startup-animation-enabled-v1') !== 'false'
           && store.getItem('motion-preference') !== '"reduce"'
           && !window.sessionStorage.getItem('startup-animation-played')
