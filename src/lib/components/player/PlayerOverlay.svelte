@@ -1548,7 +1548,7 @@
   }
 
   $effect(() => {
-    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters; gmTheme
+    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters; gmTheme; $playerOverlayRev
     scheduleGmDynamicOverlay()
   })
 

@@ -454,4 +454,21 @@ describe('Game-mode skip chip + settings sheet', () => {
     const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
     expect(controls).toContain('fixed inset-0 z-40 bg-black/50')
   })
+
+  it('leads the settings sheet with Audio and Subtitles, every row keyed by gmRootKeys', () => {
+    const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
+    const keys = [...(controls.match(/const gmRootKeys = \$derived\((.+)\)/)?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1])
+    expect(keys.slice(0, 3)).toEqual(['audio', 'subs', 'source'])
+    // The highlight and the A press read the same index, so a row needs both or the pad picks the wrong one.
+    for (const key of keys) {
+      expect(controls, key).toContain(`class:bg-white={gmSetIdx === gmRootKeys.indexOf('${key}')}`)
+      expect(controls, key).toContain(`key === '${key}'`)
+    }
+    expect(controls).toContain("if (gm) void refreshTracks()")
+    // A theme's words open those pages directly, in Game mode too, and the native HUD draws them by name.
+    expect(controls).toContain("const trackWords = $derived($themePresentation?.player?.trackButtons === 'text')")
+    expect(controls).toContain('data-control="audio" data-focusable data-gm-text="Audio"')
+    expect(controls).toContain('data-control="subtitles" data-focusable data-gm-text="Subtitles"')
+    expect(controls).toContain("onclick={() => openTrackPage('subs')}")
+  })
 })

@@ -36,7 +36,7 @@ describe('player styling hooks', () => {
   })
 
   it('names every control in the row', () => {
-    const names = ['back', 'previous', 'play', 'next', 'volume', 'options', 'comments', 'tracks',
+    const names = ['back', 'previous', 'play', 'next', 'volume', 'options', 'comments', 'tracks', 'audio', 'subtitles',
       'subtitle-previous', 'subtitle-replay', 'subtitle-next', 'bookmark', 'screenshot', 'pip', 'fullscreen']
     for (const name of names) expect(controls).toContain(`data-control="${name}"`)
     expect(read('./DesktopCastButton.svelte')).toContain('data-control="cast"')
