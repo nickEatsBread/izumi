@@ -14,7 +14,7 @@
   import { gameMode, playing } from '$lib/player/session'
   import { uiScale } from '$lib/settings/ui'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
-  import { osdSpinnerColor, readGmOsdTheme } from '$lib/player/theme-gm-osd'
+  import { themePresentation } from '$lib/themes/runtime'
 
   let { size = 'sm', label = '', inline = false, frame, class: className = '' }: {
     /** 12, 16, 20 or 32 px, or `player`: mpv's loading ring, see above. */
@@ -36,12 +36,15 @@
   // An ASS pixel is a CSS pixel at the player's 1:1 page zoom; the browse zoom that is still on
   // while a source connects would enlarge the ring, so it is drawn smaller by the same factor.
   const ringPx = $derived(size === 'player' ? 64 / ($gameMode ? deckWebviewZoom($uiScale, $playing) : 1) : 0)
-  const ringColor = $derived(size === 'player' ? osdSpinnerColor(readGmOsdTheme().themeAccent) : '')
-
-  // mpv picks the nearest segment while CSS steps round down, so the page runs half a step ahead.
-  function wallClockTurn(node: Element) {
-    for (const turn of node.getAnimations()) turn.startTime = -((performance.timeOrigin + 1000 / 48) % 1000)
-  }
+  // mpv's colour (readGmOsdTheme's choice) named as CSS for the browser to resolve: white without a
+  // theme on the TV surface, else the theme's player.seekbarColor, else its primary. Reading the
+  // computed colours here forced a whole-page style pass on every mount, as did asking for its animations.
+  const ringColor = $derived(size !== 'player' ? ''
+    : typeof document === 'undefined' || document.documentElement.dataset.surface !== 'tv' ? '#fff'
+    : $themePresentation?.player?.seekbarColor ? 'var(--theme-seekbar-color)' : 'hsl(var(--primary))')
+  // The turn starts where the wall clock is in its second (mpv picks the nearest segment while CSS
+  // steps round down, so half a step ahead): a negative delay, set once, costs the browser nothing.
+  const turnDelay = `${-((Date.now() + 1000 / 48) % 1000)}ms`
 </script>
 
 {#if size === 'player'}
@@ -57,7 +60,7 @@
     class="shrink-0 animate-spin will-change-transform {className}"
     style:color={ringColor}
     style:animation-timing-function="steps(24)"
-    use:wallClockTurn
+    style:animation-delay={turnDelay}
   >
     {#each RING as opacity, i (i)}
       <line x1="0" y1="-24" x2="0" y2="-31" stroke="currentColor" stroke-width="2.5" {opacity} transform="rotate({i * 15})" />

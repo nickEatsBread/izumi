@@ -26,13 +26,17 @@ describe('playback ring', () => {
     // A viewBox unit is an ASS pixel, which is a CSS pixel at the player's 1:1 page zoom.
     expect(spinner).toContain('viewBox="-32 -32 64 64"')
     expect(spinner).toContain('64 / ($gameMode ? deckWebviewZoom($uiScale, $playing) : 1)')
-    expect(spinner).toContain('osdSpinnerColor(readGmOsdTheme().themeAccent)')
+    // mpv's choice (readGmOsdTheme) named as CSS, so no mount forces a style pass to read it.
+    expect(spinner).toContain("$themePresentation?.player?.seekbarColor ? 'var(--theme-seekbar-color)' : 'hsl(var(--primary))'")
+    expect(spinner).not.toContain('getComputedStyle')
     expect(osd).toContain('loading_overlay(phase, w, h, theme_color(&state.theme_accent), &mut lines);')
   })
 
   it('turns 24 steps a second on the same wall-clock phase as mpv', () => {
     expect(spinner).toContain('style:animation-timing-function="steps(24)"')
-    expect(spinner).toContain('turn.startTime = -((performance.timeOrigin + 1000 / 48) % 1000)')
+    expect(spinner).toContain('const turnDelay = `${-((Date.now() + 1000 / 48) % 1000)}ms`')
+    // getAnimations() forced a whole-page style pass on WebKitGTK (0.4 s a mount on the Deck).
+    expect(spinner).not.toContain('getAnimations')
     const phase = osd.slice(osd.indexOf('fn spinner_phase()'))
     expect(phase.slice(0, phase.indexOf('\n}'))).toContain('SystemTime::now()')
     expect(osd).toContain('spinner_phase(),')
