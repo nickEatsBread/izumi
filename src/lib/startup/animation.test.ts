@@ -29,6 +29,13 @@ describe('startup animation', () => {
     expect(component.indexOf("if (document.visibilityState !== 'visible') {")).toBeLessThan(component.indexOf('    src = url'))
   })
 
+  // A CSS opacity transition blinks its element back for a frame as it ends on WebKitGTK.
+  it('fades the video out from script and removes it on its last frame', () => {
+    const component = readFileSync('src/lib/components/StartupAnimation.svelte', 'utf8')
+    expect(component).not.toContain('transition: opacity')
+    expect(component).toContain('fadeOut(adopted ?? root, () => {')
+  })
+
   it('covers the launch whenever Rust names the video, even with no cached info', () => {
     expect(readFileSync('src/app.html', 'utf8')).toContain("(window.__IZUMI_STARTUP_URL__ || (info && info !== 'null'))")
   })

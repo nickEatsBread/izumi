@@ -73,6 +73,22 @@
     })
   }
 
+  // Faded from script and removed on its last frame: a CSS opacity transition blinks its element
+  // back for a frame as it ends on WebKitGTK, and the video's dark last frame flashed over Home.
+  const LEAVE_MS = 300
+  function fadeOut(element: HTMLElement | null | undefined, done: () => void) {
+    if (!element) return done()
+    element.style.pointerEvents = 'none'
+    const start = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / LEAVE_MS)
+      element.style.opacity = String(1 - t * (2 - t))
+      if (t < 1) requestAnimationFrame(step)
+      else done()
+    }
+    requestAnimationFrame(step)
+  }
+
   function finish() {
     if (!playing || leaving) return
     leaving = true
@@ -80,19 +96,14 @@
     stopReveal?.()
     uncover()
     const adopted = early
-    if (adopted) {
-      adopted.style.transition = 'opacity 0.3s ease'
-      adopted.style.opacity = '0'
-      adopted.style.pointerEvents = 'none'
-    }
-    setTimeout(() => {
+    fadeOut(adopted ?? root, () => {
       adopted?.remove()
       early = null
       src = ''
       leaving = false
       playing = false
       startupAnimationPlaying.set(false)
-    }, 320)
+    })
   }
 
   function onKey(e: KeyboardEvent) {
@@ -157,12 +168,6 @@
     z-index: 200;
     background: #000;
     outline: none;
-    opacity: 1;
-    transition: opacity 0.3s ease;
-  }
-  .startup-animation.leaving {
-    opacity: 0;
-    pointer-events: none;
   }
   video {
     width: 100%;
