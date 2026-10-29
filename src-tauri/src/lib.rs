@@ -182,6 +182,14 @@ pub(crate) struct GmControlItem {
     pub(crate) label: String,
     pub(crate) focused: bool,
     pub(crate) primary: bool,
+    /// A button named in words ("Audio") is drawn as that text, in the HTML button's font size and
+    /// weight, instead of an icon.
+    #[serde(default)]
+    pub(crate) text: String,
+    #[serde(default)]
+    pub(crate) text_size: f64,
+    #[serde(default)]
+    pub(crate) text_weight: u16,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]
@@ -254,6 +262,15 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) theme_accent: String,
     #[serde(default)]
     pub(crate) theme_focus: String,
+    /// The age rating card at the top right as an episode opens (theme `player.rating: "intro"`): the
+    /// rating ("14"), its content descriptors on one line, and when it was first shown (Unix ms; 0 =
+    /// none). The OSD fades it in, holds it and fades it out from that time.
+    #[serde(default)]
+    pub(crate) rating_label: String,
+    #[serde(default)]
+    pub(crate) rating_detail: String,
+    #[serde(default)]
+    pub(crate) rating_shown_at: f64,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]

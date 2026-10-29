@@ -563,6 +563,7 @@ State values:
 | `sources.error` | part | The alert shown when playback failed. |  |
 | `sources.problems` | part | The sources that failed, each with its reason. |  |
 | `play.connecting` | slot | The full-screen connecting screen, also shown while the player loads; data-variant switch is the Game mode card when changing source mid-playback. |  |
+| `play.connecting.back` | part | Back on the loader while an episode opens (top left): cancels the open, as B does. |  |
 | `play.backdrop` | part | The blurred artwork behind the connecting screen. |  |
 | `play.loader` | part | The connecting screen's centred column. |  |
 | `play.loader.title` | part | The series title on the connecting screen. |  |
@@ -654,6 +655,7 @@ State values:
 | `comments.tabs` | part | The row of discussion sources (All, then each source found). |  |
 | `comments.tab` | part | One discussion source. | `data-active` |
 | `player.controls` | slot | The player controls layer; `data-variant` names the player: `desktop`, `game` (Game mode, which the stylesheet does not reach) or `android` (the whole Android and Android TV player). | `data-variant` |
+| `player.rating` | part | The age rating card at the top right while an episode opens, when the theme sets player.rating to intro: a Rating label over the content descriptors beside the boxed rating. In Game mode the player draws it natively and the stylesheet does not reach it. |  |
 | `player.seekbar` | part | The seek bar. |  |
 | `player.seekbar.track` | part | The seek bar's empty track: one piece per chapter on desktop, one track holding the buffer and fill on Android. |  |
 | `player.seekbar.buffer` | part | The buffered stretch of the seek bar; on desktop one in each chapter piece, a full-width bar shifted inside its piece. |  |

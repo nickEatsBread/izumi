@@ -314,11 +314,13 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
                 || (!chrome.paused
                     && now.duration_since(last_progress_draw)
                         >= Duration::from_millis(PROGRESS_FRAME_MS)));
+        // The rating card fades on its own clock, so it redraws every tick while it shows.
         if !state.loading
             && !progress_due
             && !motion.animating
             && !bar_animating
             && !play_animating
+            && !rating_active(&state, unix_ms())
             && version == last_drawn_version
         {
             return glib::ControlFlow::Continue;
@@ -463,6 +465,14 @@ fn sanitize_state(mut state: GmDynamicOverlay) -> GmDynamicOverlay {
         item.w = item.w.clamp(1.0, 256.0);
         item.h = item.h.clamp(1.0, 256.0);
         item.label = item.label.chars().take(80).collect();
+        item.text = item.text.chars().take(24).collect();
+        item.text_size = if item.text_size.is_finite() { item.text_size.clamp(0.0, 64.0) } else { 0.0 };
+        item.text_weight = item.text_weight.min(1000);
+    }
+    state.rating_label = state.rating_label.trim().chars().take(12).collect();
+    state.rating_detail = state.rating_detail.trim().chars().take(80).collect();
+    if !state.rating_shown_at.is_finite() || state.rating_shown_at < 0.0 {
+        state.rating_shown_at = 0.0;
     }
     state.timeline_segments.truncate(64);
     state.timeline_segments.retain(|segment| {
@@ -528,7 +538,7 @@ fn ink_on(color: &str) -> &'static str {
 fn draw(
     app: &AppHandle,
     state: &GmDynamicOverlay,
-    phase: u32,
+    phase: f64,
     motion: ControlMotion,
     play: f64,
     shown: &mut Shown,
@@ -606,7 +616,30 @@ fn draw(
         &mut shown.control_content,
     );
 
-    let chrome = chrome_ass(&state.skip_text, &state.notice_text, wf, hf);
+    let mut chrome = chrome_ass(&state.skip_text, &state.notice_text, wf, hf);
+    let now_ms = unix_ms();
+    if rating_active(state, now_ms) {
+        // Sized in screen pixels, like the loading ring.
+        let unit = player
+            .get_property("osd-width")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|px| *px > 0.0)
+            .map_or(1.0, |px| wf / px);
+        let card = rating_card_ass(
+            &state.rating_label,
+            &state.rating_detail,
+            rating_opacity(now_ms - state.rating_shown_at),
+            wf,
+            unit,
+        );
+        if !card.is_empty() {
+            if !chrome.is_empty() {
+                chrome.push('\n');
+            }
+            chrome.push_str(&card);
+        }
+    }
     if chrome.is_empty() {
         if shown.chrome.is_some() {
             let _ = player.osd_overlay_remove(OSD_CHROME_ID);
@@ -682,13 +715,21 @@ fn hold_lite(app: &AppHandle, on: bool) {
 
 /// The spinner's turn from the wall clock rather than from this loop's start, so it is in step with
 /// the page's copies of it (Spinner.svelte `player`), which this window covers when it maps: the
-/// hand-off then shows no jump.
-fn spinner_phase() -> u32 {
+/// hand-off then shows no jump. A fraction of a turn: one turn a second.
+fn spinner_phase() -> f64 {
     let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_millis();
-    ms * OSD_FPS as u32 / 1000
+    ms as f64 / 1000.0
+}
+
+/// Now, in Unix milliseconds (the clock the page stamps `rating_shown_at` with).
+fn unix_ms() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64() * 1000.0)
+        .unwrap_or_default()
 }
 
 /// The scrub bar's on-screen geometry: (x, y-centre, width, height). Prefers the HTML seek bar's
@@ -983,6 +1024,11 @@ fn control_item_ass(
     focus: &str,
     lines: &mut Vec<String>,
 ) {
+    let text = item.text.trim();
+    if !text.is_empty() {
+        text_button_ass(item, text, opacity, y_offset, lines);
+        return;
+    }
     let scale = if item.focused {
         if item.primary {
             1.12
@@ -1041,6 +1087,24 @@ fn control_item_ass(
     } else {
         control_icon_ass(&label, cx, cy, size, icon_color, opacity, lines);
     }
+}
+
+/// A control named in words ("Audio"): the word in the HTML button's own size and weight, with a faint
+/// pill behind it while focused. Text renders crisply at any size, where an icon is an approximation.
+fn text_button_ass(item: &GmControlItem, text: &str, opacity: f64, y_offset: f64, lines: &mut Vec<String>) {
+    let y = item.y + y_offset;
+    if item.focused {
+        push(
+            lines,
+            round_rect(item.x, y, item.w, item.h, (item.h * 0.2).min(9.0), "FFFFFF", &alpha_hex(0.2 * opacity)),
+        );
+    }
+    let size = if item.text_size > 0.0 { item.text_size } else { item.h * 0.4 };
+    let weight = if item.text_weight > 0 { item.text_weight } else { 600 };
+    push(
+        lines,
+        player_title_text(item.x + item.w / 2.0, y + item.h / 2.0, size, text, 0.9 * opacity, 5, weight),
+    );
 }
 
 fn control_icon_ass(
@@ -1491,7 +1555,7 @@ fn circle_ring(cx: f64, cy: f64, inner: f64, outer: f64, color: &str, alpha: &st
 /// LOADING layer: an opaque black backdrop before the first frame (covers the white webview and
 /// the transparent hole) plus the buffering spinner. Animates every frame (the spinner sweeps),
 /// so it's always re-pushed while loading.
-fn loading_ass(state: &GmDynamicOverlay, phase: u32, w: f64, h: f64, unit: f64) -> String {
+fn loading_ass(state: &GmDynamicOverlay, phase: f64, w: f64, h: f64, unit: f64) -> String {
     let mut lines = Vec::new();
     if state.loading && !state.first_frame {
         push(&mut lines, rect(0.0, 0.0, w, h, "000000", "00"));
@@ -1502,27 +1566,162 @@ fn loading_ass(state: &GmDynamicOverlay, phase: u32, w: f64, h: f64, unit: f64) 
     lines.join("\n")
 }
 
-/// `unit` is canvas units per screen pixel, so the ring is 62 screen pixels across like the page's.
-fn loading_overlay(phase: u32, w: f64, h: f64, unit: f64, color: &str, lines: &mut Vec<String>) {
-    let cx = w / 2.0;
-    let cy = h / 2.0;
-    let segments = 24usize;
-    let head = ((phase % OSD_FPS as u32) as f64 / OSD_FPS as f64) * PI * 2.0 - PI / 2.0;
-    let alphas = [
-        "00", "0C", "1A", "2A", "40", "58", "74", "92", "B0", "C8", "D8",
-    ];
+/// `turn` is how far into its one-second turn the arc is (wall clock), and `unit` is canvas units per
+/// screen pixel. The ring is 84 screen pixels across with a 4.5 px stroke: a faint track with a quarter
+/// arc in the accent colour on it, the page's ring exactly (Spinner.svelte `player`).
+fn loading_overlay(turn: f64, w: f64, h: f64, unit: f64, color: &str, lines: &mut Vec<String>) {
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    let outer = 42.0 * unit;
+    let inner = (42.0 - 4.5) * unit;
+    push(lines, circle_ring(cx, cy, inner, outer, "FFFFFF", &alpha_hex(0.15)));
+    let centre = turn.rem_euclid(1.0) * PI * 2.0 - PI / 2.0;
+    push(
+        lines,
+        arc_band(cx, cy, inner, outer, centre - PI / 4.0, centre + PI / 4.0, 24, color, "00"),
+    );
+}
 
-    for i in 0..segments {
-        let theta = (i as f64 / segments as f64) * PI * 2.0 - PI / 2.0;
-        let delta = (head - theta).rem_euclid(PI * 2.0);
-        let age = ((delta / (PI * 2.0)) * segments as f64).round() as usize;
-        let alpha = alphas[age.min(alphas.len() - 1)];
-        let half = PI / segments as f64 * 0.34;
-        push(
-            lines,
-            ring_segment(cx, cy, 24.0 * unit, 31.0 * unit, theta - half, theta + half, color, alpha),
-        );
+/// An annulus sector from `a0` to `a1` (radians, clockwise from +x on screen), each edge drawn with
+/// `steps` straight pieces: smooth at spinner sizes.
+#[allow(clippy::too_many_arguments)]
+fn arc_band(
+    cx: f64,
+    cy: f64,
+    inner: f64,
+    outer: f64,
+    a0: f64,
+    a1: f64,
+    steps: usize,
+    color: &str,
+    alpha: &str,
+) -> String {
+    if inner <= 0.0 || outer <= inner || steps == 0 {
+        return String::new();
     }
+    let at = |i: usize| a0 + (a1 - a0) * i as f64 / steps as f64;
+    let p = |r: f64, a: f64| (dr(cx + a.cos() * r), dr(cy + a.sin() * r));
+    let (x, y) = p(outer, a0);
+    let mut path = format!("m {x} {y}");
+    for i in 1..=steps {
+        let (x, y) = p(outer, at(i));
+        path.push_str(&format!(" l {x} {y}"));
+    }
+    for i in (0..=steps).rev() {
+        let (x, y) = p(inner, at(i));
+        path.push_str(&format!(" l {x} {y}"));
+    }
+    format!("{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p4}}{path}{{\\p0}}")
+}
+
+/// A rounded rectangle's outline as an ASS path, clockwise or not (an inner one cut the other way
+/// leaves a hole).
+fn round_rect_path(x: f64, y: f64, w: f64, h: f64, r: f64, clockwise: bool) -> String {
+    let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
+    let k = r * 0.552_284_749_8;
+    let (x0, y0, x1, y1) = (x, y, x + w, y + h);
+    if clockwise {
+        format!(
+            "m {} {} l {} {} b {} {} {} {} {} {} l {} {} b {} {} {} {} {} {} l {} {} b {} {} {} {} {} {} l {} {} b {} {} {} {} {} {}",
+            dr(x0 + r), dr(y0), dr(x1 - r), dr(y0),
+            dr(x1 - r + k), dr(y0), dr(x1), dr(y0 + r - k), dr(x1), dr(y0 + r),
+            dr(x1), dr(y1 - r),
+            dr(x1), dr(y1 - r + k), dr(x1 - r + k), dr(y1), dr(x1 - r), dr(y1),
+            dr(x0 + r), dr(y1),
+            dr(x0 + r - k), dr(y1), dr(x0), dr(y1 - r + k), dr(x0), dr(y1 - r),
+            dr(x0), dr(y0 + r),
+            dr(x0), dr(y0 + r - k), dr(x0 + r - k), dr(y0), dr(x0 + r), dr(y0),
+        )
+    } else {
+        format!(
+            "m {} {} b {} {} {} {} {} {} l {} {} b {} {} {} {} {} {} l {} {} b {} {} {} {} {} {} l {} {} b {} {} {} {} {} {} l {} {}",
+            dr(x0 + r), dr(y0),
+            dr(x0 + r - k), dr(y0), dr(x0), dr(y0 + r - k), dr(x0), dr(y0 + r),
+            dr(x0), dr(y1 - r),
+            dr(x0), dr(y1 - r + k), dr(x0 + r - k), dr(y1), dr(x0 + r), dr(y1),
+            dr(x1 - r), dr(y1),
+            dr(x1 - r + k), dr(y1), dr(x1), dr(y1 - r + k), dr(x1), dr(y1 - r),
+            dr(x1), dr(y0 + r),
+            dr(x1), dr(y0 + r - k), dr(x1 - r + k), dr(y0), dr(x1 - r), dr(y0),
+            dr(x0 + r), dr(y0),
+        )
+    }
+}
+
+fn round_rect(x: f64, y: f64, w: f64, h: f64, r: f64, color: &str, alpha: &str) -> String {
+    if w <= 0.0 || h <= 0.0 {
+        return String::new();
+    }
+    format!(
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p4}}{}{{\\p0}}",
+        round_rect_path(x, y, w, h, r, true)
+    )
+}
+
+/// A rounded rectangle's border, `stroke` wide on the inside.
+#[allow(clippy::too_many_arguments)]
+fn round_rect_ring(x: f64, y: f64, w: f64, h: f64, r: f64, stroke: f64, color: &str, alpha: &str) -> String {
+    if w <= 2.0 * stroke || h <= 2.0 * stroke {
+        return String::new();
+    }
+    format!(
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p4}}{} {}{{\\p0}}",
+        round_rect_path(x, y, w, h, r, true),
+        round_rect_path(x + stroke, y + stroke, w - 2.0 * stroke, h - 2.0 * stroke, (r - stroke).max(0.0), false),
+    )
+}
+
+const RATING_IN_MS: f64 = 700.0;
+const RATING_HOLD_MS: f64 = 3600.0;
+const RATING_OUT_MS: f64 = 700.0;
+
+/// The rating card's opacity `since_ms` after it was first shown: in over 0.7 s, held until 3.6 s,
+/// out over 0.7 s, easing out both ways.
+fn rating_opacity(since_ms: f64) -> f64 {
+    let ease = |t: f64| 1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3);
+    if since_ms < 0.0 {
+        0.0
+    } else if since_ms < RATING_IN_MS {
+        ease(since_ms / RATING_IN_MS)
+    } else if since_ms < RATING_HOLD_MS {
+        1.0
+    } else {
+        1.0 - ease((since_ms - RATING_HOLD_MS) / RATING_OUT_MS)
+    }
+}
+
+fn rating_active(state: &GmDynamicOverlay, now_ms: f64) -> bool {
+    !state.rating_label.is_empty()
+        && state.rating_shown_at > 0.0
+        && now_ms - state.rating_shown_at < RATING_HOLD_MS + RATING_OUT_MS
+}
+
+/// The rating card, in screen pixels times `unit`: "RATING" over the content descriptors, right-aligned
+/// beside the rating in a white-bordered box, 60 px from the right edge and 48 px from the top.
+fn rating_card_ass(label: &str, detail: &str, opacity: f64, w: f64, unit: f64) -> String {
+    if opacity <= 0.002 || label.is_empty() {
+        return String::new();
+    }
+    let box_h = 72.0 * unit;
+    let font = 36.0 * unit;
+    let box_w = (label.chars().count() as f64 * font * 0.62 + 24.0 * unit).max(box_h);
+    let x0 = w - 60.0 * unit - box_w;
+    let y0 = 48.0 * unit;
+    let mid = y0 + box_h / 2.0;
+    let mut lines = Vec::new();
+    push(
+        &mut lines,
+        round_rect_ring(x0, y0, box_w, box_h, 9.0 * unit, 3.0 * unit, "FFFFFF", &alpha_hex(0.8 * opacity)),
+    );
+    push(&mut lines, player_title_text(x0 + box_w / 2.0, mid, font, label, opacity, 5, 900));
+    let text_x = x0 - 18.0 * unit;
+    let line = 21.0 * unit;
+    if detail.is_empty() {
+        push(&mut lines, player_title_text(text_x, mid, line, "RATING", 0.9 * opacity, 6, 600));
+    } else {
+        push(&mut lines, player_title_text(text_x, mid - line * 0.72, line, "RATING", 0.9 * opacity, 6, 600));
+        push(&mut lines, player_title_text(text_x, mid + line * 0.72, line, detail, 0.7 * opacity, 6, 400));
+    }
+    lines.join("\n")
 }
 
 fn push(lines: &mut Vec<String>, line: String) {
@@ -1648,32 +1847,6 @@ fn circle(cx: f64, cy: f64, r: f64, color: &str, alpha: &str) -> String {
     )
 }
 
-fn ring_segment(
-    cx: f64,
-    cy: f64,
-    inner: f64,
-    outer: f64,
-    a0: f64,
-    a1: f64,
-    color: &str,
-    alpha: &str,
-) -> String {
-    if inner <= 0.0 || outer <= inner {
-        return String::new();
-    }
-
-    let p = |r: f64, a: f64| (dr(cx + a.cos() * r), dr(cy + a.sin() * r));
-    let (x0, y0) = p(outer, a0);
-    let (x1, y1) = p(outer, a1);
-    let (x2, y2) = p(inner, a1);
-    let (x3, y3) = p(inner, a0);
-
-    format!(
-        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{}&\\1a&H{}&\\p4}}m {} {} l {} {} l {} {} l {} {}{{\\p0}}",
-        color, alpha, x0, y0, x1, y1, x2, y2, x3, y3
-    )
-}
-
 fn ass_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('{', "\\{")
@@ -1703,6 +1876,7 @@ mod tests {
             label: label.into(),
             focused: false,
             primary: true,
+            ..Default::default()
         }
     }
 
@@ -1769,7 +1943,7 @@ mod tests {
             ..Default::default()
         };
         assert!(progress_dynamic_ass(&themed, 0.0, 10.0, 100.0, 6.0, 1.0).contains("\\1c&H2175F4&"));
-        assert!(loading_ass(&themed, 0, 1280.0, 800.0, 1.0).contains("\\1c&H2175F4&"));
+        assert!(loading_ass(&themed, 0.0, 1280.0, 800.0, 1.0).contains("\\1c&H2175F4&"));
         // No theme: today's white.
         let plain = GmDynamicOverlay {
             theme_accent: String::new(),
@@ -1800,5 +1974,43 @@ mod tests {
         assert_eq!(ink_on("2175F4"), "000000");
         assert_eq!(ink_on("000000"), "FFFFFF");
         assert_eq!(ink_on("8B0000"), "FFFFFF"); // dark blue
+    }
+
+    #[test]
+    fn rating_card_fades_in_holds_and_fades_out() {
+        assert_eq!(rating_opacity(-10.0), 0.0);
+        assert!(rating_opacity(350.0) > 0.5 && rating_opacity(350.0) < 1.0);
+        assert_eq!(rating_opacity(2000.0), 1.0);
+        assert!(rating_opacity(3950.0) > 0.0 && rating_opacity(3950.0) < 0.5);
+        assert!(rating_opacity(4300.0) <= 0.0001);
+        let mut state = GmDynamicOverlay { rating_label: "14".into(), rating_shown_at: 1000.0, ..Default::default() };
+        assert!(rating_active(&state, 2000.0));
+        assert!(!rating_active(&state, 1000.0 + 4300.0));
+        state.rating_label.clear();
+        assert!(!rating_active(&state, 2000.0));
+        let card = rating_card_ass("14", "Violence", 1.0, 1280.0, 1.0);
+        assert!(card.contains("}14") && card.contains("}RATING") && card.contains("}Violence"));
+    }
+
+    #[test]
+    fn a_control_named_in_words_draws_its_word() {
+        let mut item = GmControlItem { x: 900.0, y: 700.0, w: 90.0, h: 40.0, label: "Audio".into(), text: "Audio".into(), text_size: 21.0, text_weight: 600, ..Default::default() };
+        let mut lines = Vec::new();
+        control_item_ass(&item, 1.0, 0.0, 1.0, "FFFFFF", "FFFFFF", &mut lines);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("\\fnNunito\\b600") && lines[0].ends_with("Audio"));
+        item.focused = true;
+        lines.clear();
+        control_item_ass(&item, 1.0, 0.0, 1.0, "FFFFFF", "FFFFFF", &mut lines);
+        assert_eq!(lines.len(), 2, "a focused word sits on a faint pill");
+    }
+
+    #[test]
+    fn the_loading_ring_is_a_track_with_a_quarter_arc() {
+        let mut lines = Vec::new();
+        loading_overlay(0.25, 1280.0, 800.0, 1.0, "2175F4", &mut lines);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("\\1c&HFFFFFF&") && lines[0].contains(&format!("\\1a&H{}&", alpha_hex(0.15))));
+        assert!(lines[1].contains("\\1c&H2175F4&\\1a&H00&"));
     }
 }

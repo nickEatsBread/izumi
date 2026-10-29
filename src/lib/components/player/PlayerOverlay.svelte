@@ -739,6 +739,34 @@
     return stop
   })
 
+  // The rating card a theme can ask for (`player.rating: "intro"`): the episode's age rating at the top
+  // right from when mpv has the file (its first frame may still be loading), held 3.6 s, as TV apps
+  // show theirs. Game mode draws it natively (gm_osd.rs rating card); elsewhere the page does.
+  const RATING_CARD_MS = 4_300
+  const ratingIntro = $derived($themePresentation?.player?.rating === 'intro')
+  const ratingLabel = $derived(ratingIntro ? ($nowPlayingStream.rating?.label ?? $nowPlayingMedia?.media?.sourceFacts?.rating ?? '') : '')
+  const ratingDetail = $derived(ratingIntro ? ($nowPlayingStream.rating?.descriptors ?? []).join(' · ') : '')
+  let ratingShownAt = $state(0)
+  let ratingOn = $state(false)
+  let ratingFor = ''
+  onMount(() => {
+    const off = listen<string>('player-file-loaded', () => {
+      if (!ratingLabel || ratingFor === loadedKey) return
+      ratingFor = loadedKey
+      ratingShownAt = Date.now()
+      scheduleGmDynamicOverlay()
+    })
+    return () => { void off.then((unlisten) => unlisten()) }
+  })
+  $effect(() => {
+    if (!ratingShownAt) return
+    const frame = requestAnimationFrame(() => (ratingOn = true))
+    const hide = setTimeout(() => (ratingOn = false), 3_600)
+    // One more state once the card is over, so the native layer can let it go.
+    const done = setTimeout(() => scheduleGmDynamicOverlay(), RATING_CARD_MS + 50)
+    return () => { cancelAnimationFrame(frame); clearTimeout(hide); clearTimeout(done); ratingOn = false }
+  })
+
   let closing = false
   async function close() {
     if (closing) return
@@ -879,6 +907,7 @@
     const key = `${$playerLoadId}|${np.title}|${np.episode}|${$spriteKey ?? ''}`
     if (key === loadedKey) return
     loadedKey = key
+    ratingShownAt = 0
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
     dpadVisualPos = null; clearTimeout(dpadVisualT)
     chapterStore.set([])
@@ -1338,6 +1367,24 @@
     if (rect && rect.width > 0) lastBar = { x: rect.left, y: rect.top + rect.height / 2, w: rect.width }
   }
 
+  /** A button named in words (`data-gm-text`, a theme's `player.trackButtons: "text"`) is drawn as that
+   *  word: its size is its own line box, as the title's is, since libass's size metric runs small. */
+  function gmTextOf(button: HTMLElement): { text?: string; textSize?: number; textWeight?: number } {
+    const text = button.dataset.gmText?.trim()
+    if (!text) return {}
+    const style = getComputedStyle(button)
+    const range = document.createRange()
+    range.selectNodeContents(button)
+    const line = range.getBoundingClientRect().height
+    const cssSize = Number.parseFloat(style.fontSize)
+    const weight = Number.parseInt(style.fontWeight, 10)
+    return {
+      text,
+      textSize: Math.max(Number.isFinite(cssSize) ? cssSize : 0, Number.isFinite(line) ? line : 0),
+      textWeight: Number.isFinite(weight) ? weight : 600,
+    }
+  }
+
   function measureNativeChrome() {
     const root = document.querySelector<HTMLElement>('[data-gm-control-root]')
     const label = (selector: string) => {
@@ -1382,6 +1429,7 @@
               label: button.getAttribute('aria-label') ?? '',
               focused: document.activeElement === button,
               primary: button.classList.contains('gm-play'),
+              ...gmTextOf(button),
             }
           })
       : []
@@ -1408,7 +1456,8 @@
     const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? skipLabel : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
     const nativeControls = liveControls && gmNativeControls
-    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
+    const ratingShowing = ratingShownAt > 0 && Date.now() - ratingShownAt < RATING_CARD_MS
+    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText || ratingShowing)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -1424,7 +1473,9 @@
       measureSeekBar()
       if (lastBar.w > 0) lastBarLayoutKey = barLayoutKey
     }
-    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}`
+    // The words on the bar's text buttons come and go with the tracks, so they are part of the key.
+    const gmTexts = [...document.querySelectorAll<HTMLElement>('[data-gm-control-root] [data-gm-text]')].map((button) => button.dataset.gmText).join(',')
+    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}:${gmTexts}`
     const chrome = nativeControls
       ? (lastChrome.controlItems.length > 0 && lastChromeLayoutKey === chromeLayoutKey
           ? lastChrome
@@ -1465,6 +1516,9 @@
         kind: segment.type,
       })),
       chapterMarks: chapters.map((chapter) => chapter.time),
+      ratingLabel: ratingShowing ? ratingLabel : '',
+      ratingDetail: ratingShowing ? ratingDetail : '',
+      ratingShownAt: ratingShowing ? ratingShownAt : 0,
       ...chrome,
       ...gmTheme,
     }
@@ -2135,6 +2189,16 @@
          turn (Spinner `player`) and the handover to it does not show. -->
     <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
       <Spinner size="player" />
+    </div>
+  {/if}
+
+  {#if ratingShownAt && ratingLabel && !gmBitmapMode}
+    <div data-part="player.rating" class="izumi-hud pointer-events-none absolute right-10 top-8 flex items-center gap-3 transition-opacity duration-700 ease-out" style:opacity={ratingOn ? 1 : 0}>
+      <div class="text-right text-sm text-white/70">
+        <div class="font-semibold uppercase tracking-wide text-white/90">Rating</div>
+        {#if ratingDetail}<div>{ratingDetail}</div>{/if}
+      </div>
+      <div class="grid h-12 min-w-12 place-items-center rounded-md border-2 border-white/80 px-2 text-2xl font-black text-white">{ratingLabel}</div>
     </div>
   {/if}
 
