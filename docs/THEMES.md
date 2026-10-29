@@ -745,6 +745,13 @@ State values:
 | `listing.grid` | part | The poster grid; data-variant is grid and data-state is loading while skeletons show. |  |
 | `listing.empty` | part | Shown when the list has nothing (data-state empty) or failed to load (data-state error, with Retry). |  |
 | `listing.more` | part | Loading more at the end of the grid, or data-state error with Retry. |  |
+| `source.profiles` | slot | Who is watching: the source account's own profiles as avatars, at launch on a source screen when it has more than one, and from the drawer. |  |
+| `source.profiles.title` | part | The heading. |  |
+| `source.profiles.list` | part | The row of profiles. |  |
+| `source.profile` | part | One profile; data-state is current on the one in use. |  |
+| `source.profile.avatar` | part | The profile picture, or its initial. |  |
+| `source.profile.name` | part | The profile name. |  |
+| `source.profiles.error` | part | Shown when the profiles could not be read. |  |
 | `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 | `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
 | `settings.signin.qr` | part | A source sign-in code's QR: its sign-in page, for a phone to scan instead of typing the address. |  |

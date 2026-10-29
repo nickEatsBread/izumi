@@ -43,6 +43,8 @@
   import { homeBusy, warmRowsBelow } from '$lib/util/image-warm'
   import { idle } from '$lib/util/idle'
   import { startupAnimationPlaying } from '$lib/startup/animation'
+  import { extensionServiceSettings } from '$lib/extensions/manager'
+  import { sourceProfiles } from '$lib/extensions/source-profiles'
   import { coverWidthFor } from '$lib/components/cards/SmallCard.svelte'
   import { densityScale, resolveRow } from '$lib/themes/presentation'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -85,6 +87,32 @@
       void goto(mediaHref(media))
     }
   }
+  // "Who's watching?" once a session on a source's screen whose account has more than one profile,
+  // after the startup video, as the source's own handheld app asks at launch.
+  $effect(() => {
+    const selection = $catalogProvider
+    if (!isSourceSelection(selection) || $startupAnimationPlaying) return
+    const asked = `source-profiles-asked:${selection}`
+    try {
+      if (sessionStorage.getItem(asked)) return
+      sessionStorage.setItem(asked, '1')
+    } catch { return }
+    let live = true
+    extensionServiceSettings(sourcePackageOf(selection))
+      .then((document) => { if (live && sourceProfiles(document)) void goto('/app/source-profiles') })
+      .catch(() => {})
+    return () => { live = false }
+  })
+  // A profile switch (Who's watching?) reads the source's rows afresh.
+  $effect(() => {
+    const changed = () => {
+      if (!isSourceSelection($catalogProvider)) return
+      forgetSourceAddon(sourcePackageOf($catalogProvider))
+      retry++
+    }
+    window.addEventListener('source-profile-changed', changed)
+    return () => window.removeEventListener('source-profile-changed', changed)
+  })
   function closeSourceSetup() {
     sourceSetup = false
     if (isSourceSelection($catalogProvider)) forgetSourceAddon(sourcePackageOf($catalogProvider))

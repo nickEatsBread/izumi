@@ -1185,7 +1185,9 @@ export interface ServiceSettingField {
   label: string
   description?: string
   type: 'text' | 'password' | 'number' | 'boolean' | 'select'
-  role?: 'action'
+  /** `action`: the account action selector. `profile`: the account's profiles, which izumi also
+   *  offers as a "Who's watching?" picker outside the settings sheet. */
+  role?: 'action' | 'profile'
   visibleWhen?: ServiceSettingCondition
   required?: boolean
   placeholder?: string

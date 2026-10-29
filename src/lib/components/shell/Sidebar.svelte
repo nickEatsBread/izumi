@@ -48,6 +48,9 @@
   } from '$lib/settings/catalog'
   import { isSourceSelection, sourceAddon, sourcePackageOf } from '$lib/catalog/source-catalogs'
   import { listingHref, sourceMenus, type SourceMenu } from '$lib/catalog/source-menus'
+  import { extensionServiceSettings } from '$lib/extensions/manager'
+  import { sourceProfiles } from '$lib/extensions/source-profiles'
+  import UserRound from '@lucide/svelte/icons/user-round'
   import { interfaceMode } from '$lib/settings/interface-mode'
   import { searchModeNav } from '$lib/settings/nav-rules'
   import * as h from '$lib/haptics'
@@ -96,16 +99,23 @@
   const categoriesItem = { id: 'categories', href: '/app/categories', icon: Shapes, label: 'Categories', anim: '' }
   // A source screen adds the lists its source puts in the menu (its watchlist, history, seasons).
   let menus = $state<SourceMenu[]>([])
+  // …and "Who's watching?" when its account has more than one profile of its own.
+  let manyProfiles = $state(false)
   $effect(() => {
     const selection = $catalogProvider
     menus = []
+    manyProfiles = false
     if (!isSourceSelection(selection)) return
     let live = true
     sourceAddon(sourcePackageOf(selection)).then((addon) => { if (live) menus = sourceMenus(addon.manifest) }).catch(() => {})
+    extensionServiceSettings(sourcePackageOf(selection)).then((document) => { if (live) manyProfiles = !!sourceProfiles(document) }).catch(() => {})
     return () => { live = false }
   })
   const MENU_ICONS = { bookmark: Bookmark, history: History, calendar: CalendarDays, list: List }
-  const menuItems = $derived(menus.map((menu) => ({ id: 'listing', href: listingHref(menu), icon: MENU_ICONS[menu.icon], label: menu.label, anim: '' })))
+  const menuItems = $derived([
+    ...menus.map((menu) => ({ id: 'listing', href: listingHref(menu), icon: MENU_ICONS[menu.icon], label: menu.label, anim: '' })),
+    ...(manyProfiles ? [{ id: 'profiles', href: '/app/source-profiles', icon: UserRound, label: "Who's watching?", anim: '' }] : []),
+  ])
   const drawerItems = $derived(shown.flatMap((item) => item.id === 'browse' ? [item, categoriesItem, ...menuItems] : [item]))
   // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
   // only its brand, search and trailing buttons); the menu button folds it away, and narrower
