@@ -60,7 +60,7 @@ describe('native store index', () => {
       { kind: 'source', sourceType: 'package', id: 'no-hash', name: 'No hash', version: '1.0.0', url: 'https://x.test/p.izumi-ext', bytes: 1 },
       { kind: 'theme', id: 'http-theme', name: 'Insecure', version: '1.0.0', themeApi: 1, url: 'http://x.test/t.json', sha256: HASH, bytes: 1 },
       { kind: 'plugin', id: 'later', name: 'Later' },
-      { kind: 'pack', id: 'later-pack', name: 'Later' },
+      { kind: 'pack', id: 'no-file', name: 'No file', version: '1.0.0' },
       { kind: 'source', sourceType: 'future-type', id: 'future', name: 'Future' },
       { kind: 'widget', id: 'widget', name: 'Widget' },
       { kind: 'source', sourceType: 'stream-provider', id: 'dup', name: 'Dup', manifestUrl: 'https://x.test/a.json' },
@@ -68,7 +68,21 @@ describe('native store index', () => {
       'not an object',
     ]), STORE_URL, 's')
     expect(entries.map((entry) => entry.name)).toEqual(['Dup'])
-    expect(skipped).toBe(5)
+    expect(skipped).toBe(6)
+  })
+
+  it('lists packs with the file their review screen opens', () => {
+    const { entries, skipped } = parseNativeStore(store([
+      { kind: 'pack', id: 'example-pack', name: 'Example Pack', version: '1.0.0', author: 'Someone',
+        description: 'Sets izumi up.', url: 'packs/example-pack/pack.json', sha256: HASH, bytes: 4096 },
+      { kind: 'pack', id: 'too-big', name: 'Too big', version: '1.0.0', url: 'packs/big.json', sha256: HASH, bytes: 64_001 },
+      { kind: 'pack', id: 'no-version', name: 'No version', url: 'packs/x.json', sha256: HASH, bytes: 10 },
+    ]), STORE_URL, 's')
+    expect(skipped).toBe(2)
+    expect(entries).toEqual([expect.objectContaining({
+      key: 's:pack:example-pack', kind: 'pack', name: 'Example Pack', version: '1.0.0', author: 'Someone',
+      install: { type: 'pack', url: 'https://stores.example.test/izumi/packs/example-pack/pack.json', sha256: HASH, bytes: 4096 },
+    })])
   })
 
   it('holds native themes to the theme catalog rules', () => {

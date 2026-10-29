@@ -7,6 +7,11 @@
   affects both clients, make the TV-side change in the standalone repository and commit each
   repository independently.
 - Build and physical-TV deployment instructions live in the standalone repository's `AGENTS.md`.
+- Themes are published in `nickEatsBread/izumi-themes`, and plugins and packs in
+  `nickEatsBread/izumi-plugins`. Their validators copy `src/lib/themes/`,
+  `src-tauri/src/extension_package.rs` and `src/lib/packs/format.ts`: a format change here needs the
+  matching change there (see `docs/PLUGINS.md`). Theme, plugin and pack authors are pointed to those
+  repositories, not to this one.
 
 # Documentation
 

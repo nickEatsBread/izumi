@@ -5,13 +5,13 @@ import type { ThemeRelease } from '$lib/themes/packages'
 // §5-§6). Every store format is normalised into StoreEntry, so filtering, installing and rendering
 // never depend on which format a store was published in.
 
-/** Kinds a store may list. Plugins and packs are part of the format already so documents written
- *  today stay valid; this build installs SUPPORTED_STORE_KINDS and ignores the rest. */
+/** Kinds a store may list. Plugins are part of the format already so documents written today stay
+ *  valid; this build installs SUPPORTED_STORE_KINDS and ignores the rest. */
 export type StoreKind = 'plugin' | 'theme' | 'pack' | 'source'
 export type SourceType = 'stremio-addon' | 'torrent-provider' | 'stream-provider' | 'package'
 export type ContentType = 'anime' | 'movie' | 'series'
 
-export const SUPPORTED_STORE_KINDS: readonly StoreKind[] = ['theme', 'source']
+export const SUPPORTED_STORE_KINDS: readonly StoreKind[] = ['theme', 'source', 'pack']
 
 /** The community addon directory is searched on its server: a store without an index URL. */
 export const ADDON_DIRECTORY_ID = 'addon-directory'
@@ -22,6 +22,8 @@ export type InstallRef =
   | { type: 'extension'; spec: string }
   | { type: 'package'; pkg: ExtensionCatalogPackage }
   | { type: 'theme'; release: ThemeRelease }
+  /** Set up through the pack's review screen, which reads it from `url`. */
+  | { type: 'pack'; url: string; sha256: string; bytes: number }
 
 export interface StoreEntry {
   /** `${storeId}:${kind}:${id}` — unique across every loaded store. */

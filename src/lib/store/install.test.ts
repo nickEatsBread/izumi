@@ -38,6 +38,10 @@ const addon = (configureUrl?: string, manifestId?: string): StoreEntry => ({
 const pkg = { packageFormat: 'izumi-ext' as const, id: 'example.pkg', name: 'Example Package', version: '1', nsfw: false, sources: [], backend: 'izumi-js' as const, package: 'https://x.test/p.izumi-ext', packageSha256: 'a'.repeat(64), packageBytes: 1 }
 const packageEntry: StoreEntry = { ...base, key: 's:source:pkg', kind: 'source', sourceType: 'package', id: 'example.pkg', name: 'Example Package', install: { type: 'package', pkg } }
 const streamEntry: StoreEntry = { ...base, key: 's:source:stream', kind: 'source', sourceType: 'stream-provider', id: 'stream', name: 'Stream', install: { type: 'extension', spec: 'https://x.test/stream.json' } }
+const packEntry: StoreEntry = {
+  ...base, key: 's:pack:example.pack', kind: 'pack', id: 'example.pack', name: 'Example Pack',
+  install: { type: 'pack', url: 'https://x.test/packs/example.pack/pack.json', sha256: 'a'.repeat(64), bytes: 10 },
+}
 const themeEntry: StoreEntry = {
   ...base, key: 's:theme:test.cinema', kind: 'theme', id: 'test.cinema', name: 'Cinema',
   install: { type: 'theme', release: { id: 'test.cinema', name: 'Cinema', version: '1.0.0', author: 'T', description: '', themeApi: 2, tags: [], download: 'https://x.test/t.json', sha256: 'a'.repeat(64), bytes: 1 } },
@@ -136,6 +140,15 @@ describe('installStoreEntry', () => {
     expect(await installStoreEntry(themeEntry, { storeUrl: 'https://x.test/themes.json' }, vi.fn()))
       .toEqual({ kind: 'open-theme', path: '/app/settings/themes?store=s&theme=test.cinema' })
   })
+
+  it('sends packs to their review screen and changes nothing itself', async () => {
+    const installPackage = vi.fn()
+    expect(await installStoreEntry(packEntry, { storeUrl: 'https://x.test/store.json' }, installPackage))
+      .toEqual({ kind: 'open-pack', path: '/app/pack?url=https%3A%2F%2Fx.test%2Fpacks%2Fexample.pack%2Fpack.json' })
+    expect(installPackage).not.toHaveBeenCalled()
+    expect(Object.values(mocks.stores).every((store) => get(store).length === 0)).toBe(true)
+    await expect(installStoreEntry(packEntry, { storeUrl: 'https://x.test/store.json', locked: true }, installPackage)).rejects.toThrow('signing-key check')
+  })
 })
 
 describe('installedRef', () => {
@@ -157,6 +170,8 @@ describe('installedRef', () => {
     expect(installedRef(streamEntry, state, 'https://other.test/index.json')).toBeNull()
     expect(installedRef(themeEntry, state, 'https://x.test/themes.json')).toBe('test.cinema')
     expect(installedRef(themeEntry, state, 'https://other.test/themes.json')).toBeNull()
+    expect(installedRef(packEntry, state, 'https://x.test/store.json')).toBeNull()
+    expect(installedRef(packEntry, { ...state, packs: ['example.pack'] }, 'https://x.test/store.json')).toBe('example.pack')
   })
 
   it('matches an installed addon by manifest id only on its manifest host', () => {

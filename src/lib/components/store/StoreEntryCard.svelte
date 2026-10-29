@@ -25,6 +25,7 @@
 
   const action = $derived(entry.install.type === 'theme'
     ? 'Preview'
+    : entry.install.type === 'pack' ? 'Set up'
     : entry.install.type === 'addon' && entry.install.configureUrl ? 'Configure' : 'Install')
 </script>
 

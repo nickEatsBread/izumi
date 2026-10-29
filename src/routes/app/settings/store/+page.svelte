@@ -29,6 +29,7 @@
   import { adultSourcesAllowed, cancelHouseholdPrompt, lockAdultSources, requestAdultSources } from '$lib/profiles/household-gate'
   import { householdLocked } from '$lib/profiles/store'
   import { installedThemes } from '$lib/themes/installed'
+  import { installedPacks } from '$lib/packs/installed'
   import { newerVersion } from '$lib/themes/packages'
   import { BUILTIN_STORES, allStores, directoryEnabled, enabledStores } from '$lib/store/feeds'
   import { loadStoreAndPin } from '$lib/store/service'
@@ -41,11 +42,12 @@
   import { migrateCatalogStores } from '$lib/store/migrate'
   import { ADDON_DIRECTORY_ID, type SourceType, type StoreEntry } from '$lib/store/types'
 
-  type KindChip = 'all' | 'source' | 'theme'
+  type KindChip = 'all' | 'source' | 'theme' | 'pack'
   const KIND_CHIPS: { id: KindChip; label: string }[] = [
     { id: 'all', label: 'Everything' },
     { id: 'source', label: 'Sources' },
     { id: 'theme', label: 'Themes' },
+    { id: 'pack', label: 'Packs' },
   ]
   const SOURCE_CHIPS: { id: 'all' | SourceType; label: string }[] = [
     { id: 'all', label: 'All sources' },
@@ -124,6 +126,7 @@
     // Packages installed before origins existed may only be claimed by the stores frozen for them.
     legacyStores: legacyStoresFrom($legacyPackageStores, $extensionUrls),
     themes: $installedThemes.map((theme) => ({ id: theme.id, origin: theme.origin })),
+    packs: $installedPacks.map((pack) => pack.id),
   })
   const refOf = (entry: StoreEntry) => installedRef(entry, installedState, storeUrlById.get(entry.storeId) ?? '')
   const isInstalled = (entry: StoreEntry) => refOf(entry) !== null
@@ -347,7 +350,7 @@
         configuring = { name: outcome.name, id: outcome.id, configureUrl: outcome.configureUrl, currentBase: current && sameHost(outcome.configureUrl, current) ? current : undefined }
         // One dialog at a time: the controller's focus trap would stay in the sheet underneath.
         selected = null
-      } else if (outcome.kind === 'open-theme') {
+      } else if (outcome.kind === 'open-theme' || outcome.kind === 'open-pack') {
         await goto(outcome.path)
       } else {
         notice = outcome.message
@@ -404,7 +407,7 @@
   <div class="mb-5 max-w-5xl">
     <h2 data-settings-page-title class="text-xl font-black">Store</h2>
     <p class="mt-1 text-sm text-muted-foreground">
-      Sources and themes from izumi and from the stores you add. Third-party stores and community sources
+      Sources, themes and packs from izumi and from the stores you add. Third-party stores and community sources
       aren't reviewed by izumi; check their terms and privacy before use.
     </p>
   </div>
@@ -506,7 +509,8 @@
 
   <p class="mt-6 max-w-5xl text-xs text-muted-foreground">
     Sources you added by hand are on <a href="/app/settings/sources/manage" data-focusable class="font-bold text-theme">Sources</a>;
-    installed themes are on <a href="/app/settings/themes" data-focusable class="font-bold text-theme">Themes</a>.
+    installed themes are on <a href="/app/settings/themes" data-focusable class="font-bold text-theme">Themes</a>;
+    packs you set up are on <a href="/app/settings/sources" data-focusable class="font-bold text-theme">Sources</a>.
   </p>
 </div>
 
@@ -529,15 +533,16 @@
     {error}
     onclose={() => (selected = null)}
     oninstall={() => void install(entry)}
-    onremove={target.type === 'theme' || (target.type === 'extension' && ref !== target.spec) ? undefined : () => void remove(entry)}
-    ontoggle={target.type === 'theme' ? undefined : () => toggle(entry)}
+    onremove={target.type === 'theme' || target.type === 'pack' || (target.type === 'extension' && ref !== target.spec) ? undefined : () => void remove(entry)}
+    ontoggle={target.type === 'theme' || target.type === 'pack' ? undefined : () => toggle(entry)}
     settingsLabel={target.type === 'addon' ? 'Reconfigure' : 'Settings'}
     onsettings={target.type === 'addon' && target.configureUrl && ref && sameHost(target.configureUrl, ref)
       ? () => { configuring = { name: entry.name, id: target.manifestId ?? entry.id, configureUrl: target.configureUrl ?? '', currentBase: ref }; selected = null }
       : target.type === 'package' && installedPackages.find((item) => item.id === ref)?.backend === 'izumi-service'
         ? () => { serviceSettings = { id: target.pkg.id, name: entry.name }; selected = null }
         : undefined}
-    onmanage={target.type === 'theme' ? () => void goto('/app/settings/themes') : undefined}
+    onmanage={target.type === 'theme' ? () => void goto('/app/settings/themes')
+      : target.type === 'pack' ? () => void goto('/app/settings/sources') : undefined}
   />
 {/if}
 

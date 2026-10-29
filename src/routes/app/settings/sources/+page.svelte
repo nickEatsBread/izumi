@@ -69,7 +69,7 @@
   </SettingsSubcategory>
 
   <SettingsSubcategory id="store">
-    <SettingsRow title="Store" description="Find sources, packages and themes to install" href="/app/settings/store" chevron />
+    <SettingsRow title="Store" description="Find sources, themes and packs to install" href="/app/settings/store" chevron />
     <SettingsRow title="Plugins (beta)" description="Add features, like asking the player to find a moment" href="/app/settings/plugins" chevron />
     <PacksSettings />
   </SettingsSubcategory>

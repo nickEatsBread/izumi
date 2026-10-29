@@ -23,10 +23,15 @@ export interface StoreFeed {
   builtin?: boolean
 }
 
+/** The reviewed plugin marketplace: plugins and packs pinned to commits of their authors'
+ *  repositories that passed its checks and a virus scan. */
+export const PLUGIN_STORE_URL = 'https://raw.githubusercontent.com/nickEatsBread/izumi-plugins/main/store.json'
+
 /** izumi's own stores. They list; they never install anything by themselves. */
 export const BUILTIN_STORES: readonly StoreFeed[] = [
   { id: 'izumi-packages', url: OFFICIAL_ANIME_CATALOG, name: 'izumi packages', enabled: true, addedAt: 0, builtin: true },
   { id: 'izumi-themes', url: THEME_CATALOG_URL, name: 'izumi themes', enabled: true, addedAt: 0, builtin: true },
+  { id: 'izumi-plugins', url: PLUGIN_STORE_URL, name: 'izumi plugins', enabled: true, addedAt: 0, builtin: true },
 ]
 export const MAX_USER_STORES = 50
 

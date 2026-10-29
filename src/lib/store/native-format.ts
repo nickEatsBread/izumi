@@ -1,4 +1,5 @@
 import type { IzumiCatalogPackage } from '$lib/extensions/catalog'
+import { MAX_PACK_BYTES } from '$lib/packs/format'
 import { parseRelease, type ThemeRelease } from '$lib/themes/packages'
 import { SUPPORTED_STORE_KINDS, type ContentType, type SourceType, type StoreEntry, type StoreKind } from './types'
 import { canonicalStoreUrl } from './url'
@@ -118,7 +119,7 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string, platform: 
   const e = item as Record<string, unknown>
   if (typeof e.kind !== 'string' || !KINDS.includes(e.kind as StoreKind)) return 'ignored'
   const kind = e.kind as StoreKind
-  // Kinds later phases install (plugins, packs) are part of the format but not listed yet.
+  // Plugins are part of the format but not listed yet.
   if (!SUPPORTED_STORE_KINDS.includes(kind)) return 'ignored'
   const id = validId(e.id) ? e.id : undefined
   const name = text(e.name, 64)
@@ -171,6 +172,14 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string, platform: 
       description: release.description,
       install: { type: 'theme', release },
     }
+  }
+  if (kind === 'pack') {
+    // The pack review screen downloads the pack itself; the listing pins which file that is.
+    const url = httpsUrl(e.url, storeUrl)
+    const sha256 = sha(e.sha256)
+    const bytes = positive(e.bytes)
+    if (!url || !sha256 || !bytes || bytes > MAX_PACK_BYTES || !common.version) return null
+    return { ...common, key: `${storeId}:pack:${id}`, kind, install: { type: 'pack', url, sha256, bytes } }
   }
   const sourceType = typeof e.sourceType === 'string' && SOURCE_TYPES.includes(e.sourceType as SourceType)
     ? e.sourceType as SourceType
