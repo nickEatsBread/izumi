@@ -178,14 +178,26 @@ export async function offerSetupToDevice(endpointId: string): Promise<void> {
 
 type SyncCategory = "watch" | "manual" | "presence" | "companion" | "profiles" | `watch-${string}`
 
-async function write(category: SyncCategory, payload: string) {
-  if (get(syncProvider) === 'cloudflare') return writeCloudflareRecord(category, payload)
-  await invoke("sync_write", { category, payload });
+/** Resolves with the written payload's content hash under device sync. */
+async function write(category: SyncCategory, payload: string): Promise<string | undefined> {
+  if (get(syncProvider) === 'cloudflare') { await writeCloudflareRecord(category, payload); return undefined }
+  return invoke<string>("sync_write", { category, payload });
 }
 
-async function read(category: SyncCategory) {
+/** `skip`: content hashes already merged here, which device sync leaves out of the answer. */
+async function read(category: SyncCategory, skip: string[] = []) {
   if (get(syncProvider) === 'cloudflare') return readCloudflareRecords(category)
-  return invoke<SyncRecord[]>("sync_read", { category });
+  return invoke<SyncRecord[]>("sync_read", { category, skip });
+}
+
+// The watch records already merged here (and this device's own last one), by device: each is over
+// a megabyte, and receiving and merging all of them again held the page for a frame of ~170 ms on
+// every launch even when no device had watched anything since. Kept per category and per whether
+// history was merged too, so connecting or leaving a tracker merges them again.
+const mergedWatchRecords = persisted<Record<string, Record<string, string>>>("sync-merged-watch-v1", {});
+const mergedKey = (category: string, includeHistory: boolean) => `${category}:${includeHistory ? 'history' : 'positions'}`
+function rememberMerged(key: string, deviceId: string, hash: string | undefined) {
+  if (hash) mergedWatchRecords.update((all) => ({ ...all, [key]: { ...all[key], [deviceId]: hash } }));
 }
 
 /** Materialized TV data follows whichever sync provider owns this group; provider/catalog
@@ -265,7 +277,8 @@ export async function pushWatchProgress(): Promise<boolean> {
   }
   const payload = { ...exportWatchBundle({ includeHistory: !trackersOwnProgress() }), exportedAt: 0, profileId: syncProfileId }
   if (get(activeProfileId) !== syncProfileId || get(companionRestorePending) || get(activeProfileLocked) || get(profileSwitcherOpen)) return false
-  await write(watchCategory(syncProfileId) as SyncCategory, JSON.stringify(payload));
+  const written = await write(watchCategory(syncProfileId) as SyncCategory, JSON.stringify(payload))
+  rememberMerged(mergedKey(watchCategory(syncProfileId), !trackersOwnProgress()), status.endpointId, written)
   watchSyncError.set('')
   return true;
 }
@@ -293,13 +306,16 @@ export async function pullWatchProgress(): Promise<number> {
   }
   if (get(activeProfileId) !== syncProfileId || get(companionRestorePending) || get(activeProfileLocked) || get(profileSwitcherOpen)) return 0
   const includeHistory = !trackersOwnProgress();
-  for (const record of await read(watchCategory(syncProfileId) as SyncCategory)) {
+  const category = watchCategory(syncProfileId)
+  const mergedAs = mergedKey(category, includeHistory)
+  for (const record of await read(category as SyncCategory, Object.values(get(mergedWatchRecords)[mergedAs] ?? {}))) {
     if (get(activeProfileId) !== syncProfileId || get(companionRestorePending) || get(activeProfileLocked) || get(profileSwitcherOpen)) return imported
     try {
       if (!watchPayloadForProfile(record.payload, syncProfileId)) continue
       const merged = importJson(record.payload, { includeHistory });
       imported += merged.imported + merged.positionsImported + merged.originsImported
         + merged.episodeOriginsImported + merged.sceneBookmarksImported;
+      rememberMerged(mergedAs, record.deviceId, record.hash)
     } catch {
       /* skip malformed peer record */
     }

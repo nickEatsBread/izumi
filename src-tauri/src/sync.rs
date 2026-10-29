@@ -135,6 +135,9 @@ impl NearbyDiscovery {
 pub struct SyncRecord {
     device_id: String,
     payload: String,
+    /// The payload's content hash: a caller that has already merged this exact payload passes it
+    /// back in `sync_read`'s `skip`.
+    hash: String,
 }
 
 /// What an advertising device is actually offering. The two windows are mutually exclusive — a
@@ -1528,7 +1531,7 @@ pub async fn sync_write(
     category: String,
     payload: String,
     state: tauri::State<'_, SyncState>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     validate_category(&category).map_err(|e| e.to_string())?;
     if payload.len() > MAX_PAYLOAD_BYTES {
         return Err("sync payload is too large".into());
@@ -1541,20 +1544,24 @@ pub async fn sync_write(
         return Err("sync is not ready".into());
     };
     let key = format!("{category}/{}", runtime.endpoint_id).into_bytes();
-    runtime
+    let hash = runtime
         .doc()
         .map_err(|e| e.to_string())?
         .set_bytes(runtime.author, key, payload.into_bytes())
         .await
         .map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(hash.to_string())
 }
 
 #[tauri::command]
 pub async fn sync_read(
     category: String,
+    skip: Option<Vec<String>>,
     state: tauri::State<'_, SyncState>,
 ) -> Result<Vec<SyncRecord>, String> {
+    // Records whose exact payload the caller has already merged are left out: three devices' watch
+    // records were 4 MB that the page received, parsed and merged again on every launch.
+    let skip = skip.unwrap_or_default();
     validate_category(&category).map_err(|e| e.to_string())?;
     let guard = state.inner.lock().await;
     let RuntimeState::Ready(runtime) = &*guard else {
@@ -1570,6 +1577,10 @@ pub async fn sync_read(
     while let Some(entry) = entries.next().await {
         let entry = entry.map_err(|e| e.to_string())?;
         let key = String::from_utf8(entry.key().to_vec()).map_err(|_| "invalid sync record key")?;
+        let hash = entry.content_hash().to_string();
+        if skip.contains(&hash) {
+            continue;
+        }
         // A peer's key replicates before its content does, and that content never
         // arrives if the peer leaves the group first. Skip those entries so one
         // unreadable record cannot discard every other device's records too.
@@ -1586,6 +1597,7 @@ pub async fn sync_read(
             records.push(SyncRecord {
                 device_id: device_id.to_string(),
                 payload,
+                hash,
             });
         }
     }
