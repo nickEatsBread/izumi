@@ -94,6 +94,7 @@ describe('outside-press closers', () => {
     'lib/nav/input.ts', // pointer modality; exempts a touch on the keys itself
     'lib/nav/osk.ts', // the keyboard's own outside-press close
     'lib/player/gm-touch-watchdog.ts', // Game-mode touch survival
+    'lib/util/image-warm.ts', // notes when the viewer pressed, so Home's background work waits; closes nothing
   ]
   const NINE = [
     'lib/components/catalog/CatalogSwitcher.svelte',
