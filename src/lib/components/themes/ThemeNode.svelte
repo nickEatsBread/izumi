@@ -23,6 +23,7 @@
   import Captions from '@lucide/svelte/icons/captions'
   import Mic from '@lucide/svelte/icons/mic'
   import List from '@lucide/svelte/icons/list'
+  import { fadeOnLoad } from '$lib/motion/tween'
   let { node, model: boundModel, actions = {}, eager = false, titleHeading = false, trailer }: { node: ThemeNode; model: DisplayModel; actions?: Partial<Record<ThemeAction, () => void>>; eager?: boolean; titleHeading?: boolean; trailer?: Snippet } = $props()
   // Artwork that fails to load counts as absent, so `when: { field: "logo", absent: true }` shows the
   // title instead of a broken image. Keyed by URL: the next slide's artwork starts fresh.
@@ -53,7 +54,8 @@
       <!-- Eager = the banner, whose artwork is decoded before each step: decoded in the first paint,
            the outgoing slide's copy never shows the slide under it while its art decodes. -->
       <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item)} data-part={item.part}>
-        {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding={eager ? 'sync' : 'async'} onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
+        {#if src && eager}<img src={String(src)} alt="" draggable="false" loading="eager" decoding="sync" onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />
+        {:else if src}<img src={String(src)} alt="" draggable="false" loading="lazy" decoding="async" use:fadeOnLoad onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
       </div>
     {:else if item.type === 'action'}
       <!-- API 4 `studio` (the series header and facts): the main studio's name as a button, there only

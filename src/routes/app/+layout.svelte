@@ -73,6 +73,7 @@
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { bottomBarRoom, bottomNavSuppressed, sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import { resetScrollChrome, startScrollChrome } from '$lib/components/shell/scroll-chrome'
+  import { trackFocusProgress } from '$lib/motion/tween'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -626,6 +627,9 @@
     dock: androidMiniPlayer,
   }))
   afterNavigate(() => resetScrollChrome())
+  // `--izumi-focus` on the focused control, for themes to tween their focus look from (Game mode cannot
+  // use CSS transitions: WebKitGTK blinks when one ends).
+  onMount(() => trackFocusProgress())
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />

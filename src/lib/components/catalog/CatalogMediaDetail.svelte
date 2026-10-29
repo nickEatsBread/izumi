@@ -395,6 +395,7 @@
        episodes. The card that opened it (a detail hint) lends its art, blurred, and its title. -->
   {@const hint = $detailHints[compatibilityMediaId(ref)]}
   {@const hintArt = hint ? banner(hint) || cover(hint) : ''}
+  {@const hintSynopsis = hint ? parseCatalogDescription(hint.description).synopsis : ''}
   <div data-slot="detail.skeleton" class="min-h-screen">
     <div data-part="detail.skeleton.banner" class="relative h-[52vh] overflow-hidden skeloader">
       {#if hintArt}<img src={hintArt} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />{/if}
@@ -406,9 +407,14 @@
         {:else}
           <div data-part="detail.skeleton.title" class="mb-3 h-10 w-80 max-w-full rounded skeloader"></div>
         {/if}
-        {#each ['w-[28rem]', 'w-[24rem]', 'w-[18rem]'] as width (width)}
-          <div data-part="detail.skeleton.line" class="mb-2 h-3.5 max-w-full rounded skeloader {width}"></div>
-        {/each}
+        <!-- The card's synopsis shows at once, as the information arrives before the episodes. -->
+        {#if hintSynopsis}
+          <p data-part="detail.skeleton.synopsis" class="mb-2 line-clamp-3 max-w-xl whitespace-pre-line text-sm leading-relaxed text-foreground/80 sm:text-base">{hintSynopsis}</p>
+        {:else}
+          {#each ['w-[28rem]', 'w-[24rem]', 'w-[18rem]'] as width (width)}
+            <div data-part="detail.skeleton.line" class="mb-2 h-3.5 max-w-full rounded skeloader {width}"></div>
+          {/each}
+        {/if}
         <div data-part="detail.skeleton.button" class="mt-5 h-12 w-44 rounded-lg skeloader"></div>
       </div>
     </div>
@@ -661,7 +667,7 @@
         {#if episodeCard}
           <div data-part="episodes.grid" class="grid select-none {episodeArrangement === 'list' ? 'grid-cols-1 gap-2' : 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
             {#each seasonVideos as video (video.id ?? video.number)}
-              <button type="button" data-part="episode" data-variant="template" data-episode={video.number} data-download={downloadState(video)} data-focusable onclick={() => play(video)} title={`Play — ${video.title || `Episode ${video.number}`}`}
+              <button type="button" data-part="episode" data-variant="template" data-episode={video.number} data-watched={video.watched ? '' : undefined} data-download={downloadState(video)} data-focusable onclick={() => play(video)} title={`Play — ${video.title || `Episode ${video.number}`}`}
                       class="theme-episode relative flex w-full min-w-0 select-none overflow-hidden bg-secondary text-left {episodeArrangement === 'list' ? 'rounded-sm' : 'flex-col rounded-xl sm:rounded-lg'}">
                 <ThemeNode node={episodeCard} model={episodeModel(video)} />
                 {@render downloadBadge(video)}
