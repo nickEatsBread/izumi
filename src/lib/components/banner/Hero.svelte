@@ -418,7 +418,8 @@
     const colors = new WeakMap<HTMLElement, string>()
     const paint = () => {
       const progress = Math.min(1, (performance.now() - start) / DURATION)
-      for (const bar of document.querySelectorAll<HTMLElement>('[data-slot="home.hero"] .hero-progress')) {
+      // Searched inside the banner only: a whole-document search each frame grew with every Home row.
+      for (const bar of document.querySelector('[data-slot="home.hero"]')?.querySelectorAll<HTMLElement>('.hero-progress') ?? []) {
         // Scrolled out of view: a write would still cost a full-screen composite.
         if (bar.getBoundingClientRect().bottom <= 0) continue
         const edge = Math.round(progress * bar.offsetWidth * 4) / 4
