@@ -74,7 +74,8 @@ export function sourceCatalogName(selection: SourceSelection): string {
 // Live bases by package and by base, so the Stremio provider can map either way. A manifest is
 // re-read after a minute: its rows change once the viewer signs in to the source.
 const MANIFEST_TTL_MS = 60_000
-const live = new Map<string, { job: Promise<SourceAddon>; at: number }>()
+interface LiveAddon { job: Promise<SourceAddon>; at: number; ready: boolean }
+const live = new Map<string, LiveAddon>()
 const byBase = new Map<string, string>()
 
 /** The origin id for a base the Stremio provider is about to tag titles with. */
@@ -93,11 +94,31 @@ async function json<T>(url: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
-/** Starts the source's service if needed and reads its catalog manifest. */
+/** Starts the source's service if needed and reads its catalog manifest. A manifest read before
+ *  keeps answering while the fresh one is read: a play waited for the source to rebuild it (0.4 s
+ *  on the Steam Deck) whenever the last read was over a minute old. */
 export function sourceAddon(packageId: string): Promise<SourceAddon> {
   const existing = live.get(packageId)
   if (existing && Date.now() - existing.at < MANIFEST_TTL_MS) return existing.job
-  const job = (async () => {
+  const stale: LiveAddon | undefined = existing?.ready ? { ...existing, at: Date.now() } : undefined
+  const fresh: LiveAddon = { job: readSourceAddon(packageId), at: Date.now(), ready: false }
+  fresh.job.then(
+    () => {
+      fresh.ready = true
+      if (stale && live.get(packageId) === stale) live.set(packageId, fresh)
+    },
+    // A failure or a restarted service (new port) must not stick for the session, stale copy included.
+    () => {
+      const current = live.get(packageId)
+      if (current === fresh || current === stale) live.delete(packageId)
+    },
+  )
+  live.set(packageId, stale ?? fresh)
+  return (stale ?? fresh).job
+}
+
+function readSourceAddon(packageId: string): Promise<SourceAddon> {
+  return (async () => {
     const { ensureExtensionService } = await import('$lib/extensions/manager')
     const indexUrl = await ensureExtensionService(packageId)
     const index = await json<{ catalog?: unknown; name?: unknown }>(indexUrl)
@@ -111,10 +132,6 @@ export function sourceAddon(packageId: string): Promise<SourceAddon> {
     byBase.set(base, packageId)
     return { packageId, base, originId: sourceOriginId(packageId), manifest }
   })()
-  live.set(packageId, { job, at: Date.now() })
-  // A failure or a restarted service (new port) must not stick for the session.
-  job.catch(() => { if (live.get(packageId)?.job === job) live.delete(packageId) })
-  return job
 }
 
 /** Forget a source's live base (its service restarted or was removed). */
