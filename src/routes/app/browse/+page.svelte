@@ -110,6 +110,17 @@
   const retry = () => { error = ''; void more() }
 
   let results = $state<HTMLElement>()
+  // With a pad, the page lands on its first result once one shows (from the drawer or a category),
+  // rather than on nothing, which left the first press only picking something up.
+  let landed = false
+  $effect(() => {
+    if (landed || !$gameMode || !feed?.media.length) return
+    landed = true
+    requestAnimationFrame(() => {
+      if (document.activeElement && document.activeElement !== document.body) return
+      results?.querySelector<HTMLElement>('[data-focusable]')?.focus({ preventScroll: true })
+    })
+  })
   async function choose(next: { sort?: string; genre?: string }) {
     // A bumper switch from inside the grid: the focused card is about to go, so focus moves to the lit pill.
     const fromGrid = !!results?.contains(document.activeElement)
