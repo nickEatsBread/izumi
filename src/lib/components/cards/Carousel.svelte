@@ -134,7 +134,8 @@
     void grid
     void appearance
     if (!scroller) return
-    update()
+    // No first update() here: the ResizeObserver reports the size as soon as the row is laid out,
+    // where measuring is free; measuring now forced a layout of a Home still being built.
     const ro = new ResizeObserver(update)
     ro.observe(scroller)
     const mo = new MutationObserver(update)

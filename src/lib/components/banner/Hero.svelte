@@ -436,7 +436,9 @@
       cancelAnimationFrame(frame)
       start = performance.now()
       if (document.hidden || get(playing) || get(androidMpvActive)) return
-      paint()
+      // On the next frame, not now: Home is still being built here, and the bar's measuring forced a
+      // whole layout of it in the middle (143 ms of a 0.4 s Back to Home on the Deck).
+      frame = requestAnimationFrame(paint)
     }
     restart()
     document.addEventListener('visibilitychange', restart)
