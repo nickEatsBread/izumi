@@ -16,6 +16,7 @@
   import { resolveSections } from '$lib/detail/sections'
   import CatalogSourceAttribution from './CatalogSourceAttribution.svelte'
   import { loadCatalogProvider } from '$lib/catalog/registry'
+  import { takePrefetchedDetail } from '$lib/catalog/detail-prefetch'
   import { CatalogConfigurationError } from '$lib/catalog/types'
   import type { CatalogContentType, CatalogProviderId, MediaRef } from '$lib/catalog/identity'
   import { anilistIdOf, compatibilityMediaId, providerExternalUrl } from '$lib/catalog/identity'
@@ -101,7 +102,7 @@
     tmdbNeedsConfiguration = false
     media = null
     sourceListed = undefined
-    void loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal)).then((result) => {
+    void (takePrefetchedDetail(request) ?? loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal))).then((result) => {
       if (!abort.signal.aborted) media = result
     }).catch((reason) => {
       if (!abort.signal.aborted) {

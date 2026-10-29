@@ -53,6 +53,7 @@
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
   import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, customScreens, enabledCatalogProviders, isMergedScreen, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
   import { afterNavigate, beforeNavigate, goto, preloadCode } from '$app/navigation'
+  import { prefetchDetail, titleRefFromPath } from '$lib/catalog/detail-prefetch'
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -394,18 +395,24 @@
   onMount(() => installSystemBack())
   // A link the d-pad or Tab lands on starts loading its page's code, as a hover does for a mouse
   // (data-sveltekit-preload-data on <body>): by the press, the page is ready to open at once.
+  // A title's card that keeps focus for a moment also fetches its details (detail-prefetch.ts).
   onMount(() => {
     const preloaded = new Set<string>()
+    let dwell: ReturnType<typeof setTimeout> | undefined
     const preload = (event: FocusEvent) => {
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null
       if (!link) return
       const url = new URL(link.href, location.href)
-      if (url.origin !== location.origin || preloaded.has(url.pathname)) return
+      if (url.origin !== location.origin) return
+      const title = titleRefFromPath(url.pathname)
+      clearTimeout(dwell)
+      if (title) dwell = setTimeout(() => { if (link.contains(document.activeElement)) prefetchDetail(title) }, 350)
+      if (preloaded.has(url.pathname)) return
       preloaded.add(url.pathname)
       void preloadCode(url.pathname).catch(() => {})
     }
     window.addEventListener('focusin', preload)
-    return () => window.removeEventListener('focusin', preload)
+    return () => { clearTimeout(dwell); window.removeEventListener('focusin', preload) }
   })
   // Each page's code brings its stylesheet, and adding one restyles the whole page: on the Deck the
   // first card focused on Home froze two frames (0.22 s and 0.37 s) as the title page's code arrived.
