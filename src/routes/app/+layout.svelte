@@ -714,7 +714,7 @@
           <p class="truncate px-3 py-2 text-xs text-white/80">Connecting</p>
         </div>
       {:else}
-        <PlayFeedback label={$connecting?.title ?? ''} art={$connecting?.art ?? ''} />
+        <PlayFeedback variant="player" label={$connecting?.title ?? ''} />
       {/if}
     {/snippet}
   </Lazy>

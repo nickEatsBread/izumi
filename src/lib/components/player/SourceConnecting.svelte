@@ -7,6 +7,7 @@
   // covers every route into playback, and the caching screen is left to mean what it says.
   import { connecting, debridCaching, gameMode, playing } from '$lib/player/session'
   import SourceLoader from './SourceLoader.svelte'
+  import Spinner from '$lib/components/Spinner.svelte'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
   import { fade } from 'svelte/transition'
   import { isAndroid } from '$lib/platform'
@@ -14,7 +15,13 @@
   import { motion } from '$lib/motion/gm-motion'
 
   const c = $derived($connecting)
-  const backdrop = $derived(c?.art ?? '')
+  // Past two seconds the loader names what it is waiting on.
+  let slow = $state(false)
+  $effect(() => {
+    if (!c) { slow = false; return }
+    const timer = setTimeout(() => (slow = true), 2_000)
+    return () => { clearTimeout(timer); slow = false }
+  })
 </script>
 
 <!-- Yields to the caching screen: once that is up, debrid genuinely is the wait, and two
@@ -42,23 +49,25 @@
     </div>
   </div>
   {:else}
+  <!-- The episode is opening: the player's own loader from the press, the one ring on black where the
+       player's (and mpv's, in Game mode) appears, so nothing changes until the picture. A separate
+       "Connecting" screen with its own art, title and caption read as a stop on the way. -->
   <div
     data-slot="play.connecting"
+    data-variant="player"
     class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
     onclick={() => c?.cancel()}
     onkeydown={(e) => e.key === 'Escape' && c?.cancel()}
-    role="presentation"
+    role="status"
+    aria-label={`Opening ${c.title}`}
     transition:fade={{ duration: $gameMode ? 0 : 160 }}
   >
-    {#if backdrop}
-      <!-- Desktop blurs this static image. Game mode's loading-backdrop rule removes the filter:
-           animating over a full-screen filtered layer makes Deck WebKit repaint it every frame. -->
-      <img data-part="play.backdrop" src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
+    <button data-focusable data-part="play.connecting.back" onclick={(e) => { e.stopPropagation(); c?.cancel() }} class="absolute left-6 top-6 z-10 grid size-11 place-items-center rounded-full bg-black/40 text-xl text-white/85 transition-colors hover:bg-white/20 hover:text-white" aria-label="Back">‹</button>
+    <div data-part="play.loader" class="grid place-items-center" aria-hidden="true"><Spinner size="player" /></div>
+    <!-- A long wait (add-on searches, a slow source) says what it is waiting on, under the ring. -->
+    {#if slow && c.detail}
+      <p data-part="play.loader.detail" class="pointer-events-none absolute inset-x-0 top-1/2 mt-16 truncate px-8 text-center text-sm text-white/60">{c.detail}</p>
     {/if}
-    <button data-focusable onclick={(e) => { e.stopPropagation(); c?.cancel() }} class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white" aria-label="Close">✕</button>
-    <div class="relative" onclick={(e) => e.stopPropagation()} role="presentation">
-      <SourceLoader title={c.title} caption="Connecting" detail={c.detail} onCancel={c.cancel} />
-    </div>
   </div>
   {/if}
 {/if}

@@ -14,13 +14,22 @@
   // keeps one wall-clock turn across mounts, carries on without a jump.
   import Spinner from './Spinner.svelte'
 
-  let { label, caption = 'Connecting', art = '' }: {
+  let { label, caption = 'Connecting', art = '', variant = 'picker' }: {
     label: string
     caption?: string
     // Passed in by the layout, which already holds the connecting state.
     art?: string
+    /** `player`: the episode is opening, so this is the player's own loader (SourceConnecting's), the
+     *  ring alone on black. `picker`: the source picker's, with the title and caption. */
+    variant?: 'picker' | 'player'
   } = $props()
 </script>
+
+{#if variant === 'player'}
+  <div data-slot="play.connecting" data-variant="player" class="fixed inset-0 z-50 grid place-items-center bg-black" role="status" aria-label={label ? `Opening ${label}` : 'Opening'}>
+    <div data-part="play.loader" class="grid place-items-center" aria-hidden="true"><Spinner size="player" /></div>
+  </div>
+{:else}
 
 <!-- Same z-index band and same opaque black as the overlays it precedes, so nothing renders on top
      of it and the real screen replaces this in place with no brightness pop. -->
@@ -40,3 +49,4 @@
     <p data-part="play.loader.caption" class="row-start-3 self-start text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
   </div>
 </div>
+{/if}

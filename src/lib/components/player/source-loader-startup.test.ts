@@ -17,7 +17,18 @@ describe('connecting loader startup', () => {
       expect(screen).toContain('data-part="play.loader.bar" class="row-start-2')
     }
     expect(spinner).not.toContain('<animate')
-    expect(spinner).toContain('class="shrink-0 animate-spin will-change-transform')
+    expect(spinner).toContain('class="block shrink-0 animate-spin rounded-full will-change-transform')
+  })
+
+  it('opens an episode on the player's own loader, the ring alone on black, from the press', () => {
+    // A "Connecting" screen with its own art, title and caption read as a stop on the way.
+    const connecting = read('./SourceConnecting.svelte')
+    const opening = connecting.slice(connecting.indexOf('data-variant="player"'))
+    expect(opening).toContain('<div data-part="play.loader" class="grid place-items-center" aria-hidden="true"><Spinner size="player" /></div>')
+    expect(opening).not.toContain('play.backdrop')
+    expect(opening).not.toContain('<SourceLoader')
+    expect(feedback).toContain('{#if variant === 'player'}')
+    expect(read('../../../routes/app/+layout.svelte')).toContain('<PlayFeedback variant="player" label={$connecting?.title ?? ''} />')
   })
 
   it('commits the loader without charging playback two animation frames', () => {
