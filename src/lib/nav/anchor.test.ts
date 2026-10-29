@@ -315,13 +315,48 @@ describe('anchored rows', () => {
     expect(track('a').scrollLeft).toBe(330)
   })
 
-  it('a held repeat and reduced motion jump', () => {
+  it('a held repeat glides after its focus, keeping its speed through the next repeat', () => {
+    button('a1').focus()
+    press('ArrowRight', true)
+    expect(document.activeElement).toBe(button('a2'))
+    // A spring, not a jump: part of the way on the first frame, never past the card.
+    frame(0)
+    const steps: number[] = []
+    let previous = 0
+    const run = (from: number, to: number, limit: number) => {
+      for (let t = from; t <= to; t += 16) {
+        frame(t)
+        const left = track('a').scrollLeft
+        expect(left).toBeGreaterThanOrEqual(previous)
+        expect(left).toBeLessThanOrEqual(limit)
+        steps.push(left - previous)
+        previous = left
+      }
+    }
+    expect(track('a').scrollLeft).toBeGreaterThan(0)
+    expect(track('a').scrollLeft).toBeLessThan(660)
+    previous = track('a').scrollLeft
+    run(16, 48, 660)
+    // The next repeat moves the target on; the track does not slow down to start over.
+    layOut(-1, track('a').scrollLeft)
+    press('ArrowRight', true)
+    expect(document.activeElement).toBe(button('a3'))
+    const before = steps.at(-1)!
+    run(64, 64, 990)
+    expect(steps.at(-1)!).toBeGreaterThan(before)
+    run(80, 1000, 990)
+    expect(track('a').scrollLeft).toBe(990)
+    expect(frames.size).toBe(0)
+    expect(trackScrolls.get(track('a'))!.every((options) => options.behavior === 'instant')).toBe(true)
+  })
+
+  it('reduced motion jumps', () => {
+    document.documentElement.dataset.motion = 'reduced'
     button('a1').focus()
     press('ArrowRight', true)
     expect(track('a').scrollLeft).toBe(660)
     expect(frames.size).toBe(0)
 
-    document.documentElement.dataset.motion = 'reduced'
     press('ArrowDown')
     expect(document.activeElement).toBe(button('b2'))
     expect(pageY).toBe(900 - 72 - 16)

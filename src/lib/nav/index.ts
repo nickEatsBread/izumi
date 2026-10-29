@@ -9,7 +9,7 @@ import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
 import { isTextEntryField } from './text-field'
 import { navEpoch, navInFlight } from './nav-state'
-import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorScrollLeft, anchorScrollTop, animateScroll, stopAllScrolls, stopScroll } from './anchor'
+import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorScrollLeft, anchorScrollTop, animateScroll, chaseScroll, isChasing, stopAllScrolls, stopScroll } from './anchor'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -408,7 +408,7 @@ const REVEAL_SCROLL_MS = 450
  *  smooth scrollTo paints frames with whole rows missing (a black flash on about one press in four).
  *  So 'smooth' eases here, one instant write a frame, as anchored rows do; anything else jumps at
  *  once ('instant': the page's scroll-behavior: smooth would turn 'auto' into WebKit's own). */
-function scrollByExact(target: RevealScrollTarget, top: number, left: number, behavior: ScrollBehavior): void {
+function scrollByExact(target: RevealScrollTarget, top: number, left: number, behavior: ScrollBehavior, chase = false): void {
   const vertical = left === 0
   const el = target instanceof HTMLElement ? target : null
   const get = vertical ? () => el?.scrollTop ?? window.scrollY : () => el?.scrollLeft ?? window.scrollX
@@ -422,7 +422,8 @@ function scrollByExact(target: RevealScrollTarget, top: number, left: number, be
     const [x, y] = el ? [el.scrollLeft, el.scrollTop] : [window.scrollX, window.scrollY]
     target.scrollTo(vertical ? { top: value, left: x, behavior: 'instant' } : { left: value, top: y, behavior: 'instant' })
   }
-  animateScroll(target, get, set, to, behavior === 'smooth' ? REVEAL_SCROLL_MS : 0)
+  if (chase) chaseScroll(target, get, set, to)
+  else animateScroll(target, get, set, to, behavior === 'smooth' ? REVEAL_SCROLL_MS : 0)
 }
 
 function runControllerScroll(
@@ -431,8 +432,9 @@ function runControllerScroll(
   request: () => void,
 ): void {
   const now = performance.now()
-  // An anchored row's eased scroll (runAnchorScroll) would keep writing over this one each frame.
-  stopScroll(target)
+  // An anchored row's eased scroll (runAnchorScroll) would keep writing over this one each frame. A
+  // held direction's chase keeps its speed: the next step retargets it, or replaces it.
+  if (!isChasing(target)) stopScroll(target)
   if ((controllerScrollUntil.get(target) ?? 0) > now) abortOngoingScroll(target)
   request()
   if (behavior === 'smooth') controllerScrollUntil.set(target, now + CONTROLLER_SMOOTH_WINDOW_MS)
@@ -442,10 +444,11 @@ function runControllerScroll(
 /** runControllerScroll for an anchored row's own eased scroll (nav/anchor.ts): a native smooth
  *  scroll still running on `target` is stopped where it is first, and its window closes, since the
  *  frames that follow are instant writes that nothing needs to abort. */
-function runAnchorScroll(target: RevealScrollTarget, get: () => number, set: (value: number) => void, to: number, ms: number): void {
+function runAnchorScroll(target: RevealScrollTarget, get: () => number, set: (value: number) => void, to: number, ms: number, chase = false): void {
   if ((controllerScrollUntil.get(target) ?? 0) > performance.now()) abortOngoingScroll(target)
   controllerScrollUntil.delete(target)
-  animateScroll(target, get, set, to, ms)
+  if (chase) chaseScroll(target, get, set, to)
+  else animateScroll(target, get, set, to, ms)
 }
 
 /** `--theme-shell-top` (the top bar's height) in viewport px: a fixed, invisible probe, measured and
@@ -497,12 +500,13 @@ function settlingShrink(item: HTMLElement, track: HTMLElement): number {
 /** Anchored rows (`data-row-focus="anchor"`, a theme's `rows.*.focus`; the Netflix TV model): a
  *  sideways move slides the track until the focused card sits where the first card rests (clamped
  *  at the track's ends), and entering the row snaps its top to its scroll-margin-top, or 16 px under
- *  the top bar when it has none. `instant`: a held repeat or reduced motion jumps. A theme may
+ *  the top bar when it has none. `instant`: reduced motion jumps; `chase`: a held repeat follows its
+ *  focus (chaseScroll) rather than restarting the slide each step. A theme may
  *  animate the focused card's width (a portrait tile growing to 16:9), so the slide is measured
  *  while the previous card is still wide: it aims for where that card's shrink will leave the
  *  focused one, and for a second each width transition ending in the track re-measures and slides
  *  the rest of the way. */
-function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, vertical: boolean, instant: boolean): void {
+function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, vertical: boolean, instant: boolean, chase = false): void {
   const z = zoomOf(track)
   if (vertical) {
     const to = anchorScrollTop({
@@ -511,7 +515,7 @@ function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, v
       offset: parseFloat(getComputedStyle(row).scrollMarginTop) * z || shellTop() + 16 * z,
       maxScroll: document.documentElement.scrollHeight - window.innerHeight,
     })
-    runAnchorScroll(window, () => window.scrollY, (top) => window.scrollTo({ top, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SNAP_MS)
+    runAnchorScroll(window, () => window.scrollY, (top) => window.scrollTo({ top, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SNAP_MS, chase)
     return
   }
   // The rects and settlingShrink are screen px; the track's scroll, border and padding are its own.
@@ -523,7 +527,7 @@ function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, v
     maxScroll: track.scrollWidth - track.clientWidth,
   })
   const ms = instant ? 0 : ANCHOR_SLIDE_MS
-  const slide = (to: number) => runAnchorScroll(track, () => track.scrollLeft, (left) => track.scrollTo({ left, behavior: 'instant' }), to, Math.abs(to - track.scrollLeft) < 1 ? 0 : ms)
+  const slide = (to: number) => runAnchorScroll(track, () => track.scrollLeft, (left) => track.scrollTo({ left, behavior: 'instant' }), to, Math.abs(to - track.scrollLeft) < 1 ? 0 : ms, chase)
   let to = measure()
   slide(to)
   anchorSettles.get(track)?.()
@@ -667,21 +671,23 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   // The navigation shell is fixed to the viewport, so every row of it is always on screen. Scrolling
   // the page cannot bring one into view; it only dragged the page underneath the menu on each press.
   if (el.closest('[data-nav-sidebar]')) return
-  // A single D-pad press should visibly carry the selected card with it. Held-key repeats switch
-  // to instant movement so WebKitGTK never queues several smooth animations behind the thumb.
+  // A single D-pad press should visibly carry the selected card with it. Held-key repeats follow
+  // their focus on a spring (chase) that each repeat retargets, so a held direction glides; every
+  // write is an instant one, so WebKitGTK never queues smooth scrolls of its own behind the thumb.
   const reduced = document.documentElement.dataset.motion === 'reduced'
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
+  const chase = rapid && !reduced
   // The featured carousel is taller than the safe-band math can infer from its bottom action row.
   // Entering its primary action means reveal the whole feature, not just the focused button.
   if (vertical && (el.hasAttribute('data-nav-scroll-top') || inTopBanner(el))) {
-    runControllerScroll(window, behavior, () => scrollByExact(window, -window.scrollY, 0, behavior))
+    runControllerScroll(window, behavior, () => scrollByExact(window, -window.scrollY, 0, behavior, chase))
     return
   }
   const track = el.closest<HTMLElement>('[data-carousel-scroller]')
   const row = track?.closest<HTMLElement>('[data-slot="row"]')
   if (track && row?.dataset.rowFocus === 'anchor') {
-    revealAnchored(el, track, row, vertical, rapid || reduced)
+    revealAnchored(el, track, row, vertical, rapid || reduced, chase)
     return
   }
   // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
@@ -750,12 +756,12 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
       startMargin: clamp(window.innerHeight * 0.12, 40, 96),
       endMargin: clamp(window.innerHeight * 0.2, 64, 144),
     })
-    if (windowTop) runControllerScroll(window, behavior, () => scrollByExact(window, windowTop, 0, behavior))
+    if (windowTop) runControllerScroll(window, behavior, () => scrollByExact(window, windowTop, 0, behavior, chase))
   }
   if (!top && !left) return
   const target: RevealScrollTarget = pane ?? window
   runControllerScroll(target, behavior, () => {
-    scrollByExact(target, vertical ? top : 0, vertical ? 0 : left, behavior)
+    scrollByExact(target, vertical ? top : 0, vertical ? 0 : left, behavior, chase)
   })
 }
 

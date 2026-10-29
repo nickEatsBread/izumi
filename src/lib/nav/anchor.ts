@@ -76,3 +76,50 @@ export function animateScroll(key: object, get: () => number, set: (v: number) =
   running.set(key, cancel)
   return cancel
 }
+
+/** How tightly a held direction's scroll follows its focus: the angular frequency (1/s) of a
+ *  critically damped spring, which settles in about 150 ms and trails a held repeat by about a card. */
+export const CHASE_RATE = 30
+
+const chasing = new Map<object, { to: number }>()
+
+/** Whether a held direction's scroll (chaseScroll) is following its focus on `key`. */
+export const isChasing = (key: object): boolean => chasing.has(key)
+
+/** A held direction's scroll: a critically damped spring toward the latest `to`. A new target keeps
+ *  the speed it has, so held repeats glide on instead of jumping a card each, or restarting an eased
+ *  slide each (which pulses). It shares `running` with animateScroll: either replaces the other. */
+export function chaseScroll(key: object, get: () => number, set: (v: number) => void, to: number): void {
+  const live = chasing.get(key)
+  if (live) {
+    live.to = to
+    return
+  }
+  stopScroll(key)
+  const target = { to }
+  let x = get()
+  let v = 0
+  let last: number | undefined
+  let frame = 0
+  const step = (now: number) => {
+    const dt = Math.min(0.05, last === undefined ? 1 / 60 : (now - last) / 1000)
+    last = now
+    v += (CHASE_RATE * CHASE_RATE * (target.to - x) - 2 * CHASE_RATE * v) * dt
+    x += v * dt
+    if (Math.abs(target.to - x) < 0.5 && Math.abs(v) < 30) {
+      set(target.to)
+      cancel()
+      return
+    }
+    set(x)
+    frame = requestAnimationFrame(step)
+  }
+  const cancel = () => {
+    cancelAnimationFrame(frame)
+    chasing.delete(key)
+    if (running.get(key) === cancel) running.delete(key)
+  }
+  chasing.set(key, target)
+  running.set(key, cancel)
+  frame = requestAnimationFrame(step)
+}
