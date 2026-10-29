@@ -13,6 +13,7 @@
     visibleServiceSettingFields,
   } from '$lib/extensions/service-settings-form'
   import { copyToClipboard } from '$lib/util/clipboard'
+  import QrCode from '$lib/components/QrCode.svelte'
   import { navLayer } from '$lib/nav/overlay'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import X from '@lucide/svelte/icons/x'
@@ -202,6 +203,14 @@
               class="flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold text-secondary-foreground"
             ><Copy size={16} /> {codeCopied ? 'Copied' : 'Copy'}</button>
           </div>
+          <!-- A code with its sign-in page: a phone can scan the page instead of typing an address on a
+               Steam Deck or TV, as the source's own handheld app offers. -->
+          {#if notice.action && /^https:\/\//.test(notice.action.url)}
+            <figure data-part="settings.signin.qr" class="mt-3 flex items-center gap-4">
+              <div class="w-36 shrink-0"><QrCode value={notice.action.url} label="Sign-in page" /></div>
+              <figcaption class="text-sm opacity-90">Scan with your phone to open the sign-in page, then enter the code.</figcaption>
+            </figure>
+          {/if}
         {/if}
         {#if notice.action}
           <button

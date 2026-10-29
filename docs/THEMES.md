@@ -746,6 +746,7 @@ State values:
 | `listing.more` | part | Loading more at the end of the grid, or data-state error with Retry. |  |
 | `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 | `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
+| `settings.signin.qr` | part | A source sign-in code's QR: its sign-in page, for a phone to scan instead of typing the address. |  |
 
 The hidden `search.title` is shown by undoing its visually hidden box, for example `[data-part="search.title"]:not([data-variant]) { position: static; width: auto; height: auto; margin: 0 0 12px; overflow: visible; clip: auto; white-space: normal; }`; its text follows the app language.
 

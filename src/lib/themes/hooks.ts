@@ -418,6 +418,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'listing.more', kind: 'part', description: 'Loading more at the end of the grid, or data-state error with Retry.' },
     { name: 'settings.section.icon', kind: 'part', description: 'The icon tile beside a Settings section heading.' },
     { name: 'settings.rail.indicator', kind: 'part', description: "The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`.", states: ['data-marker'] },
+    { name: 'settings.signin.qr', kind: 'part', description: 'A source sign-in code\'s QR: its sign-in page, for a phone to scan instead of typing the address.' },
   ],
   primitives: [
     { name: 'button', kind: 'part', description: 'A button. Series page actions carry `data-action` (Save also `data-state="saved"`; every Play button `data-state` `start` or `resume`, the episode it opens in `data-episode` and, when the episode metadata knows it, that episode\'s season in `data-season` and its number within the season in `data-season-episode`; the header\'s Download `data-state` `none`, `queued`, `progress` or `done` and the episode it queues in `data-episode`); a catalog title page\'s More (`data-action="more"`) opens `options.sheet`; profile-header shortcuts carry their destination in `data-dest`.', states: ['data-variant', 'data-action', 'data-dest', 'data-state', 'data-episode', 'data-season', 'data-season-episode'] },
