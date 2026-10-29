@@ -3483,6 +3483,7 @@ export async function playStream(
         })),
         previewUrl: stream.__previewUrl,
         skip: stream.__skip,
+        rating: stream.__rating,
       })
       spriteKey.set(stream.infoHash ?? `${media.id}-${episode ?? 0}`)
       recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
@@ -3495,7 +3496,6 @@ export async function playStream(
       else void invoke('close_player').catch(() => {})
       if (episode != null) attach(media, episode, onState, observation, recoveryOriginal)
       return
-        rating: stream.__rating,
     }
 
     // Android full: play through embedded mpv. Android lite falls back to an external player. This
@@ -3588,6 +3588,7 @@ export async function playStream(
             headers: subtitle.headers,
           })),
           skip: stream.__skip,
+          rating: stream.__rating,
         })
         await startMpvEvents()
         if (await abandonIfStale()) return
@@ -3600,7 +3601,6 @@ export async function playStream(
         const nativeTransformsOff = get(audioProcessing) === 'off' && !filterChains.af && !filterChains.vf
         const nativeAudioCandidate = nativeTransformsOff
           ? nativeAndroidAudioRoute(`${streamInfo.audio ?? ''} ${streamInfo.label}`, streamInfo.hdr)
-          rating: stream.__rating,
           : undefined
         let nativeAudio: 'ac4' | undefined
         if (nativeAudioCandidate) {
@@ -3816,6 +3816,7 @@ export async function playStream(
         headers: 'headers' in subtitle ? subtitle.headers : undefined,
       })),
       skip: stream.__skip,
+      rating: stream.__rating,
     })
     // alang/slang drive mpv's preferred-language track auto-selection.
     const embedStartedAt = performance.now()
@@ -3828,7 +3829,6 @@ export async function playStream(
     await invoke('player_embed', {
       url: stream.url,
       startSeconds: startSeconds || undefined,
-      rating: stream.__rating,
       autoplay,
       initialBufferSeconds,
       cacheBytes,
