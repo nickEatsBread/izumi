@@ -5,7 +5,7 @@ import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
 import { invokeNativeHttp, phttp } from '$lib/net/http'
 import { listenSafe } from '$lib/util/listen'
-import type { Stream } from '$lib/stremio/parse'
+import type { Stream, StreamRating } from '$lib/stremio/parse'
 import { videoSourceToStream, type SnVideoSource } from '$lib/stremio/onlinestream'
 import { isSourceOrigin, sourceAddonForOrigin } from './source-catalogs'
 
@@ -34,12 +34,14 @@ export function sourceStream(raw: unknown, base: string, provider: string, packa
   const progressUrl = sameOrigin(extras?.progressUrl, base)
   // The source's own intro, recap and credits markers, checked before the player sees them.
   const skip = sourceSkipSegments(extras?.skip)
+  const rating = sourceRating(extras?.rating)
   if (extras?.onlinestream === true) {
     const headers = Object.fromEntries(Object.entries(record(extras.headers) ?? {}).filter(([, header]) => typeof header === 'string')) as Record<string, string>
     return {
       ...videoSourceToStream(value as unknown as SnVideoSource, 'default', headers, provider, epTitle, undefined, packageId, undefined, false, undefined, showTitle, index),
       ...(progressUrl ? { __progressUrl: progressUrl } : {}),
       ...(skip.length ? { __skip: skip } : {}),
+      ...(rating ? { __rating: rating } : {}),
     }
   }
   const { izumi: _izumi, ...stream } = value
@@ -50,7 +52,19 @@ export function sourceStream(raw: unknown, base: string, provider: string, packa
     ...(showTitle ? { __sourceTitle: showTitle } : {}),
     ...(progressUrl ? { __progressUrl: progressUrl } : {}),
     ...(skip.length ? { __skip: skip } : {}),
+    ...(rating ? { __rating: rating } : {}),
   }
+}
+
+/** A source's `izumi.rating`, kept only when well formed: a short label and at most four short descriptors. */
+export function sourceRating(raw: unknown): StreamRating | undefined {
+  const value = record(raw)
+  const label = typeof value?.label === 'string' ? value.label.trim() : ''
+  if (!label || label.length > 12) return undefined
+  const descriptors = Array.isArray(value?.descriptors)
+    ? value.descriptors.filter((item): item is string => typeof item === 'string' && !!item.trim() && item.length <= 40).map((item) => item.trim()).slice(0, 4)
+    : []
+  return { label, ...(descriptors.length ? { descriptors } : {}) }
 }
 
 /** The streams a source offers for one of its own titles' videos; null for any other title. */

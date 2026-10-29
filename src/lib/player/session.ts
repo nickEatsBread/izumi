@@ -169,6 +169,8 @@ export const nowPlayingStream = writable<{
   previewUrl?: string
   /** The episode's skip segments as the stream's source marks them (`Stream.__skip`). */
   skip?: import('$lib/stremio/aniskip').Segment[]
+  /** The episode's age rating as its source gives it (`Stream.__rating`). */
+  rating?: import('$lib/stremio/parse').StreamRating
 }>({ url: '', headers: {}, infoHash: null })
 
 /** Source candidates retained after the picker closes. The playback watchdog uses this exact

@@ -171,3 +171,15 @@ describe("a source's season names", () => {
     expect(facts?.seasons).toEqual([{ number: 1, title: 'Part 1' }, { number: 2, title: 'The Second' }])
   })
 })
+
+describe('a source stream age rating', () => {
+  it('keeps a short label and up to four short descriptors, and drops anything else', async () => {
+    const { sourceRating } = await import('./source-streams')
+    expect(sourceRating({ label: ' 14 ', descriptors: ['Violence', '', 3, 'x'.repeat(41), 'A', 'B', 'C', 'D'] })).toEqual({ label: '14', descriptors: ['Violence', 'A', 'B', 'C'] })
+    expect(sourceRating({ label: 'TV-MA' })).toEqual({ label: 'TV-MA' })
+    expect(sourceRating({ label: 'x'.repeat(13) })).toBeUndefined()
+    expect(sourceRating('14')).toBeUndefined()
+    const own = sourceStream({ url: `${BASE}/v/1/manifest.mpd`, type: 'dash', izumi: { onlinestream: true, rating: { label: '16', descriptors: ['Language'] } } }, BASE, 'Example', 'example.source', 0)
+    expect(own?.__rating).toEqual({ label: '16', descriptors: ['Language'] })
+  })
+})
