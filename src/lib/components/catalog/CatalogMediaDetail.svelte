@@ -495,9 +495,8 @@
                     class="grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent"><Ellipsis size={20} /></button>
             <!-- One press saves to izumi's Watchlist and the source's own; other lists are in the ☰ menu. -->
             <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} aria-busy={sourceListBusy} onclick={toggleWatchlist}
-                    aria-label={watchlisted ? 'In Watchlist' : 'Add to Watchlist'} title={watchlisted ? 'In Watchlist' : 'Add to Watchlist'}
-                    class={themedOverlay ? 'grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
-              {#if watchlisted}<Check size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<Plus size={18} />{/if}{#if !themedOverlay}{watchlisted ? 'In Watchlist' : 'Watchlist'}{/if}
+                    class={themedOverlay ? 'flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
+              {#if watchlisted}<Check size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
             </button>
             {#if media.trailer?.id}
               <button

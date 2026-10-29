@@ -27,11 +27,10 @@ describe('catalog title page under a theme overlay layout', () => {
     expect(detail).toContain('<ThemeNode node={detailTheme.header} model={mediaDisplayModel(media)} />')
   })
 
-  it('shows the Watchlist as a round icon button with an accessible name', () => {
-    expect(detail).toContain("aria-label={watchlisted ? 'In Watchlist' : 'Add to Watchlist'}")
-    expect(detail).toContain("{#if !themedOverlay}{watchlisted ? 'In Watchlist' : 'Watchlist'}{/if}")
-    // The trailer button beside it takes the same round shape.
-    expect(detail.match(/class=\{themedOverlay \? 'grid h-12 w-12 place-items-center rounded-full bg-white\/15/g)).toHaveLength(2)
+  it('labels the Watchlist on an overlay too, as a pill beside the round trailer button', () => {
+    expect(detail).toContain("{watchlisted ? 'In Watchlist' : 'Watchlist'}")
+    expect(detail).toContain("class={themedOverlay ? 'flex h-12 items-center gap-2 rounded-full bg-white/15")
+    expect(detail.match(/class=\{themedOverlay \? 'grid h-12 w-12 place-items-center rounded-full bg-white\/15/g)).toHaveLength(1)
     expect(anime).toContain('title="Save to lists"\n                  class="grid h-12 w-12 place-items-center rounded-full')
   })
 })
