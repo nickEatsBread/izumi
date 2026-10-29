@@ -22,10 +22,12 @@ export function titleRefFromPath(pathname: string): MediaRef | null {
 }
 
 export function prefetchDetail(ref: MediaRef, load = loadCatalogProvider, now = performance.now()): void {
+  const provider = ref.provider
+  if (provider === 'anilist') return
   for (const [key, entry] of prefetched) if (now - entry.at > FRESH_MS) prefetched.delete(key)
   const key = keyOf(ref)
   if (prefetched.has(key)) return
-  const detail = load(ref.provider).then((provider) => provider.detail(ref))
+  const detail = load(provider).then((catalog) => catalog.detail(ref))
   detail.catch(() => prefetched.delete(key))
   prefetched.set(key, { at: now, detail })
 }
