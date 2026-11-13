@@ -24,6 +24,14 @@ describe('player top row', () => {
     expect(controls).toContain('return () => playerTopBarUnderTitlebar.set(false)')
   })
 
+  it('fades the window buttons with the controls and never lets a hidden Close take a click', () => {
+    const titlebar = read('../shell/Titlebar.svelte')
+    const overlay = read('./PlayerOverlay.svelte')
+    expect(titlebar).toContain("{$playerChromeVisible ? '' : 'opacity-0 [&_button]:pointer-events-none'}")
+    expect(overlay).toContain('playerChromeVisible.set(controlsVisible || docked)')
+    expect(overlay).toContain('$effect(() => () => playerChromeVisible.set(true))')
+  })
+
   it('yields the titlebar over the video only, keeping its controls and side drag regions live', () => {
     const titlebar = read('../shell/Titlebar.svelte')
     expect(titlebar).toContain('class:pointer-events-none={$playerTopBarUnderTitlebar}')
