@@ -511,7 +511,11 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
 
   const manifest = await fetchManifest(base).catch(() => null)
   const candidates = [
-    ...(manifest && hasResource(manifest, 'meta') ? [{ base, identity: expected }] : []),
+    // When Cinemeta owns the card, the deduped Cinemeta entry below never runs. Its search index can
+    // hold an older title than its meta route, so only the year guards against a stale record here.
+    ...(manifest && hasResource(manifest, 'meta')
+      ? [{ base, identity: base === CINEMETA_BASE ? { ...expected, expectedTitle: undefined } : expected }]
+      : []),
     ...(/^tt\d+$/i.test(decoded.id) && (decoded.type === 'movie' || decoded.type === 'series')
       // Cinemeta's route is keyed by the exact IMDb id. Its localized title may legitimately
       // differ from the catalog card, so the id/type contract is the authoritative check here.
