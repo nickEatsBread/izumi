@@ -14,6 +14,7 @@
   import { startThemeSync } from '$lib/theme'
   import { initPlatform } from '$lib/platform'
   import { scheduleBootWork } from '$lib/util/boot-work'
+  import { pauseOffscreenShimmer } from '$lib/util/offscreen-shimmer'
   import { initClientPerformance } from '$lib/performance/client'
   import { libraryStorageError } from '$lib/storage/library-db'
   import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
@@ -39,6 +40,7 @@
   }
   // app.html's boot spinner goes once the app is up (and the startup animation's cover is gone).
   onMount(() => document.documentElement.classList.add('booted'))
+  onMount(() => pauseOffscreenShimmer())
   onMount(() => {
     // The controls mirror is a deliberately inert second WebView. Starting the normal client
     // services here would duplicate sync, update, DHT and notification work while recording.
