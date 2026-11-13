@@ -5,6 +5,8 @@ import parseTorrent from 'parse-torrent'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { phttp } from '$lib/net/http'
 import { disabledSources } from '$lib/stremio/sources'
+import { relevant } from '$lib/stremio/relevance'
+import type { Stream } from '$lib/stremio/parse'
 import { normalizeTorrentCount, type TorrentQuery, type TorrentResult } from './types'
 
 // Torrent trackers searched directly. Searching a tracker finds an episode as soon as it is
@@ -119,6 +121,7 @@ function parseDoc(text: string): Doc {
 }
 
 const list = (value: unknown): unknown[] => value == null ? [] : Array.isArray(value) ? value : [value]
+const feedItems = (doc: Doc) => list(doc.rss?.channel?.item ?? doc['rdf:RDF']?.item ?? doc.feed?.entry)
 const text = (value: unknown): string => typeof value === 'object' && value ? text((value as Doc)['#text']) : value == null ? '' : String(value).trim()
 const localName = (key: string) => key.slice(key.lastIndexOf(':') + 1).toLowerCase()
 
@@ -186,6 +189,16 @@ export function parseSize(value: string | undefined): number | undefined {
   return match ? Math.round(Number(match[1].replace(',', '.')) * UNITS[match[2].toUpperCase()]) : undefined
 }
 
+// Trackers file books, music and software beside video, and a title search finds a show's manga as
+// readily as its episodes. Such a row can't play; the picker used to list it under Filtered with a
+// misleading reason. Torznab numbers its categories: 1xxx consoles, 3xxx audio, 4xxx PC, 7xxx books.
+const NON_VIDEO_CATEGORY = /^\s*(?:literature|books?|e-?books?|comics?|audio|music|software|applications?|games?|pictures?|photos?)\b|^[1347]\d{3}$/i
+const VIDEO_CATEGORY = /^\s*(?:anime|live\s*action|movies?|tv|video)\b|^[2568]\d{3}$/i
+/** True only when the item names a category and every one it names that we recognise is not video. */
+export function nonVideoCategory(categories: string[]): boolean {
+  return categories.some((c) => NON_VIDEO_CATEGORY.test(c)) && !categories.some((c) => VIDEO_CATEGORY.test(c))
+}
+
 const HEX_HASH = /^[a-f0-9]{40}$/i
 const BASE32_HASH = /^[a-z2-7]{32}$/i
 
@@ -207,14 +220,14 @@ export async function parseTrackerFeed(
   else {
     const doc = parseDoc(body)
     feedName = text((doc.rss?.channel ?? doc['rdf:RDF']?.channel ?? doc.feed)?.title) || feedName
-    items = list(doc.rss?.channel?.item ?? doc['rdf:RDF']?.item ?? doc.feed?.entry)
+    items = feedItems(doc)
   }
   let filesLeft = MAX_TORRENT_FILES
   const rows = await Promise.all(items.map(async (item, rank): Promise<TorrentResult | null> => {
     const { fields, texts } = itemFacts(item)
     const first = (...names: string[]) => names.flatMap((n) => fields.get(n) ?? [])[0]
     const title = first('title', 'name')
-    if (!title) return null
+    if (!title || nonVideoCategory(fields.get('category') ?? [])) return null
     const magnet = texts.map((t) => t.match(/magnet:\?[^\s"'<>]+/i)?.[0]).find(Boolean)?.replace(/&amp;/g, '&')
     const declared = [first(...HASH_FIELDS), first('guid', 'id')].find((h) => h && (HEX_HASH.test(h) || BASE32_HASH.test(h)))
     const torrentFile = [...fields.get('enclosure.url') ?? [], ...fields.get('link') ?? [], ...fields.get('link.href') ?? []]
@@ -279,6 +292,33 @@ export async function checkTrackerFeed(spec: string): Promise<{ name: string } |
   }
 }
 
+// A word no release carries: a feed that honours `q` answers it with nothing, one that ignores it
+// repeats its listing.
+const PROBE_WORD = 'zqxprobe0search0word'
+const probedFeeds = new Map<string, Promise<boolean>>()
+const withSearchWord = (spec: string, query: string) => {
+  const url = parseUrl(spec)
+  url.searchParams.set('q', query)
+  return url.toString()
+}
+
+/** A tracker RSS URL pasted without a search word (`/?page=rss`) reads like a fixed "latest uploads"
+ *  feed, yet most trackers' feeds also take `q`. Asked once per feed per session. */
+// shortcut: only `q` is probed; try the other QUERY_PARAMS if a tracker turns up that needs one.
+function takesProbedSearch(spec: string): Promise<boolean> {
+  let known = probedFeeds.get(spec)
+  if (!known) {
+    known = (async () => {
+      const response = await phttp(withSearchWord(spec, PROBE_WORD), { timeoutMs: SEARCH_TIMEOUT_MS })
+      if (!response.ok) return false
+      const body = await response.text()
+      return (looksJson(body) ? jsonItems(body) : feedItems(parseDoc(body))).length === 0
+    })().catch(() => false)
+    probedFeeds.set(spec, known)
+  }
+  return known
+}
+
 /** Search every enabled feed for an episode. Best-effort: a feed that fails contributes nothing.
  *  Each request's new rows reach `onBatch` as it lands. `onlyId` limits the search to one origin. */
 export async function queryTrackerFeeds(
@@ -296,12 +336,20 @@ export async function queryTrackerFeeds(
   await Promise.all(feeds.map(async (spec) => {
     const seen = new Set<string>()
     let requests: string[]
-    try { requests = feedTakesQuery(spec) ? terms.map((q) => trackerFeedRequestUrl(spec, q)) : [spec.trim()] } catch { return }
+    let fixed = false
+    try {
+      if (feedTakesQuery(spec)) requests = terms.map((q) => trackerFeedRequestUrl(spec, q))
+      else if (await takesProbedSearch(spec)) requests = terms.map((q) => withSearchWord(spec, q))
+      else { requests = [spec.trim()]; fixed = true }
+    } catch { return }
     await Promise.all(requests.map(async (url) => {
       try {
         const response = await phttp(url, { signal, timeoutMs: SEARCH_TIMEOUT_MS })
         if (!response.ok || signal?.aborted) return
-        const fresh = (await parseTrackerFeed(await response.text(), spec)).filter((result) => !seen.has(result.hash))
+        const fresh = (await parseTrackerFeed(await response.text(), spec)).filter((result) => !seen.has(result.hash)
+          // A latest-uploads listing holds every show. The rest of it is no source for this one, and
+          // listing it under the picker's Filtered rows buried the real doubts under other shows.
+          && (!fixed || relevant({ title: result.title } as Stream, query.titles)))
         for (const result of fresh) seen.add(result.hash)
         if (!fresh.length || signal?.aborted) return
         all.push(...fresh)

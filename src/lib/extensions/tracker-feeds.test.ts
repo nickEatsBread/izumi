@@ -6,7 +6,7 @@ vi.mock('$lib/net/http', () => ({ phttp }))
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }))
 
 const {
-  checkTrackerFeed, feedTakesQuery, isSearchFeedUrl, parseSize, parseTrackerFeed, queryTrackerFeeds, trackerFeedOriginId,
+  checkTrackerFeed, feedTakesQuery, isSearchFeedUrl, nonVideoCategory, parseSize, parseTrackerFeed, queryTrackerFeeds, trackerFeedOriginId,
   trackerFeedRequestUrl, trackerFeedUrls, trackerSearchTerms,
 } = await import('./tracker-feeds')
 const { disabledSources } = await import('$lib/stremio/sources')
@@ -117,6 +117,18 @@ describe('parseTrackerFeed reads every shape of torrent feed', () => {
     expect(row).toMatchObject({ title: 'Example Show - 02 [1080p]', hash: HEX, seeders: 42, leechers: 3, size: 734003200, provider: 'api.test' })
     expect(await parseTrackerFeed(JSON.stringify([{ id: '0', name: 'No results returned', info_hash: '0'.repeat(40), seeders: '0' }]), api)).toEqual([])
   })
+  it('leaves out books, music and software a title search finds beside the episodes', async () => {
+    const feed = rss([
+      `<item><title>Example Show v01-10</title><nyaa:category>Literature - English-translated</nyaa:category><link>magnet:?xt=urn:btih:${HEX2}</link></item>`,
+      `<item><title>[Group] Example Show - 02 (1080p).mkv</title><nyaa:category>Anime - English-translated</nyaa:category><link>magnet:?xt=urn:btih:${HEX}</link></item>`,
+    ].join(''), 'xmlns:nyaa="https://tracker.test/xmlns"')
+    expect((await parseTrackerFeed(feed, RSS_SEARCH)).map((r) => r.title)).toEqual(['[Group] Example Show - 02 (1080p).mkv'])
+    expect(nonVideoCategory(['7020', '100045'])).toBe(true)
+    expect(nonVideoCategory(['Anime - Anime Music Video'])).toBe(false)
+    expect(nonVideoCategory(['5070', '3000'])).toBe(false)
+    expect(nonVideoCategory(['1080p'])).toBe(false)
+    expect(nonVideoCategory([])).toBe(false)
+  })
   it('reads sizes in bytes or human units', () => {
     expect([parseSize('1468006400'), parseSize('700 MB'), parseSize('Size: 1,5 GiB'), parseSize('n/a')])
       .toEqual([1468006400, 700 * 1024 ** 2, Math.round(1.5 * 1024 ** 3), undefined])
@@ -173,7 +185,30 @@ describe('queryTrackerFeeds', () => {
     expect(batches).toHaveLength(2)
     const urls = phttp.mock.calls.map(([url]) => String(url))
     expect(urls).toEqual(expect.arrayContaining(['https://tracker.test/?page=rss&q=Example+Show&c=1_2', 'https://tracker.test/?page=rss&q=Example+Show+02&c=1_2', 'https://group.test/rss/?t&r=1080']))
-    expect(urls).toHaveLength(3)
+    // The fixed feed is also asked once whether it takes a search word; it answered with its listing.
+    expect(urls.filter((url) => url.startsWith('https://group.test/') && new URL(url).searchParams.has('q'))).toHaveLength(1)
+    expect(urls).toHaveLength(4)
+  })
+  it('searches a pasted feed with no search word when it honours one', async () => {
+    const spec = 'https://latest.test/?page=rss'
+    trackerFeedUrls.set([spec])
+    phttp.mockImplementation(async (url: string) => new URL(url).searchParams.get('q')?.startsWith('Example')
+      ? reply(hit)
+      : reply(rss(new URL(url).searchParams.has('q') ? '' : `<item><title>[Group] Other Show - 07 (1080p).mkv</title><link>magnet:?xt=urn:btih:${HEX2}</link></item>`)))
+    const results = await queryTrackerFeeds({ titles: ['Example Show'], episode: 2 })
+    expect(results.map((r) => r.title)).toEqual(['[Group] Example Show - 02 (1080p).mkv'])
+    expect(phttp.mock.calls.map(([url]) => String(url))).toEqual(expect.arrayContaining([
+      'https://latest.test/?page=rss&q=Example+Show', 'https://latest.test/?page=rss&q=Example+Show+02',
+    ]))
+  })
+  it('keeps only the requested show from a fixed feed that ignores search words', async () => {
+    trackerFeedUrls.set(['https://uploads.test/rss'])
+    phttp.mockResolvedValue(reply(rss([
+      `<item><title>[Group] Other Show - 07 (1080p).mkv</title><link>magnet:?xt=urn:btih:${HEX2}</link></item>`,
+      `<item><title>[Group] Example Show - 02 (1080p).mkv</title><link>magnet:?xt=urn:btih:${HEX}</link></item>`,
+    ].join(''))))
+    const results = await queryTrackerFeeds({ titles: ['Example Show'], episode: 2 })
+    expect(results.map((r) => r.title)).toEqual(['[Group] Example Show - 02 (1080p).mkv'])
   })
   it('asks only the origin a continuation names', async () => {
     phttp.mockResolvedValue(reply(hit))
