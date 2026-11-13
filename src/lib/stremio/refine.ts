@@ -6,6 +6,7 @@ import {
   likelyOtherProduction,
   isEpisodeExtra,
   isStandaloneMovie,
+  namesOnlyTheTitle,
   selfDeclaredOtherProduction,
   wrongFranchiseSeason,
 } from './relevance'
@@ -70,7 +71,11 @@ export function collapseBatches(streams: Stream[]): Stream[] {
 const rowKey = (s: Stream) => candidateIds(s).routeId
 
 export function refineStreams(media: Media, raw: Stream[]): Refined {
-  const wantedTitles = sourceTitleAliases(media)
+  // The native title as well, when it is written wholly in its own script: a release named that way
+  // carries no Latin title to compare. One with Latin words in it ("劇場版 NARUTO -ナルト-") would
+  // otherwise make its franchise word alone ("Naruto") an exact title of the film.
+  const native = media.title.native?.trim()
+  const wantedTitles = [...sourceTitleAliases(media), ...(native && !/[a-z]/i.test(native) ? [native] : [])]
   const animeYear = media.startDate?.year ?? undefined
   // Long-running absolute-numbered anime (One Piece, Naruto, Conan…) ship as
   // "One Piece - 001", never scene "S01E01" — so any SxxExx file is a different
@@ -117,7 +122,7 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
     if (isEpisodeExtra(s)) return 'episode-extra'
     // The add-on may put the trailer marker only on a second title line or in its description.
     if (isSupplementalVideo(s, wantedTitles[0] ?? '')) return 'episode-extra'
-    if (isSeries && isStandaloneMovie(s)) return 'standalone-movie'
+    if (isSeries && isStandaloneMovie(s) && !namesOnlyTheTitle(s, wantedTitles)) return 'standalone-movie'
     return null
   }
 

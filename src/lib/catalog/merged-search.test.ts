@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Media } from '$lib/anilist/types'
 
-const mocks = vi.hoisted(() => ({ anilist: vi.fn(), close: vi.fn() }))
+const mocks = vi.hoisted(() => ({ anilist: vi.fn(), close: vi.fn(), provider: vi.fn() }))
 vi.mock('$lib/anilist/abortable-query', () => ({ queryAniList: mocks.anilist }))
 vi.mock('$lib/search/close-matches', () => ({ closeMatches: mocks.close }))
-vi.mock('./registry', () => ({ loadCatalogProvider: vi.fn() }))
+vi.mock('./registry', () => ({ loadCatalogProvider: async () => ({ search: mocks.provider }) }))
 
 import { searchMergedCatalogs } from './merged-search'
 
@@ -51,5 +51,18 @@ describe('merged catalog search', () => {
     const abort = new AbortController()
     await searchMergedCatalogs(['auto'], 'frieren', 1, abort.signal)
     expect(mocks.anilist.mock.calls[0][2]).toBe(abort.signal)
+  })
+
+  it("shows each catalog's answer as it arrives instead of after the slowest", async () => {
+    mocks.anilist.mockResolvedValue(answer([media(154587, 'Frieren')]))
+    let finish: (value: unknown) => void = () => {}
+    mocks.provider.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const updates: number[][] = []
+    const pending = searchMergedCatalogs(['auto', 'tmdb'], 'frieren', 1, undefined, undefined,
+      (items) => updates.push(items.map((item) => item.id)))
+    await vi.waitFor(() => expect(updates).toEqual([[154587]]))
+    finish({ media: [media(-7, 'Frieren')], page: 1, hasNextPage: false })
+    expect((await pending).media.map((item) => item.id)).toEqual([154587, -7])
+    expect(updates).toEqual([[154587], [154587, -7]])
   })
 })

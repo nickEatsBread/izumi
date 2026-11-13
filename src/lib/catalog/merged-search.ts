@@ -25,10 +25,15 @@ export async function searchMergedCatalogs(
   page = 1,
   signal?: AbortSignal,
   genre?: string,
+  /** Receives every catalog's answer so far each time another one answers, so a slow catalog
+   *  does not hold back the others. */
+  onUpdate?: (media: Media[]) => void,
 ): Promise<MergedCatalogSearchResult> {
   const selections = mergedCatalogProviders(providers)
   const perProvider = 20
-  const batches = await Promise.allSettled(selections.map(async (selection) => {
+  const answered: Media[][] = []
+  const merged = () => [...new Map(answered.flat().map((media) => [mediaKey(media), media])).values()]
+  const searchOne = async (selection: CatalogSelection) => {
     if (selection === 'auto' || selection === 'anilist') {
       const response = await queryAniList<AniListSearchResponse>(searchQuery(), {
         ...searchVariables({ search: query || undefined, genres: genre ? [genre] : undefined, sort: query ? 'SEARCH_MATCH' : 'TRENDING_DESC' }),
@@ -60,23 +65,24 @@ export async function searchMergedCatalogs(
       signal,
     })
     return { selection, media: result.media, hasNextPage: result.hasNextPage }
+  }
+  const batches = await Promise.allSettled(selections.map(async (selection, index) => {
+    const result = await searchOne(selection)
+    answered[index] = result.media
+    if (!signal?.aborted) onUpdate?.(merged())
+    return result
   }))
 
   if (signal?.aborted) throw new DOMException('Search cancelled', 'AbortError')
-  const unique = new Map<string, Media>()
   const failedProviders: CatalogSelection[] = []
   let hasNextPage = false
   batches.forEach((batch, index) => {
-    if (batch.status === 'rejected') {
-      failedProviders.push(selections[index])
-      return
-    }
-    hasNextPage ||= batch.value.hasNextPage
-    for (const media of batch.value.media) unique.set(mediaKey(media), media)
+    if (batch.status === 'rejected') failedProviders.push(selections[index])
+    else hasNextPage ||= batch.value.hasNextPage
   })
   if (failedProviders.length === selections.length && selections.length) {
     const failure = batches.find((batch): batch is PromiseRejectedResult => batch.status === 'rejected')
     throw failure?.reason ?? new Error('No catalog could complete this search.')
   }
-  return { media: [...unique.values()], hasNextPage, failedProviders }
+  return { media: merged(), hasNextPage, failedProviders }
 }

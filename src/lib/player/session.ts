@@ -251,6 +251,10 @@ export const playerSideSheetOpen = writable(false)
 // readout and still take clicks.
 export const playerTopBarUnderTitlebar = writable(false)
 
+// False while the player's controls have auto-hidden (PlayerOverlay's `controlsVisible`), so the
+// titlebar's window buttons and chips fade out with them. PlayerOverlay resets it to true on close.
+export const playerChromeVisible = writable(true)
+
 /** Bump so Game-mode overlay-add re-snapshots after a d-pad move (no 60fps crawl). */
 export const playerOverlayRev = writable(0)
 export function bumpPlayerOverlay() {

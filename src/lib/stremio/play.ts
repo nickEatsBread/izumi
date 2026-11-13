@@ -979,7 +979,9 @@ export function embeddedVideoStreams(
   episode: number | undefined,
 ): { declared: boolean; streams: Stream[] } {
   const video = mediaVideo(media, episode)
-  if (!video || !Array.isArray(video.streams)) return { declared: false, streams: [] }
+  // An empty list declares nothing (as in Stremio): metadata add-ons often write `streams: []` on
+  // every video, and treating that as "this video's only sources" left every episode empty.
+  if (!video || !Array.isArray(video.streams) || !video.streams.length) return { declared: false, streams: [] }
   const originId = media.catalog?.addonId ?? 'embedded-metadata'
   const originName = media.catalog?.sourceName
   const streams = video.streams.map((stream) => normalizeStreamBehavior({
