@@ -27,7 +27,7 @@ const { stremioCatalog } = await import('./stremio')
 describe('Stremio catalog detail', () => {
   it('loads Cinemeta episodes when Cinemeta supplied a card under an older title', async () => {
     // Cinemeta's search index can carry an older English title than its meta route.
-    responses.set(`${CINEMETA}/catalog/series/top/search=Example%20Drama&skip=0.json`, {
+    responses.set(`${CINEMETA}/catalog/series/top/search=Example%20Drama.json`, {
       metas: [{ id: 'tt0000001', type: 'series', name: 'Former Example Title', releaseInfo: '2026' }],
     })
     responses.set(`${CINEMETA}/meta/series/tt0000001.json`, {
@@ -45,7 +45,7 @@ describe('Stremio catalog detail', () => {
   })
 
   it('keeps the Cinemeta card when its meta route answers with a stale record from another year', async () => {
-    responses.set(`${CINEMETA}/catalog/series/top/search=Example%20Saga&skip=0.json`, {
+    responses.set(`${CINEMETA}/catalog/series/top/search=Example%20Saga.json`, {
       metas: [{ id: 'tt0000002', type: 'series', name: 'Example Saga', releaseInfo: '2024' }],
     })
     responses.set(`${CINEMETA}/meta/series/tt0000002.json`, {

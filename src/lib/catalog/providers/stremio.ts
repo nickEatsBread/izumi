@@ -454,6 +454,14 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
   }
 }
 
+// One add-on must not hold every search: a dead one (a gateway answering 504 after 12 s) kept
+// Cinemeta's answer, and the search spinner, waiting for its whole timeout on every query. Once
+// any catalog answers, the rest get a short grace. A late one keeps running in the background and
+// sits out a while only if it then fails, so a merely slow catalog is never benched.
+const SEARCH_GRACE_MS = 2_000
+const SEARCH_BENCH_MS = 5 * 60_000
+const benchedSearches = new Map<string, number>()
+
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   const sources = await manifests()
   const entries = sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? [])
@@ -463,9 +471,38 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
     .map((entry) => ({ base, manifest, entry })))
   if (!entries.length) throw new CatalogConfigurationError('The enabled Stremio metadata add-ons do not declare searchable catalogs.')
   const skip = (Math.max(1, request.page ?? 1) - 1) * 100
-  const pages = await Promise.all(entries.map(({ base, entry }) => catalog(base, entry, {
-    search: request.query?.trim(), genre: request.genre, skip,
-  }, request.signal).catch(() => [])))
+  const keyOf = ({ base, entry }: { base: string; entry: AddonCatalog }) => stremioCatalogUrl(base, entry)
+  const ready = entries.filter((item) => (benchedSearches.get(keyOf(item)) ?? 0) <= Date.now())
+  // With every searchable catalog benched, asking them again is how a recovered one is found.
+  const asked = ready.length ? ready : entries
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  if (request.signal?.aborted) cancel()
+  request.signal?.addEventListener('abort', cancel, { once: true })
+  const bench = (index: number) => benchedSearches.set(keyOf(asked[index]), Date.now() + SEARCH_BENCH_MS)
+  const pages: Media[][] = []
+  let graceTimer: ReturnType<typeof setTimeout> | undefined
+  let startGrace = () => {}
+  const graceOver = new Promise<void>((resolve) => {
+    startGrace = () => { graceTimer ??= setTimeout(resolve, SEARCH_GRACE_MS) }
+  })
+  const all = Promise.all(asked.map(async ({ base, entry }, index) => {
+    try {
+      pages[index] = await catalog(base, entry, {
+        // Page 1 sends no skip, as Stremio does; strict routers misread `skip=0`.
+        search: request.query?.trim(), genre: request.genre, skip: skip || undefined,
+      }, controller.signal)
+      startGrace()
+    } catch {
+      if (!controller.signal.aborted) bench(index)
+    }
+  }))
+  try {
+    await Promise.race([all, graceOver])
+  } finally {
+    clearTimeout(graceTimer)
+    request.signal?.removeEventListener('abort', cancel)
+  }
   const seen = new Set<string>()
   const media = pages.flat().filter((item) => {
     const key = item.catalog?.id ?? String(item.id)
