@@ -2,6 +2,7 @@ import { phttp } from '$lib/net/http'
 import { isNotice, isUncached, type Stream, type StreamSort } from './parse'
 import { fetchManifest, acceptsStreamId, peekManifest } from './manifest'
 import { addonOriginId } from './sources'
+import { addonResourceUrl } from './resource-url'
 import { dedupeStreams } from './dedupe'
 import { rankStreams } from './ranking'
 import { resolveAddonLogo } from './addon-logo'
@@ -179,7 +180,7 @@ export async function fetchAddonStreams(
       // imdb triple reaches addons in either namespace instead of only the anime-aware ones.
       const responses = await Promise.all(ask.map(async (one) => {
         try {
-          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`, { signal, timeoutMs: deadlineMs })
+          const r = await phttp(addonResourceUrl(b, `/stream/${type}/${encodeURIComponent(one)}.json`), { signal, timeoutMs: deadlineMs })
           if (!r.ok) return []
           return ((await r.json()) as { streams?: Stream[] }).streams ?? []
         } catch { return [] }

@@ -10,16 +10,19 @@ vi.mock('$lib/net/http', () => ({
     return { ok: body != null, status: body == null ? 404 : 200, json: async () => body }
   },
 }))
+const enabled = { urls: [`${CINEMETA}/manifest.json`] }
 vi.mock('$lib/stremio/sources', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  enabledAddonUrls: readable([`${CINEMETA}/manifest.json`]),
+  enabledAddonUrls: { subscribe: (run: (value: string[]) => void) => { run(enabled.urls); return () => {} } },
 }))
+const CINEMETA_MANIFEST = {
+  id: 'cinemeta', name: 'Cinemeta', resources: ['catalog', 'meta'], types: ['series'],
+  catalogs: [{ type: 'series', id: 'top', extra: [{ name: 'search' }] }],
+}
+const manifests = new Map<string, unknown>()
 vi.mock('$lib/stremio/manifest', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  fetchManifest: async () => ({
-    id: 'cinemeta', name: 'Cinemeta', resources: ['catalog', 'meta'], types: ['series'],
-    catalogs: [{ type: 'series', id: 'top', extra: [{ name: 'search' }] }],
-  }),
+  fetchManifest: async (base: string) => manifests.get(base.replace(/\/manifest\.json$/, '')) ?? CINEMETA_MANIFEST,
 }))
 
 const { stremioCatalog } = await import('./stremio')
@@ -56,5 +59,39 @@ describe('Stremio catalog detail', () => {
     const media = await stremioCatalog.detail!(page.media[0].catalog!)
 
     expect(media?.title.userPreferred).toBe('Example Saga')
+  })
+
+  it('asks another add-on that serves the meta when the catalog that supplied the card has none', async () => {
+    enabled.urls = ['https://lists.test/manifest.json', 'https://anime-meta.test/manifest.json']
+    manifests.set('https://lists.test', { id: 'lists', name: 'Lists', resources: ['catalog'], catalogs: [{ type: 'series', id: 'picks', extraSupported: ['search'] }] })
+    manifests.set('https://anime-meta.test', { id: 'meta', name: 'Meta', resources: [{ name: 'meta', types: ['series'], idPrefixes: ['kitsu:'] }] })
+    responses.set('https://lists.test/catalog/series/picks/search=Example%20Anime.json', {
+      metas: [{ id: 'kitsu:1', type: 'series', name: 'Example Anime' }],
+    })
+    responses.set('https://anime-meta.test/meta/series/kitsu%3A1.json', {
+      meta: { id: 'kitsu:1', type: 'series', name: 'Example Anime', videos: [{ id: 'kitsu:1:1', season: 1, episode: 1 }] },
+    })
+
+    // The legacy `extraSupported` declaration is searchable, and page 1 sends no `skip`.
+    const page = await stremioCatalog.search!({ query: 'Example Anime', type: 'series' })
+    const media = await stremioCatalog.detail!(page.media[0].catalog!)
+
+    expect(media?.videos?.map((video) => video.id)).toEqual(['kitsu:1:1'])
+  })
+
+  it('plays a meta with no videos through its default video id', async () => {
+    enabled.urls = ['https://channels.test/manifest.json']
+    manifests.set('https://channels.test', { id: 'ch', name: 'Channels', resources: ['catalog', 'meta'], catalogs: [{ type: 'tv', id: 'live', extra: [{ name: 'search' }] }] })
+    responses.set('https://channels.test/catalog/tv/live/search=Example%20Channel.json', {
+      metas: [{ id: 'ch:1', type: 'tv', name: 'Example Channel' }],
+    })
+    responses.set('https://channels.test/meta/tv/ch%3A1.json', {
+      meta: { id: 'ch:1', type: 'tv', name: 'Example Channel', behaviorHints: { defaultVideoId: 'ch:1:live' } },
+    })
+
+    const page = await stremioCatalog.search!({ query: 'Example Channel', type: 'all' })
+    const media = await stremioCatalog.detail!(page.media[0].catalog!)
+
+    expect(media?.videos?.map((video) => video.id)).toEqual(['ch:1:live'])
   })
 })

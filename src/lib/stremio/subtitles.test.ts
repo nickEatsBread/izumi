@@ -19,6 +19,11 @@ describe('pickSubtitleId (route the id format by the addon\'s declared idPrefixe
     expect(pickSubtitleId(['tt'], undefined, KITSU)).toBe(KITSU)
     expect(pickSubtitleId(['kitsu'], IMDB, undefined)).toBe(IMDB)
   })
+  it('prefers the meta\'s own video id, as Stremio asks with it', () => {
+    expect(pickSubtitleId(['tt'], IMDB, KITSU, 'tt0000001:1:5')).toBe('tt0000001:1:5')
+    expect(pickSubtitleId(undefined, IMDB, KITSU, 'custom:9')).toBe('custom:9')
+    expect(pickSubtitleId(['kitsu'], IMDB, KITSU, 'custom:9')).toBe(KITSU)
+  })
   it('returns undefined when there is no id at all', () => {
     expect(pickSubtitleId(['tt'], undefined, undefined)).toBeUndefined()
   })
