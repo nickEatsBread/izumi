@@ -473,3 +473,16 @@ describe('refineStreams (trailer packs)', () => {
     expect(r.rejected).toEqual([expect.objectContaining({ reason: 'episode-extra' })])
   })
 })
+
+describe('the native title in the wanted list', () => {
+  it('matches a release in the native script without letting a Latin word inside it stand alone', () => {
+    const film = {
+      id: 1, type: 'ANIME', format: 'MOVIE', episodes: 1,
+      title: { romaji: 'Example Gekijouban', english: 'Example the Movie', native: '劇場版 EXAMPLE -エグザンプル-', userPreferred: 'Example Gekijouban' },
+      synonyms: [],
+    } as any
+    const series = { ...film, format: 'TV', episodes: 12, title: { romaji: 'Gachiakuta', english: 'Gachiakuta', native: 'ガチアクタ', userPreferred: 'Gachiakuta' } }
+    expect(refineStreams(film, [{ behaviorHints: { filename: 'Example -  182 1080p BluRay x265-Group.mkv' } }]).kept).toHaveLength(0)
+    expect(refineStreams(series, [{ behaviorHints: { filename: '[Group] ガチアクタ #01 [1080p].mkv' } }]).kept).toHaveLength(1)
+  })
+})
