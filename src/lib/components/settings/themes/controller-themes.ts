@@ -1,13 +1,11 @@
 import type { InstalledTheme } from '$lib/themes/installed'
+import { DEFAULT_THEME_KEY } from '$lib/themes/store-shelves'
 
-// The controller theme list (ControllerThemeList.svelte): one large card per theme, izumi's default
-// first. Pure, so the ordering and the sheet's choices are unit-tested without a DOM.
+// The Themes page's installed-theme state: which one is applied and what its options sheet offers.
+// Pure, so the ordering and the sheet's choices are unit-tested without a DOM.
 
 /** The default appearance's card; installed themes use their package id. */
-export const DEFAULT_THEME_CARD = 'izumi-default'
-
-/** A card's stable identity: applying a theme restyles the page, and focus finds the card again by it. */
-export const themeCardNavId = (id: string) => `theme-card:${id}`
+export const DEFAULT_THEME_CARD = DEFAULT_THEME_KEY
 
 /** The card that shows Applied: the default under izumi's own preset, an install whose design is the
  *  active one under `custom`, else none (a shipped palette from Appearance is in use). */
@@ -17,22 +15,19 @@ export function appliedThemeCard(preset: string, activeDesignId: string, items: 
   return items.find((item) => item.designId === activeDesignId)?.id ?? null
 }
 
-export type ThemeOptionId = 'update' | 'restore' | 'store' | 'remove'
+export type ThemeOptionId = 'update' | 'restore' | 'remove'
 
 export const THEME_OPTION_LABELS: Record<ThemeOptionId, string> = {
   update: 'Check for update',
   restore: 'Restore previous version',
-  store: 'View in store',
   remove: 'Remove',
 }
 
-/** A theme's secondary actions in sheet order. `update`: it came from a store or an update link;
- *  `store`: its store still lists it. */
-export function themeOptionIds(item: Pick<InstalledTheme, 'previous'>, can: { update: boolean; store: boolean }): ThemeOptionId[] {
+/** A theme's secondary actions in sheet order. `update`: it came from a store or an update link. */
+export function themeOptionIds(item: Pick<InstalledTheme, 'previous'>, can: { update: boolean }): ThemeOptionId[] {
   const ids: ThemeOptionId[] = []
   if (can.update) ids.push('update')
   if (item.previous) ids.push('restore')
-  if (can.store) ids.push('store')
   ids.push('remove')
   return ids
 }
