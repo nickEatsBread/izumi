@@ -11,6 +11,11 @@ use std::time::Duration;
 
 use super::fmp4::Sample;
 
+// The CDM host boundary. On Linux it is the C++ shim (native/widevine/host.cc), linked by build.rs
+// and called through this extern block. On Windows the same C ABI is a pure-Rust host in the crate
+// (host_win.rs), so there `WvCallbacks`/`WvHost` and the wv_* functions are imported from it; the
+// rest of this file is identical either way.
+#[cfg(target_os = "linux")]
 #[repr(C)]
 struct WvCallbacks {
     user: *mut c_void,
@@ -19,8 +24,10 @@ struct WvCallbacks {
     on_log: Option<extern "C" fn(*mut c_void, *const c_char)>,
 }
 
+#[cfg(target_os = "linux")]
 enum WvHost {}
 
+#[cfg(target_os = "linux")]
 extern "C" {
     fn wv_module_load(path: *const c_char, err: *mut c_char, err_len: usize) -> i32;
     fn wv_module_version() -> *const c_char;
@@ -42,6 +49,12 @@ extern "C" {
     fn wv_host_close(h: *mut WvHost);
 }
 
+#[cfg(target_os = "windows")]
+use super::host_win::{
+    wv_decrypt, wv_host_close, wv_host_interface, wv_host_open, wv_host_tick, wv_module_load, wv_module_version, wv_session_close, wv_session_create,
+    wv_session_update, wv_set_server_certificate, wv_video_decode, wv_video_init, wv_video_reset, WvCallbacks, WvHost,
+};
+
 /// cdm::Status kNoKey: the module will not release this sample's clear bytes.
 pub const STATUS_NO_KEY: i32 = 2;
 
@@ -56,7 +69,8 @@ impl std::fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 /// One decoded picture's presentation timestamp (microseconds) and size; the tightly packed I420
-/// bytes are in the buffer handed back with it.
+/// bytes are in the buffer handed back with it. Video decode is the Linux streaming path only.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct Picture {
     pub ts_us: i64,
     pub width: i32,
@@ -66,9 +80,14 @@ pub struct Picture {
 #[derive(Debug, Default, Clone)]
 pub struct KeyReport {
     pub usable: u32,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub total: u32,
     /// Distinct non-usable statuses seen (e.g. 3 output restricted).
     pub other: Vec<u32>,
+    /// The 16-byte content KIDs the licence marked usable. A stream can carry several (Crunchyroll
+    /// returns one per rung); a fragment whose tenc KID is not among them is decrypted with one of
+    /// these instead, which is how the content key is actually selected.
+    pub usable_kids: Vec<[u8; 16]>,
 }
 
 /// Messages the module sends after the licence (renewals) for the playback session to forward.
@@ -78,7 +97,8 @@ pub type Renewals = tokio::sync::mpsc::UnboundedSender<Vec<u8>>;
 struct Callbacks {
     request: Option<Vec<u8>>,
     unhandled: Vec<u32>,
-    keys: Vec<u32>,
+    /// (status, key_id) for each key the licence reported; status 0 is usable.
+    keys: Vec<(u32, [u8; 16])>,
     renewals: Option<Renewals>,
 }
 
@@ -97,10 +117,15 @@ extern "C" fn on_message(user: *mut c_void, _: *const c_char, _: u32, kind: u32,
         _ => state.unhandled.push(kind),
     }
 }
-extern "C" fn on_key(user: *mut c_void, _: *const u8, _: u32, status: u32) {
+extern "C" fn on_key(user: *mut c_void, key_id: *const u8, key_id_len: u32, status: u32) {
     // SAFETY: as in on_message.
     let state = unsafe { &mut *(user as *mut Callbacks) };
-    state.keys.push(status);
+    let mut kid = [0u8; 16];
+    if !key_id.is_null() && key_id_len as usize >= 16 {
+        // SAFETY: the module gives a valid key_id pointer of key_id_len bytes.
+        kid.copy_from_slice(unsafe { std::slice::from_raw_parts(key_id, 16) });
+    }
+    state.keys.push((status, kid));
 }
 extern "C" fn on_log(_: *mut c_void, line: *const c_char) {
     eprintln!("[widevine] {}", unsafe { CStr::from_ptr(line) }.to_string_lossy());
@@ -114,13 +139,15 @@ struct Instance {
 
 type Reply<T> = mpsc::Sender<Result<T>>;
 
+// The video-decode jobs (and their Cdm methods) are built only by the Linux streaming path.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 enum Job {
     Load { library: String, reply: Reply<String> },
     Open { interface: i32, renewals: Renewals, reply: Reply<u64> },
     SetCertificate { id: u64, certificate: Vec<u8>, reply: Reply<()> },
     Request { id: u64, init_data: Vec<u8>, reply: Reply<Vec<u8>> },
     Update { id: u64, response: Vec<u8>, reply: Reply<KeyReport> },
-    Decrypt { id: u64, data: Vec<u8>, kid: [u8; 16], samples: Vec<Sample>, reply: mpsc::Sender<(Vec<u8>, Result<()>)> },
+    Decrypt { id: u64, data: Vec<u8>, kids: Vec<[u8; 16]>, samples: Vec<Sample>, reply: mpsc::Sender<(Vec<u8>, Result<()>)> },
     VideoInit { id: u64, profile: u32, width: i32, height: i32, avcc: Vec<u8>, reply: Reply<()> },
     VideoDecode { id: u64, kid: [u8; 16], iv: Vec<u8>, subsamples: Vec<(u32, u32)>, data: Option<Vec<u8>>, ts_us: i64, out: Vec<u8>, reply: mpsc::Sender<(Vec<u8>, Result<Option<Picture>>)> },
     VideoReset { id: u64, reply: Reply<()> },
@@ -240,25 +267,44 @@ fn run(rx: mpsc::Receiver<Job>) {
                         bail!("the licence server's answer was rejected by the Widevine module ({rc})");
                     }
                     let keys = &i.callbacks.keys;
-                    let mut other: Vec<u32> = keys.iter().copied().filter(|s| *s != 0).collect();
+                    let mut other: Vec<u32> = keys.iter().map(|(s, _)| *s).filter(|s| *s != 0).collect();
                     other.sort_unstable();
                     other.dedup();
-                    Ok(KeyReport { usable: keys.iter().filter(|s| **s == 0).count() as u32, total: keys.len() as u32, other })
+                    let usable_kids: Vec<[u8; 16]> = keys.iter().filter(|(s, _)| *s == 0).map(|(_, kid)| *kid).collect();
+                    Ok(KeyReport { usable: keys.iter().filter(|(s, _)| *s == 0).count() as u32, total: keys.len() as u32, other, usable_kids })
                 });
                 let _ = reply.send(result);
             }
-            Job::Decrypt { id, mut data, kid, samples, reply } => {
+            Job::Decrypt { id, mut data, kids, samples, reply } => {
                 let result = instance(&mut instances, id).and_then(|i| {
                     for s in &samples {
+                        // A sample whose subsamples are all clear (no cipher bytes) is already plaintext;
+                        // sending it through Decrypt is unnecessary and some module builds mishandle it.
+                        if !s.subsamples.is_empty() && s.subsamples.iter().all(|(_, e)| *e == 0) {
+                            continue;
+                        }
                         let pairs: Vec<u32> = s.subsamples.iter().flat_map(|(c, e)| [*c, *e]).collect();
                         let sample = data.get_mut(s.offset..s.offset + s.size).ok_or_else(|| anyhow!("sample outside its fragment"))?;
-                        let rc = unsafe {
-                            wv_decrypt(i.host, kid.as_ptr(), 16, s.iv.as_ptr(), s.iv.len() as u32, pairs.as_ptr(), s.subsamples.len() as u32, sample.as_mut_ptr(), sample.len() as u32)
-                        };
-                        match rc {
+                        // A stream can carry several content KIDs (Crunchyroll keys one per rung), and a
+                        // sample is not always encrypted with the tenc default. kNoKey leaves the bytes
+                        // untouched, so trying the next usable KID on the same buffer is safe.
+                        let mut last = STATUS_NO_KEY;
+                        for kid in &kids {
+                            let rc = unsafe {
+                                wv_decrypt(i.host, kid.as_ptr(), 16, s.iv.as_ptr(), s.iv.len() as u32, pairs.as_ptr(), s.subsamples.len() as u32, sample.as_mut_ptr(), sample.len() as u32)
+                            };
+                            last = rc;
+                            if rc == 0 {
+                                break;
+                            }
+                            if rc != STATUS_NO_KEY {
+                                bail!("decrypt failed ({rc}) at offset {}", s.offset);
+                            }
+                        }
+                        match last {
                             0 => {}
-                            STATUS_NO_KEY => return Err(Refused(rc).into()),
-                            _ => bail!("decrypt failed ({rc}) at offset {}", s.offset),
+                            STATUS_NO_KEY => return Err(Refused(STATUS_NO_KEY).into()),
+                            rc => bail!("decrypt failed ({rc}) at offset {}", s.offset),
                         }
                     }
                     Ok(())
@@ -336,10 +382,11 @@ impl Cdm {
         send(|reply| Job::Update { id: self.id, response, reply })?
     }
 
-    /// Decrypts the samples of one fragment in place. The buffer always comes back (to be zeroed).
-    pub fn decrypt(&self, data: Vec<u8>, kid: [u8; 16], samples: Vec<Sample>) -> (Vec<u8>, Result<()>) {
+    /// Decrypts the samples of one fragment in place, trying `kids` in order per sample (a stream can
+    /// key several KIDs). The buffer always comes back (to be zeroed).
+    pub fn decrypt(&self, data: Vec<u8>, kids: Vec<[u8; 16]>, samples: Vec<Sample>) -> (Vec<u8>, Result<()>) {
         let id = self.id;
-        match send(|reply| Job::Decrypt { id, data, kid, samples, reply }) {
+        match send(|reply| Job::Decrypt { id, data, kids, samples, reply }) {
             Ok(back) => back,
             Err(e) => (Vec::new(), Err(e)),
         }
@@ -347,19 +394,22 @@ impl Cdm {
 
     /// Whether the module releases decrypt-only output for small video samples. Probed with a
     /// synthetic two-NAL sample of a few bytes, as Kodi does; a refusal means video must go through
-    /// the module's own decoder.
+    /// the module's own decoder. Used by the Linux streaming path.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn allows_decrypt_only_video(&self, kid: [u8; 16]) -> bool {
         let data = vec![0, 0, 0, 1, 9, 0xff, 0, 0, 0, 1, 10, 0xff];
         let sample = Sample { offset: 0, size: data.len(), iv: vec![1, 2, 3, 4, 5, 6, 7, 8], subsamples: vec![(5, 1), (5, 1)], dts: 0, duration: 0, cto: 0 };
-        let (mut back, result) = self.decrypt(data, kid, vec![sample]);
+        let (mut back, result) = self.decrypt(data, vec![kid], vec![sample]);
         back.fill(0);
         result.is_ok()
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn video_init(&self, profile: u32, width: i32, height: i32, avcc: Vec<u8>) -> Result<()> {
         send(|reply| Job::VideoInit { id: self.id, profile, width, height, avcc, reply })?
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     #[allow(clippy::too_many_arguments)]
     pub fn video_decode(&self, kid: [u8; 16], iv: Vec<u8>, subsamples: Vec<(u32, u32)>, data: Option<Vec<u8>>, ts_us: i64, out: Vec<u8>) -> (Vec<u8>, Result<Option<Picture>>) {
         let id = self.id;
@@ -369,6 +419,7 @@ impl Cdm {
         }
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn video_reset(&self) -> Result<()> {
         send(|reply| Job::VideoReset { id: self.id, reply })?
     }

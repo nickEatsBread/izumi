@@ -6,7 +6,20 @@
 //!
 //! `IZUMI_WIDEVINE_SECCOMP=log` reports would-be denials to the kernel log instead, and `off` skips
 //! the filter, both for diagnosis only.
+//!
+//! seccomp is a Linux kernel feature; on other platforms `confine_current_thread` is a no-op and
+//! the CDM thread runs unconfined. Windows uses the module only to decrypt-save, not for playback.
 
+#[cfg(not(target_os = "linux"))]
+pub fn confine_current_thread() -> Result<&'static str, String> {
+    Ok("unconfined (seccomp is Linux-only)")
+}
+
+#[cfg(target_os = "linux")]
+pub use linux::confine_current_thread;
+
+#[cfg(target_os = "linux")]
+mod linux {
 const AUDIT_ARCH_X86_64: u32 = 0xC000_003E;
 // struct seccomp_data offsets.
 const NR: u32 = 0;
@@ -151,3 +164,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+} // mod linux
