@@ -24,8 +24,9 @@ export interface DownloadItem {
   path?: string
   url?: string
   /** Which engine is fetching this item. Absent on items queued by older builds, which were all
-   *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job. */
-  kind?: 'http' | 'torrent' | 'shaka'
+   *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job.
+   *  `drm` decrypts protected segments into one clear local file (no CDM/licence at playback). */
+  kind?: 'http' | 'torrent' | 'shaka' | 'drm'
   /** The HTTP engine is assembling an adaptive playlist. Its raw partial restarts from segment 1
    * on resume, so the visible byte counter must restart with it. */
   hls?: boolean
