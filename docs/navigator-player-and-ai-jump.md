@@ -218,6 +218,23 @@ Decision 3 is in only for the one endpoint the viewer types.
   - install from an https `plugin.json` URL, or from files;
   - a permission review before install;
   - per-plugin settings, a log and removal.
+- **The player panel copies Navigator's Ask panel** (`components/navigator/focus.tsx`, `focus-results.tsx`,
+  `result-card.tsx`, `activity-status.tsx`), with Navigator's dark tokens and motion:
+  - it sits centred at the bottom of the video, up to 36 rem wide;
+  - above it are the activity pill (a 3×3 pixel loader on a 650 ms cycle, plus text with a 1.4 s shimmer) and
+    a New pill;
+  - while the plugin works, a beam travels around the panel's border every 4 s;
+  - the viewer's question is a teal bubble;
+  - steps read "Found the title", "Loaded subtitles", "Finding the scene in the dialogue" and "Found the scene";
+  - result cards rise 10 px over 180 ms, 50 ms apart: cover, subtitle track with its line count, and "At 0:16"
+    with the quote;
+  - each answer ends with "Done in Ns";
+  - the composer grows with its text, and its send arrow becomes a stop square while busy.
+
+  Plugins send only data (turns, steps and cards); izumi draws them. An image is only ever the playing
+  title's cover, filled in by izumi, so a plugin cannot load a URL to track the viewer. The beam is drawn
+  in CSS, because Navigator's BorderBeam is a React package. Navigator's Ship icon is its own logo;
+  plugins get Sparkles.
 - **Jump to a moment** (`plugins/jump-to-moment`). It needs four settings: the model address, the model,
   an optional key, and "Only search what I've watched". To answer a question it:
   1. keeps the lines around keyword hits (±5 lines, top 12 hits), or all lines when nothing matches;

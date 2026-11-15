@@ -11,8 +11,14 @@ import {
 } from './registry'
 import { createSandbox, runConformance } from './sandbox'
 
-export interface PanelItem { id: string; label: string; detail?: string }
-export interface PanelState { status?: string; busy?: boolean; items?: PanelItem[] }
+/** A plugin's player panel, drawn by izumi in Navigator's Ask style: a conversation of turns, each a
+ *  question and the steps that answered it, with result cards under them. Images are never URLs from
+ *  the plugin: `poster` is the playing title's cover, filled in by izumi. */
+export type PanelIcon = 'search' | 'subtitles' | 'languages' | 'tv' | 'sparkles'
+export interface PanelCard { id?: string; title: string; subtitle?: string; meta?: string[]; quote?: string; image?: 'poster'; icon?: PanelIcon }
+export interface PanelStep { label: string; icon?: PanelIcon; state: 'running' | 'completed' | 'error'; cards?: PanelCard[] }
+export interface PanelTurn { id: string; question: string; steps: PanelStep[]; text?: string; seconds?: number }
+export interface PanelState { activity?: string; turns: PanelTurn[] }
 export interface PluginRun { id: string; name: string; panel?: { label: string; placeholder: string }; state: 'starting' | 'ready' | 'failed'; error?: string }
 
 export const pluginRuns = writable<PluginRun[]>([])
@@ -42,15 +48,34 @@ function need(plugin: InstalledPlugin, scope: PluginScope) {
   if (!plugin.manifest.permissions.scopes.includes(scope)) throw new Error(`permission "${scope}" was not granted`)
 }
 
+const ICONS: readonly PanelIcon[] = ['search', 'subtitles', 'languages', 'tv', 'sparkles']
 function cleanPanel(value: unknown): PanelState {
-  const raw = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
-  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : undefined)
-  const items = Array.isArray(raw.items) ? raw.items.slice(0, 20).flatMap((item) => {
-    const i = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
-    const id = str(i.id, 100), label = str(i.label, 200)
-    return id && label ? [{ id, label, detail: str(i.detail, 300) }] : []
-  }) : undefined
-  return { status: str(raw.status, 300), busy: raw.busy === true, items }
+  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {}) as Record<string, unknown>
+  const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.slice(0, max) : undefined)
+  const icon = (v: unknown) => (ICONS.includes(v as PanelIcon) ? (v as PanelIcon) : undefined)
+  const card = (v: unknown): PanelCard[] => {
+    const c = obj(v)
+    const title = str(c.title, 200)
+    if (!title) return []
+    const meta = Array.isArray(c.meta) ? c.meta.slice(0, 4).flatMap((m) => str(m, 60) ?? []) : undefined
+    return [{ id: str(c.id, 100), title, subtitle: str(c.subtitle, 200), meta, quote: str(c.quote, 400), image: c.image === 'poster' ? 'poster' : undefined, icon: icon(c.icon) }]
+  }
+  const step = (v: unknown): PanelStep[] => {
+    const s = obj(v)
+    const label = str(s.label, 160)
+    const state = ['running', 'completed', 'error'].includes(s.state as string) ? (s.state as PanelStep['state']) : undefined
+    if (!label || !state) return []
+    return [{ label, state, icon: icon(s.icon), cards: Array.isArray(s.cards) ? s.cards.slice(0, 6).flatMap(card) : undefined }]
+  }
+  const raw = obj(value)
+  const turns = Array.isArray(raw.turns) ? raw.turns.slice(-20).flatMap((v) => {
+    const t = obj(v)
+    const id = str(t.id, 100), question = str(t.question, 500)
+    if (!id || !question) return []
+    const seconds = typeof t.seconds === 'number' && Number.isFinite(t.seconds) ? t.seconds : undefined
+    return [{ id, question, steps: Array.isArray(t.steps) ? t.steps.slice(0, 8).flatMap(step) : [], text: str(t.text, 1000), seconds }]
+  }) : []
+  return { activity: str(raw.activity, 80), turns }
 }
 
 async function playerProperty(name: string): Promise<string> {

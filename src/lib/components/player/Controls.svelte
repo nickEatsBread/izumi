@@ -1121,12 +1121,9 @@
         <!-- Plugin panels (permission player.panel): one button per running plugin that has one. -->
         {#if !gm}
           {#each $pluginRuns.filter((run) => run.panel) as run (run.id)}
-            <div class="relative">
-              <button data-part="player.control" data-control="plugin" data-plugin={run.id} data-focusable class={iconBtn}
-                      onclick={() => openPluginPanel.update((open) => (open === run.id ? null : run.id))}
-                      title={run.panel?.label} aria-label={run.panel?.label} aria-expanded={$openPluginPanel === run.id}><Sparkles size={icSize} /></button>
-              {#if $openPluginPanel === run.id}<PluginPanel {run} />{/if}
-            </div>
+            <button data-part="player.control" data-control="plugin" data-plugin={run.id} data-focusable class={iconBtn}
+                    onclick={() => openPluginPanel.update((open) => (open === run.id ? null : run.id))}
+                    title={run.panel?.label} aria-label={run.panel?.label} aria-expanded={$openPluginPanel === run.id}><Sparkles size={icSize} /></button>
           {/each}
         {/if}
 
@@ -1693,5 +1690,12 @@
 
   {#if menuAt && root && !gm}
     <PlayerContextMenu at={menuAt} {root} items={contextItems} onclose={() => (menuAt = null)} />
+  {/if}
+
+  <!-- An open plugin panel floats centred over the bottom of the video, as Navigator's Ask panel does. -->
+  {#if !gm}
+    {#each $pluginRuns as run (run.id)}
+      {#if $openPluginPanel === run.id}<PluginPanel {run} />{/if}
+    {/each}
   {/if}
 </div>
