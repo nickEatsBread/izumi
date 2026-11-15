@@ -6069,7 +6069,7 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
         tauri::plugin::Builder::<tauri::DynRuntime>::new("disqus-profile")
-            .js_init_script(DISQUS_PROFILE_SCRIPT.to_string())
+            .initialization_script_on_all_frames(DISQUS_PROFILE_SCRIPT)
             .build(),
     );
     let builder = builder.setup(|app| {

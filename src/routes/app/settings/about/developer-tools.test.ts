@@ -12,7 +12,8 @@ describe('production developer tools', () => {
   const loggingBridge = read('../../../../lib/debug/native-logging.ts')
 
   it('ships the desktop inspector feature and exposes it through an explicit settings action', () => {
-    expect(cargo).toContain('tauri = { version = "2", features = ["devtools"] }')
+    expect(cargo).toContain('tauri = { version = "=3.0.0-alpha.6", features = ["devtools"] }')
+    expect(cargo).toContain('tauri-runtime-wry = { version = "=3.0.0-alpha.6", features = ["devtools"] }')
     expect(native).toContain('fn open_developer_tools(window: tauri::WebviewWindow)')
     expect(native).toContain('window.open_devtools();')
     expect(page).toContain("await invoke('open_developer_tools')")
