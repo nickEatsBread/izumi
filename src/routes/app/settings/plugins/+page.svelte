@@ -21,7 +21,7 @@
   const runOf = (id: string) => $pluginRuns.find((run) => run.id === id)
 
   async function fetchText(target: string) {
-    const reply = await invoke<{ status: number; body: string }>('http_get', { url: target, timeoutMs: 20_000, maxBytes: 3 * 1024 * 1024 })
+    const reply = await invoke<{ status: number; body: string }>('http_get', { url: target, requestId: crypto.randomUUID(), timeoutMs: 20_000, maxBytes: 3 * 1024 * 1024 })
     if (reply.status < 200 || reply.status >= 300) throw new Error(`${target} answered ${reply.status}.`)
     return reply.body
   }

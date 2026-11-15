@@ -1,15 +1,26 @@
 /** The sandbox a plugin runs in: a hidden `<iframe sandbox="allow-scripts">` (an opaque origin: no
  *  izumi storage, cookies or IPC, which Tauri injects into the main frame only) whose CSP allows only
- *  this bootstrap and blob: workers, and no connections at all. The bootstrap starts the plugin in a
- *  module Worker (off the UI thread; removing the iframe kills it), which inherits that CSP. The
+ *  this bootstrap and blob: workers, and no connections at all. The bootstrap starts a classic Worker
+ *  (off the UI thread; removing the iframe kills it), which inherits that CSP and imports the plugin's
+ *  module from a blob. A module Worker cannot start from a blob in an opaque origin on WebView2. The
  *  plugin talks to izumi only through the MessagePort handed to it. */
 
-const BOOTSTRAP = `addEventListener('message', (event) => {
+// WebView2 injects Tauri's IPC globals into every frame, this sandbox included (seen 2026-11-15).
+// `__TAURI_INTERNALS__` and `ipc` are non-configurable here, but Tauri ignores IPC from this frame:
+// an invoke gets no answer and a `set volume` from it changed nothing. Plugin code never runs in the
+// frame anyway (only in the Worker, where these do not exist). The bootstrap still removes what it
+// can, and the probe checks that an invoke from the frame stays unanswered.
+const BOOTSTRAP = `for (const name of ['__TAURI_INTERNALS__', '__TAURI__', '__TAURI_POST_MESSAGE__', '__TAURI_IPC__', 'ipc']) {
+  try { delete window[name] } catch {}
+  try { if (window[name] !== undefined) Object.defineProperty(window, name, { value: undefined, configurable: false }) } catch {}
+}
+try { if (window.chrome && window.chrome.webview) Object.defineProperty(window.chrome, 'webview', { value: undefined, configurable: false }) } catch {}
+addEventListener('message', (event) => {
   const data = event.data
   if (event.source !== parent || !data || data.type !== 'izumi-plugin-boot' || !event.ports[0]) return
   const port = event.ports[0]
   const run = (results) => {
-    const worker = new Worker(URL.createObjectURL(new Blob([data.prelude], { type: 'text/javascript' })), { type: 'module' })
+    const worker = new Worker(URL.createObjectURL(new Blob([data.prelude], { type: 'text/javascript' })))
     worker.onerror = (e) => port.postMessage({ type: 'failed', error: String(e.message || 'worker error') })
     worker.postMessage({ type: 'boot', code: data.code, probe: !!data.probe, frame: results }, [port])
   }
@@ -22,7 +33,13 @@ const BOOTSTRAP = `addEventListener('message', (event) => {
     attempt('frame.localStorage', () => localStorage.length),
     attempt('frame.indexedDB', () => new Promise((ok, no) => { const r = indexedDB.open('probe'); r.onsuccess = ok; r.onerror = no })),
     attempt('frame.cookie', () => { void document.cookie }),
-    attempt('frame.ipc', () => { if (!window.__TAURI_INTERNALS__ && !window.ipc) throw 0 }),
+    attempt('frame.ipc', () => new Promise((ok, no) => {
+      const internals = window.__TAURI_INTERNALS__
+      if (!internals || typeof internals.invoke !== 'function') return no()
+      const timer = setTimeout(no, 2000)
+      internals.invoke('plugin:app|version').then((v) => { clearTimeout(timer); ok(v) }, () => { clearTimeout(timer); no() })
+    })),
+    attempt('frame.webview', () => { if (!(window.chrome && window.chrome.webview)) throw 0 }),
     attempt('frame.fetch', () => fetch('https://example.com/', { mode: 'no-cors' })),
     attempt('frame.ipcFetch', () => fetch('http://ipc.localhost/plugin%3Aapp%7Cversion', { method: 'POST' })),
   ]).then(() => run(results))
@@ -44,6 +61,8 @@ export const WORKER_PRELUDE = `self.onmessage = async (event) => {
     await attempt('worker.import', () => import('https://example.com/probe.js'))
     await attempt('worker.indexedDB', () => new Promise((ok, no) => { const r = indexedDB.open('probe'); r.onsuccess = ok; r.onerror = no }))
     await attempt('worker.caches', () => caches.open('probe'))
+    await attempt('worker.ipc', () => { if (!self.__TAURI_INTERNALS__ && !self.ipc && !(self.chrome && self.chrome.webview)) throw 0 })
+    await attempt('worker.ipcFetch', () => fetch('http://ipc.localhost/plugin%3Aapp%7Cversion', { method: 'POST' }))
     port.postMessage({ type: 'probe', results })
     return
   }

@@ -4,8 +4,13 @@ import { describe, expect, it } from 'vitest'
 import { grantText, parseManifest } from './manifest'
 import { checkPluginUrl, isLocalHost } from './network'
 import { classifyStorageKey } from '$lib/storage/key-policy'
-// @ts-expect-error the example plugin is plain JavaScript
-import { parseMatches, pickLines } from '../../../plugins/jump-to-moment/main.js'
+
+// Loaded by URL so the type checker leaves the plugin's plain JavaScript alone.
+const pluginPath = '../../../plugins/jump-to-moment/main.js'
+const { parseMatches, pickLines } = (await import(/* @vite-ignore */ pluginPath)) as {
+  parseMatches: (content: string) => { line: number; reason?: string }[]
+  pickLines: (cues: { start: number; end: number; text: string }[], query: string) => number[]
+}
 
 const exampleDir = new URL('../../../plugins/jump-to-moment/', import.meta.url)
 const example = () => JSON.parse(readFileSync(new URL('plugin.json', exampleDir), 'utf8'))

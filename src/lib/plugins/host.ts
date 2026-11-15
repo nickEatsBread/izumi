@@ -91,13 +91,13 @@ async function pluginFetch(plugin: InstalledPlugin, rawUrl: unknown, init: unkno
   const method = (options.method ?? 'GET').toUpperCase()
   const headers = Object.fromEntries(Object.entries(options.headers ?? {}).filter(([, v]) => typeof v === 'string').slice(0, 40)) as Record<string, string>
   if (method === 'GET') {
-    const reply = await invoke<{ status: number; body: string }>('http_get', { url: url.href, headers, timeoutMs: 60_000, maxBytes: 10 * 1024 * 1024 })
+    const reply = await invoke<{ status: number; body: string }>('http_get', { url: url.href, headers, requestId: crypto.randomUUID(), timeoutMs: 60_000, maxBytes: 10 * 1024 * 1024 })
     return { status: reply.status, headers: {}, body: reply.body }
   }
   if (method !== 'POST') throw new Error('only GET and POST are allowed')
   const body = typeof options.body === 'string' ? options.body : ''
   if (body.length > 2 * 1024 * 1024) throw new Error('request body is larger than 2 MB')
-  const reply = await invoke<{ status: number; headers: Record<string, string>; body: string }>('http_post', { url: url.href, body, headers, timeoutMs: 120_000, maxBytes: 10 * 1024 * 1024 })
+  const reply = await invoke<{ status: number; headers: Record<string, string>; body: string }>('http_post', { url: url.href, body, headers, requestId: crypto.randomUUID(), timeoutMs: 120_000, maxBytes: 10 * 1024 * 1024 })
   return { status: reply.status, headers: reply.headers, body: reply.body }
 }
 
