@@ -1021,6 +1021,7 @@ fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.with_webview(move |pw| {
+            let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
             use webkit2gtk::WebViewExt;
             pw.inner().set_zoom_level(level);
         });
@@ -1189,6 +1190,7 @@ fn set_webview_accel(app: AppHandle, enabled: bool) {
     #[cfg(target_os = "linux")]
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.with_webview(move |pw| {
+            let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
             use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
             if let Some(settings) = pw.inner().settings() {
                 let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
@@ -2491,6 +2493,7 @@ fn player_chapters(player: tauri::State<'_, player::PlayerHandle>) -> Result<Str
 #[cfg(windows)]
 fn set_webview_transparent(win: &tauri::WebviewWindow) {
     let _ = win.with_webview(|webview| {
+        let Some(webview) = webview.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
         };
@@ -2689,6 +2692,7 @@ static FRAME_SCRIPT_ADDED: std::sync::atomic::AtomicBool =
 fn install_webview_frame_scripts(win: &tauri::WebviewWindow) {
     use std::sync::atomic::Ordering;
     let r = win.with_webview(|webview| {
+        let Some(webview) = webview.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
         use webview2_com::AddScriptToExecuteOnDocumentCreatedCompletedHandler;
         use windows::core::{HSTRING, PCWSTR};
         unsafe {
@@ -3435,6 +3439,7 @@ async fn capture_webview_screencast_frame(
             let tx = tx.clone();
             let hold = hold.clone();
             move |pw| unsafe {
+            let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
                 let core = match pw.controller().CoreWebView2() {
                     Ok(core) => core,
                     Err(_) => return,
@@ -3928,6 +3933,7 @@ async fn drm_gif_screencast(
             let tx = tx.clone();
             let hold = hold.clone();
             move |pw| unsafe {
+            let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
                 let core = match pw.controller().CoreWebView2() {
                     Ok(core) => core,
                     Err(_) => return,
@@ -4072,6 +4078,7 @@ async fn capture_webview_cdp(webview: &tauri::Webview, params: String) -> Result
     let wv = webview.with_webview({
         let slot = slot.clone();
         move |pw| unsafe {
+        let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
             let fail = |msg: String| {
                 if let Some(t) = slot.lock().unwrap().take() {
                     let _ = t.send(Err(msg));
@@ -4878,6 +4885,7 @@ async fn read_cookies(window: tauri::WebviewWindow, uri: String) -> String {
     let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
     let slot_err = slot.clone();
     let wv = window.with_webview(move |pw| unsafe {
+        let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
         let fail =
             |s: &std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>| {
                 if let Some(t) = s.lock().unwrap().take() {
@@ -5977,7 +5985,7 @@ pub fn run() {
     // not present GTK's toplevel. The opt-in above now checks the actual protocol registry before
     // selecting Wayland; failed preflight leaves every display variable untouched and therefore
     // keeps the established XWayland/snapshot path.
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder
         // Acquire the single-instance lock before a pending reset can touch app storage.
@@ -6060,7 +6068,7 @@ pub fn run() {
     // addDocumentStartJavaScript path reaches on Android. Windows injects it through WebView2.
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
-        tauri::plugin::Builder::<tauri::Wry>::new("disqus-profile")
+        tauri::plugin::Builder::<tauri::DynRuntime>::new("disqus-profile")
             .js_init_script(DISQUS_PROFILE_SCRIPT.to_string())
             .build(),
     );
@@ -6616,6 +6624,7 @@ pub fn run() {
                 });
                 let native_touch_app = app.handle().clone();
                 let _ = win.with_webview(move |pw| {
+                    let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
                     use glib::object::ObjectType;
                     use webkit2gtk::{
                         CookieAcceptPolicy, CookieManagerExt, SettingsExt,

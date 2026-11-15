@@ -101,6 +101,7 @@ pub fn start(
     }
 
     let _ = window.with_webview(move |pw| {
+        let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
         let wv = pw.inner();
         BUSY.store(true, Ordering::SeqCst);
         snapshot_once(&wv, &app, my_gen, fade_in, exact_crop);
