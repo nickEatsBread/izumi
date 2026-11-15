@@ -16,6 +16,7 @@
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { initClientPerformance } from '$lib/performance/client'
   import { libraryStorageError } from '$lib/storage/library-db'
+  import { startEngineMigrationWriter } from '$lib/engine-migration'
   import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
   import {
     debridKey, torrentBindInterface, torrentPlaybackMode, torrentProxyEnabled, torrentProxyUrl,
@@ -65,7 +66,10 @@
       } catch { /* invalid proxy is shown in Settings and playback fails closed */ }
     }, 4500)
     const stopTheme = startThemeSync()
-    return () => { stopPerformance(); stopTheme(); stopDolbySync() }
+    // Linux: leave this profile on disk for the move to the Chromium build (runs after +layout.ts
+    // has waited for the library stores).
+    const stopEngineMigration = startEngineMigrationWriter(localStorage)
+    return () => { stopPerformance(); stopTheme(); stopDolbySync(); stopEngineMigration() }
   })
 </script>
 {#if $libraryStorageError && !captureControlsWindow}

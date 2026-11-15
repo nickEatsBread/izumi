@@ -880,6 +880,38 @@ fn gm_touch_unstick() {
     player::linux_x11::unstick_pointer();
 }
 
+/// One-time move of a WebKitGTK install's data into the CEF build (Linux). This WebKitGTK release
+/// keeps the profile export (`src/lib/engine-migration.ts`) current in this file in app data; the
+/// first CEF launch restores it into its empty profile and then deletes it.
+#[cfg(target_os = "linux")]
+const ENGINE_MIGRATION_FILE: &str = "engine-migration.json";
+
+/// Replaces the migration file atomically (temp file, fsync, rename), so a crash or power loss
+/// mid-write leaves the previous export intact. Async so the write stays off the main thread.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn engine_migration_write(app: AppHandle, json: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        // Startup, timer and close writes can overlap, and they share one temp file.
+        static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one_at_a_time = WRITE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(ENGINE_MIGRATION_FILE);
+        let temp = dir.join(format!("{ENGINE_MIGRATION_FILE}.tmp"));
+        let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
+        file.write_all(json.as_bytes()).and_then(|()| file.sync_all()).map_err(|e| e.to_string())?;
+        std::fs::rename(&temp, &path).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, json);
+        Ok(())
+    }
+}
+
 /// Game-mode input diagnostics from the webview, persisted through the same file+stderr channel
 /// as native logs — the Flatpak sandbox swallows webview console output and the Game-mode session
 /// has no devtools, so this is the only way frontend incident reports survive to be read.
@@ -6397,6 +6429,18 @@ pub fn run() {
                         }
                     }
                 });
+                // The page writes the CEF migration file before it lets the window close
+                // (engine-migration.ts, capped at 2 s). If the page is hung, close anyway.
+                let close_win = win.clone();
+                win.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                        let close_win = close_win.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(4));
+                            let _ = close_win.destroy();
+                        });
+                    }
+                });
                 let native_touch_app = app.handle().clone();
                 let _ = win.with_webview(move |pw| {
                     use glib::object::ObjectType;
@@ -6525,6 +6569,7 @@ pub fn run() {
             native_touch_hold,
             gm_touch_unstick,
             gm_log,
+            engine_migration_write,
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
