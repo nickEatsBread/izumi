@@ -21,6 +21,7 @@ src-tauri/gen/
 !/docs/theme-packages/**
 !/docs/recommendation-watch-habits-research.md
 !/docs/recommendation-evaluation/
+!/docs/navigator-player-and-ai-jump.md
 
 /distnet/
 
