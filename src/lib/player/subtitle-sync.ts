@@ -98,7 +98,7 @@ export function correctedSrt(cues: SubtitleCue[], result: NativeSyncResult) {
   }).join('\n\n') + '\n'
 }
 
-async function subtitleText(source: string) {
+export async function subtitleText(source: string) {
   if (/^https?:\/\//i.test(source)) {
     const response = await phttp(source, { timeoutMs: 15_000, maxBytes: 4 * 1024 * 1024 })
     if (!response.ok) throw new Error(`subtitle fetch ${response.status}`)

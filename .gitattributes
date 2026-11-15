@@ -5,3 +5,6 @@ scripts/**/*.mjs text eol=lf
 # kernel look for an interpreter named "bash\r". The .desktop launcher is parsed the same way.
 scripts/**/*.sh text eol=lf
 scripts/**/*.desktop text eol=lf
+# Plugin files are pinned by their SHA-256 (plugin.json main.sha256): a CRLF checkout would no longer
+# match the hash.
+plugins/** text eol=lf

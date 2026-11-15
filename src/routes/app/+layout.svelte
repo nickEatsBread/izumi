@@ -260,6 +260,9 @@
     initDpadNav()
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
+    // Plugins (beta): nothing loads unless the viewer switched them on in Settings. Lazy, so the
+    // runtime stays out of the boot chunk.
+    void import('$lib/plugins/host').then(({ initPlugins }) => initPlugins())
     const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}
     initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})

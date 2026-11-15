@@ -176,6 +176,7 @@ export const SETTINGS_SUB_PAGES: ReadonlyMap<string, SettingsSubPageDef> = new M
   ['sources/manage', { section: 'sources', title: 'Manage sources' }],
   ['sources/priority', { section: 'sources', title: 'Source priority' }],
   ['store', { section: 'sources', title: 'Store' }],
+  ['plugins', { section: 'sources', title: 'Plugins' }],
   ['library/home', { section: 'library', title: 'Customize Home' }],
   ['library/collections', { section: 'library', title: 'Collections and covers' }],
   ['themes', { section: 'appearance', title: 'Themes' }],
