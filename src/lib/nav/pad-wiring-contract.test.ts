@@ -173,37 +173,35 @@ describe('keyboard arrow landing (commit 8)', () => {
   }
   const nav = source('./index.ts')
   const body = fn(nav, 'export function focusByNav(')
-  // revealRegionEntry is the reveal for a region's default item (it reveals through revealFocused
-  // itself); focusByNav picks it for a move that enters a region on its default.
-  const regionEntry = fn(nav, 'function revealRegionEntry(')
   const rest = code(nav.replace(body, ''))
-  const outside = code(nav.replace(body, '').replace(regionEntry, ''))
 
   it('reveals only inside focusByNav, so every arrow move lands through one place', () => {
     expect(body).not.toBe('')
-    expect(regionEntry).not.toBe('')
     expect(body).toContain('el.focus({ preventScroll: true })')
     expect(body).toContain('markNavArrived(el)')
     expect(body).toContain('recordLastNav(el)')
-    expect(body).toContain('revealFocused(el, vertical, rapid)')
-    expect(body).toContain('revealRegionEntry(el, vertical, rapid)')
-    // Outside the two, the one match left is revealFocused's own declaration, and nothing else
-    // calls revealRegionEntry.
-    expect(outside.match(/\brevealFocused\(/g)).toHaveLength(1)
-    expect(outside).toContain('function revealFocused(')
-    expect(outside).not.toMatch(/\brevealRegionEntry\(/)
+    expect(body).toContain('revealFocus(el, vertical, instant)')
+    // Outside it, the one match left is revealFocus's own declaration.
+    expect(rest.match(/\brevealFocus\(/g)).toHaveLength(1)
+    expect(rest).toContain('function revealFocus(')
+  })
+
+  it('reveals natively, as Crunchy Deck does: no scripted scroll animation', () => {
+    const reveal = fn(nav, 'function revealFocus(')
+    expect(reveal).toContain("el.scrollIntoView?.({ block: 'nearest', inline: row ? 'start' : 'center', behavior })")
+    expect(reveal).toContain('window.scrollTo({ top: 0, behavior })')
+    expect(nav).not.toMatch(/requestAnimationFrame|animateScroll|chaseScroll|scrollByExact/)
   })
 
   it('lands through focusByNav at every landing site, the side rail included', () => {
     for (const call of [
-      'focusByNav(first, vertical, e.repeat)',
-      'focusByNav(hinted, vertical, e.repeat)',
-      'focusByNav(regionDefault, vertical, e.repeat, true)',
-      'focusByNav(railPick, vertical, e.repeat)',
+      'focusByNav(first, vertical)',
+      'focusByNav(hinted, vertical)',
+      'focusByNav(regionDefault, vertical)',
+      'focusByNav(railPick, vertical)',
     ]) expect(rest, call).toContain(call)
-    // Commit 4's explicit and row picks; the generic pick also reveals a region's default entry.
-    expect(rest.split('focusByNav(target, vertical, e.repeat)').length - 1).toBe(2)
-    expect(rest).toContain('focusByNav(target, vertical, e.repeat, entersRegionDefault)')
+    // Commit 4's explicit and row picks, and the generic pick.
+    expect(rest.split('focusByNav(target, vertical)').length - 1).toBe(3)
     expect(nav).not.toContain('railPick.focus(')
   })
 
@@ -239,6 +237,6 @@ describe('keyboard arrow landing (commit 8)', () => {
     expect(hint).toBeGreaterThan(-1)
     expect(recovered).toBeGreaterThan(hint)
     expect(region).toBeGreaterThan(recovered)
-    expect(rest).toContain('focusByNav(recovered, vertical, e.repeat)')
+    expect(rest).toContain('focusByNav(recovered, vertical)')
   })
 })

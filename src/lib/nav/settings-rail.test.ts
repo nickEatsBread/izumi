@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { isMobile } from '$lib/platform'
 import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { RAIL_RETURN_ID } from '$lib/settings/back'
@@ -52,7 +51,6 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   window.scrollBy = vi.fn() as unknown as typeof window.scrollBy
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
@@ -119,22 +117,6 @@ describe('the Settings rail with a controller', () => {
     el('Add theme').focus()
     press('ArrowLeft')
     expect(document.activeElement).toBe(el('Appearance'))
-  })
-
-  it("keeps a row reached with Up clear of the section's pinned bar under a top bar", () => {
-    // A 76 px top bar plus the 41 px sticky bar: 117 px, past the usual 86 px start margin.
-    document.querySelector('[data-nav-surface]')!.insertAdjacentHTML('afterbegin', '<div data-settings-sticky data-rect="224,0,1056,117"></div>')
-    const upToBrowse = () => {
-      el('Add theme').focus()
-      press('ArrowUp')
-      expect(document.activeElement).toBe(el('Browse'))
-      const [options] = vi.mocked(window.scrollTo).mock.lastCall as unknown as [ScrollToOptions]
-      return asMove(window, options)!
-    }
-    // Hidden (the header is in view): the usual margin.
-    expect(upToBrowse().top).toBeCloseTo(64 - 720 * 0.12)
-    document.querySelector('[data-settings-sticky]')!.setAttribute('data-visible', '')
-    expect(upToBrowse().top).toBe(64 - (117 + 16))
   })
 
   it('never leaves the rail vertically, and Down at the end of the page never drops into it', () => {

@@ -9,7 +9,7 @@ describe('mobile source picker layout', () => {
     expect(source).toContain("$isMobile ? 'sp-mobile h-full w-full bg-card' : 'max-h-[85vh] w-full max-w-3xl")
     // 85vh + a floating card is the desktop shape; mobile must not inherit either.
     expect(source).toContain("$isMobile ? '' : 'place-items-center p-4'}")
-    // Over a playing video on the Deck it is a full-height side panel over the paused frame.
+    // Over a playing video on the Deck it is a full-height side panel.
     expect(source).toContain('const tvPanel = $derived($gameMode && $playing && !$isMobile)')
     expect(source).toContain("{tvPanel ? 'justify-items-end' :")
     expect(source).toContain("tvPanel ? 'h-full w-[min(46rem,62vw)] border-l border-white/10 bg-[#101012]/95'")
@@ -18,10 +18,10 @@ describe('mobile source picker layout', () => {
   it('opens with a fade and a bottom-origin scale, matching the source dialog', () => {
     expect(source).toContain("import { fade, scale } from 'svelte/transition'")
     expect(source).toContain('transition:fade={{ duration: $gameMode ? 0 : 200 }}')
-    expect(source).toContain('in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }}')
-    // Game mode slides the panel out from script; it is global because it sits in a nested block.
-    expect(source).toContain('out:panelOut|global')
-    expect(source).toContain("? motion(node as HTMLElement, gmPanelOut(tvPanel ? 'right' : 'fade'))")
+    expect(source).toContain('scale(node, { duration: 200, start: 0.95, opacity: 1 })')
+    // Game mode slides the panel instead; its outro is global because it sits in a nested block.
+    expect(source).toContain('in:panelIn out:panelOut|global')
+    expect(source).toContain("tvPanel ? { opacity: [0, 1], x: [56, 0], duration } : { opacity: [0, 1], duration }")
     expect(source).toContain('transform-origin: bottom center')
   })
 
@@ -68,9 +68,7 @@ describe('mobile source picker layout', () => {
     expect(source).toContain("prefetchSourceMetadata(info.stream, 'targeted')")
     expect(source).toContain('onpointerenter={() => targetSource(info)}')
     expect(source).toContain('onfocus={() => focusSource(info)}')
-    expect(source).toContain('if ($gameMode) bumpPlayerOverlay()')
     expect(source).toContain('const trap = pickerTrap')
-    expect(source).toContain('trap.isConnected) bumpPlayerOverlay()')
   })
 
   it('focuses a playable source on every controller-mode picker opening', () => {
@@ -86,14 +84,12 @@ describe('mobile source picker layout', () => {
     expect(source).not.toContain('let focusedBest = false')
   })
 
-  it('owns vertical controller navigation and steps its Gamescope spinner explicitly', () => {
+  it('owns vertical controller navigation', () => {
     expect(source).toContain("window.addEventListener('stream-picker-nav', onNav)")
     expect(source).toContain("item.hasAttribute('data-source-row')")
     expect(source).toContain('if (firstSource < 0) return')
     expect(source).toContain('return !isTextEntryField(item)')
     expect(source).toContain("target.scrollIntoView({ block: 'nearest'")
-    expect(source).toContain('spinnerFrame = (spinnerFrame + 1) % 8')
-    expect(source.match(/<Spinner size="xs" frame=\{\$gameMode \? spinnerFrame : undefined\} \/>/g)).toHaveLength(2)
   })
 
   it('shares the nav text-field test and stops the auto countdown when a select takes focus', () => {

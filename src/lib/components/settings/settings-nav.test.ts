@@ -32,10 +32,8 @@ describe('SettingsNav', () => {
     expect(layout).toContain('<div class="min-h-0 flex-1"><SettingsNav /></div>')
     expect(src).toContain('data-nav-scroll-container')
     expect(src).toContain('overflow-y-auto overscroll-contain')
-    expect(dpad).toContain("closest<HTMLElement>('[data-nav-scroll-container]')")
-    expect(dpad).toContain("const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'")
-    expect(dpad).toContain('const target: RevealScrollTarget = pane ?? window')
-    expect(dpad).toContain('scrollByExact(target, vertical ? top : 0, vertical ? 0 : left, behavior, chase)')
+    // The reveal is one native scrollIntoView, which scrolls the rail when the item is below its fold.
+    expect(dpad).toContain("el.scrollIntoView?.({ block: 'nearest', inline: row ? 'start' : 'center', behavior })")
   })
 
   // The engine side (regionOf, the region default, data-nav-scroll-x) is exercised in

@@ -66,3 +66,8 @@ export function presenceDecision(
   }
   return { send: false, waitMs: PRESENCE_POSITION_INTERVAL_MS - elapsed, state }
 }
+
+/** Discord / SMTC / MPRIS do not reach the Deck session and steal wakeups. */
+export function presenceAllowed(gameMode: boolean): boolean {
+  return !gameMode
+}

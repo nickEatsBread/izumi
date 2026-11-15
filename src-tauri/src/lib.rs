@@ -168,121 +168,6 @@ static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 #[derive(Default)]
 struct TacVerificationConfig(std::sync::Mutex<Option<serde_json::Value>>);
 
-// The fields are consumed by the Game-mode OSD (player::gm_osd), which only compiles on Linux
-// (the Steam Deck). On other targets the struct is still deserialized from the frontend but its
-// fields go unread — expected, so silence dead_code off-Linux only.
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) struct GmControlItem {
-    pub(crate) x: f64,
-    pub(crate) y: f64,
-    pub(crate) w: f64,
-    pub(crate) h: f64,
-    pub(crate) label: String,
-    pub(crate) focused: bool,
-    pub(crate) primary: bool,
-    /// A button named in words ("Audio") is drawn as that text, in the HTML button's font size and
-    /// weight, instead of an icon.
-    #[serde(default)]
-    pub(crate) text: String,
-    #[serde(default)]
-    pub(crate) text_size: f64,
-    #[serde(default)]
-    pub(crate) text_weight: u16,
-}
-
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) struct GmTimelineSegment {
-    pub(crate) start: f64,
-    pub(crate) end: f64,
-    pub(crate) kind: String,
-}
-
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) struct GmDynamicOverlay {
-    pub(crate) visible: bool,
-    pub(crate) loading: bool,
-    pub(crate) first_frame: bool,
-    #[serde(default)]
-    pub(crate) controls: bool,
-    #[serde(default)]
-    pub(crate) paused: bool,
-    #[serde(default)]
-    pub(crate) animate_controls: bool,
-    pub(crate) scrubbing: bool,
-    pub(crate) pos: f64,
-    pub(crate) dur: f64,
-    pub(crate) buffer: f64,
-    pub(crate) scrub_time: f64,
-    pub(crate) width: f64,
-    pub(crate) height: f64,
-    // The HTML seek bar's on-screen geometry (CSS px, same space as width/height) so the
-    // native scrub bar is drawn exactly where the player's own bar is — a seamless handoff.
-    pub(crate) bar_x: f64,
-    pub(crate) bar_y: f64, // vertical CENTRE of the bar
-    pub(crate) bar_w: f64,
-    pub(crate) bar_h: f64,
-    #[serde(default)]
-    pub(crate) skip_text: String,
-    #[serde(default)]
-    pub(crate) notice_text: String,
-    #[serde(default)]
-    pub(crate) title: String,
-    #[serde(default)]
-    pub(crate) title_x: f64,
-    #[serde(default)]
-    pub(crate) title_y: f64,
-    #[serde(default)]
-    pub(crate) title_size: f64,
-    #[serde(default)]
-    pub(crate) title_weight: u16,
-    #[serde(default)]
-    pub(crate) episode_text: String,
-    #[serde(default)]
-    pub(crate) episode_x: f64,
-    #[serde(default)]
-    pub(crate) episode_y: f64,
-    #[serde(default)]
-    pub(crate) episode_size: f64,
-    #[serde(default)]
-    pub(crate) episode_weight: u16,
-    #[serde(default)]
-    pub(crate) control_items: Vec<GmControlItem>,
-    #[serde(default)]
-    pub(crate) timeline_segments: Vec<GmTimelineSegment>,
-    #[serde(default)]
-    pub(crate) chapter_marks: Vec<f64>,
-    // The active theme's colours as ASS BGR hex (theme-gm-osd.ts); empty keeps the OSD's white.
-    #[serde(default)]
-    pub(crate) theme_accent: String,
-    #[serde(default)]
-    pub(crate) theme_focus: String,
-    /// The age rating card at the top right as an episode opens (theme `player.rating: "intro"`): the
-    /// rating ("14"), its content descriptors on one line, and when it was first shown (Unix ms; 0 =
-    /// none). The OSD fades it in, holds it and fades it out from that time.
-    #[serde(default)]
-    pub(crate) rating_label: String,
-    #[serde(default)]
-    pub(crate) rating_detail: String,
-    #[serde(default)]
-    pub(crate) rating_shown_at: f64,
-}
-
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // fields are consumed on Linux; other targets still deserialize the command
-struct OverlayCrop {
-    x: i64,
-    y: i64,
-    w: i64,
-    h: i64,
-}
-
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -624,44 +509,6 @@ fn player_is_game_mode(app: AppHandle) -> bool {
     }
 }
 
-/// The compositor contract the frontend should use for player chrome. Every desktop platform now
-/// composites the live page over the video (Linux through its CEF compositor).
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_compositor_path(app: AppHandle) -> String {
-    let _ = app;
-    "desktop-live".into()
-}
-
-/// Retired Game-mode snapshot overlay; kept as a no-op until the frontend stops calling it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_gm_overlay(
-    app: AppHandle,
-    visible: bool,
-    fast: Option<bool>,
-    animate: Option<bool>,
-    crop: Option<OverlayCrop>,
-    sheet: Option<bool>,
-    exact_crop: Option<bool>,
-) {
-    let _ = (app, visible, fast, animate, crop, sheet, exact_crop);
-}
-
-/// Retired Game-mode video docking; kept as a no-op until the frontend stops calling it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_gm_dock(bottom: f64, right: f64, top: f64, hide: bool) {
-    let _ = (bottom, right, top, hide);
-}
-
-/// Retired Game-mode mpv OSD; kept as a no-op until the frontend stops calling it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_gm_dynamic_overlay(app: AppHandle, state: GmDynamicOverlay) {
-    let _ = (app, state);
-}
-
 /// Start/stop the backend gamepad reader (Steam Deck L2/R2 seek). The webview's own Gamepad
 /// API doesn't see the Deck controller under gamescope, so we read it via evdev in Rust and
 /// emit `gamepad-trigger` events the frontend feeds into the seek logic (see gamepad_linux).
@@ -782,42 +629,6 @@ async fn player_editor_snapshot(
     Err("subtitle editor screenshot timed out".into())
 }
 
-/// Game mode: the paused frame, subtitles included, that the menu stage paints full-size while the
-/// video window is unmapped under live menus (gm-freeze.ts). Raw bytes rather than a JSON number
-/// array, so a 1080p JPEG costs no serialisation on the Deck.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-async fn player_frame_snapshot(
-    app: AppHandle,
-    player: tauri::State<'_, player::PlayerHandle>,
-) -> Result<tauri::ipc::Response, String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let path = app
-        .path()
-        .app_cache_dir()
-        .map_err(|error| error.to_string())?
-        .join(format!("menu-frame-{stamp}.jpg"));
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let path_text = path.to_string_lossy().into_owned();
-    player.frame_snapshot_to_file(&path_text)?;
-    for _ in 0..60 {
-        if std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() > 0) {
-            let bytes = std::fs::read(&path).map_err(|error| error.to_string());
-            let _ = std::fs::remove_file(&path);
-            return bytes.map(tauri::ipc::Response::new);
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    let _ = std::fs::remove_file(&path);
-    Err("menu frame snapshot timed out".into())
-}
-
 /// Register the scrub-preview grid of the loaded file `url`. `key` is the infoHash (or
 /// media-episode) cache key; the duration is read from mpv. `width` is the tile width in device
 /// pixels. The headless libmpv decoder renders hovered tiles at once and the rest of the grid in
@@ -902,26 +713,6 @@ fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
         Ok(())
     }
 }
-
-/// Retired WebKitGTK touch recovery; a no-op until the frontend stops calling it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn restore_native_touch(window: tauri::WebviewWindow) -> Result<(), String> {
-    let _ = window;
-    Ok(())
-}
-
-/// Retired WebKitGTK touch recovery; a no-op until the frontend stops calling it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn native_touch_hold(held: bool) {
-    let _ = held;
-}
-
-/// Retired WebKitGTK touch recovery; a no-op until the frontend stops calling it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn gm_touch_unstick() {}
 
 /// One-time move of a WebKitGTK install's data into the CEF build (Linux). The last WebKitGTK
 /// release writes izumi's own backup export, sign-ins included, to this file in app data. The first
@@ -1045,13 +836,6 @@ fn set_tac_verification_config(
         .lock()
         .map_err(|_| "TAC configuration lock poisoned")? = Some(config);
     Ok(())
-}
-
-/// Retired WebKitGTK acceleration toggle; a no-op until the frontend stops calling it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn set_webview_accel(app: AppHandle, enabled: bool) {
-    let _ = (&app, enabled);
 }
 
 /// The scrub-preview tile for hover `time` (seconds) on stream `key`. Returns
@@ -6214,17 +5998,12 @@ pub fn run() {
             player_embed,
             close_player,
             player_is_game_mode,
-            player_compositor_path,
-            player_gm_overlay,
-            player_gm_dock,
-            player_gm_dynamic_overlay,
             gamepad_start,
             gamepad_stop,
             gamepad_trigger_state,
             spawn_external_player,
             player_get_property,
             player_editor_snapshot,
-            player_frame_snapshot,
             player_sprite_start,
             player_thumb_tile,
             player_thumb_info,
@@ -6232,13 +6011,9 @@ pub fn run() {
             cache_usage,
             clear_cache,
             set_webview_zoom,
-            restore_native_touch,
-            native_touch_hold,
-            gm_touch_unstick,
             gm_log,
             engine_migration_take,
             engine_migration_done,
-            set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
             resolve_deck_login_popup,

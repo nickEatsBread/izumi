@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BrowseOption } from '$lib/catalog/browse'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
   import { gameMode, playing } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
   import { bumperTabs } from '$lib/nav/bumpers'
@@ -9,8 +9,7 @@
   import { stepPageTabs } from '$lib/nav/page-tabs'
   import { get } from 'svelte/store'
 
-  // The sort pills. The lit pill's marker slides over from the pill that was lit (gm-motion: a CSS
-  // animation elsewhere, per-frame writes in Game mode, where a CSS one blinks as it ends). The
+  // The sort pills. The lit pill's marker slides over from the pill that was lit. The
   // strip is the page's tab strip (`data-page-tabs`): L1/R1 step it with a pad, or L2/R2 while a
   // theme's top bar owns L1/R1 (the shell steps it then).
   let { options, active, onSelect }: { options: BrowseOption[]; active: string; onSelect: (value: string) => void } = $props()

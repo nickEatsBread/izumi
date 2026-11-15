@@ -9,7 +9,7 @@ import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
 import { isTextEntryField } from './text-field'
 import { navEpoch, navInFlight } from './nav-state'
-import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorScrollLeft, anchorScrollTop, animateScroll, chaseScroll, isChasing, stopAllScrolls, stopScroll } from './anchor'
+import { reducedMotion } from '$lib/motion/motion'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -294,8 +294,8 @@ function anchorSlotCard(track: HTMLElement): HTMLElement | null {
 const controllerSurface = () => get(gameMode) || get(isTv) || get(controllerMode)
 
 /**
- * Fast path for the Home/Browse surface in Game mode. A geometric search across the entire page
- * forces WebKitGTK to style and lay out every card before it can move the focus ring. Rows expose
+ * Fast path for the Home/Browse surface under a controller. A geometric search across the entire page
+ * makes the engine style and lay out every card before it can move the focus ring. Rows expose
  * their navigation boundary, so ordinary moves only inspect the current/adjacent row instead.
  *
  * `undefined` means this element is not in a scoped row and the generic page search should run.
@@ -367,7 +367,7 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
 
 /**
  * Fast path for Up/Down inside the side rail. The rail is a single column, so DOM order is its
- * visual order: walking it needs no geometry, and moving through the menu never makes WebKitGTK
+ * visual order: walking it needs no geometry, and moving through the menu never makes the engine
  * style and lay out every card on the page behind it. A top bar is a row and keeps the spatial
  * search, as does an open picker's `data-nav-trap` (the caller skips this path under a trap).
  *
@@ -383,172 +383,12 @@ function pickInSidebar(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   return items[index + (dir === 'down' ? 1 : -1)] ?? null
 }
 
-type RevealScrollTarget = Window | HTMLElement
-const controllerScrollUntil = new WeakMap<object, number>()
-const CONTROLLER_SMOOTH_WINDOW_MS = 600
-
-/** WebKitGTK versions shipped by SteamOS can retain the old destination when one smooth scroll
- * interrupts another. Stop at the interpolated position before starting the replacement, so
- * rapid Down taps cannot later rebound toward an older focused row. `instant` also ignores the
- * document's global smooth-scroll CSS. */
-function abortOngoingScroll(target: RevealScrollTarget): void {
-  if (target instanceof HTMLElement) {
-    target.scrollTo({ left: target.scrollLeft, top: target.scrollTop, behavior: 'instant' })
-  } else {
-    window.scrollTo({ left: window.scrollX, top: window.scrollY, behavior: 'instant' })
-  }
-}
-
-/** How long a d-pad press's eased scroll takes (scrollByExact). */
-const REVEAL_SCROLL_MS = 450
-
-/** Scroll `target` by `top` or `left` (a reveal moves one axis), landing exactly. WebKitGTK's own
- *  smooth scrolling fails both ways on the Deck: a smooth scrollBy travels the delta divided by the
- *  device pixel ratio (240 of 300 px at 1.25: a row reached by Up stopped under the top edge), and a
- *  smooth scrollTo paints frames with whole rows missing (a black flash on about one press in four).
- *  So 'smooth' eases here, one instant write a frame, as anchored rows do; anything else jumps at
- *  once ('instant': the page's scroll-behavior: smooth would turn 'auto' into WebKit's own). */
-function scrollByExact(target: RevealScrollTarget, top: number, left: number, behavior: ScrollBehavior, chase = false): void {
-  const vertical = left === 0
-  const el = target instanceof HTMLElement ? target : null
-  const get = vertical ? () => el?.scrollTop ?? window.scrollY : () => el?.scrollLeft ?? window.scrollX
-  // shortcut: not clamped to the scroll range; the browser clamps each write, so a reveal past the
-  // end stops there late in its easing. Clamp here if that stop ever shows.
-  const to = get() + (vertical ? top : left)
-  // Both axes, always: WebKitGTK fills a missing one with its position in device pixels, so each
-  // left-only write moved the page down by the pixel ratio (a quarter at 1.25) and a reveal to the
-  // right ran the page to its end.
-  const set = (value: number) => {
-    const [x, y] = el ? [el.scrollLeft, el.scrollTop] : [window.scrollX, window.scrollY]
-    target.scrollTo(vertical ? { top: value, left: x, behavior: 'instant' } : { left: value, top: y, behavior: 'instant' })
-  }
-  if (chase) chaseScroll(target, get, set, to)
-  else animateScroll(target, get, set, to, behavior === 'smooth' ? REVEAL_SCROLL_MS : 0)
-}
-
-function runControllerScroll(
-  target: RevealScrollTarget,
-  behavior: ScrollBehavior,
-  request: () => void,
-): void {
-  const now = performance.now()
-  // An anchored row's eased scroll (runAnchorScroll) would keep writing over this one each frame. A
-  // held direction's chase keeps its speed: the next step retargets it, or replaces it.
-  if (!isChasing(target)) stopScroll(target)
-  if ((controllerScrollUntil.get(target) ?? 0) > now) abortOngoingScroll(target)
-  request()
-  if (behavior === 'smooth') controllerScrollUntil.set(target, now + CONTROLLER_SMOOTH_WINDOW_MS)
-  else controllerScrollUntil.delete(target)
-}
-
-/** runControllerScroll for an anchored row's own eased scroll (nav/anchor.ts): a native smooth
- *  scroll still running on `target` is stopped where it is first, and its window closes, since the
- *  frames that follow are instant writes that nothing needs to abort. */
-function runAnchorScroll(target: RevealScrollTarget, get: () => number, set: (value: number) => void, to: number, ms: number, chase = false): void {
-  if ((controllerScrollUntil.get(target) ?? 0) > performance.now()) abortOngoingScroll(target)
-  controllerScrollUntil.delete(target)
-  if (chase) chaseScroll(target, get, set, to)
-  else animateScroll(target, get, set, to, ms)
-}
-
-/** `--theme-shell-top` (the top bar's height) in viewport px: a fixed, invisible probe, measured and
- *  removed. */
-function shellTop(): number {
-  const probe = document.createElement('div')
-  probe.style.cssText = 'position: fixed; top: var(--theme-shell-top, 2rem); visibility: hidden; pointer-events: none'
-  document.body.append(probe)
-  const top = probe.getBoundingClientRect().top
-  probe.remove()
-  return top
-}
-
-/** The UI scale (CSS `zoom` on <html>) as `el` sees it: rects, shellTop() and the window's scroll
+/** The UI scale (CSS `zoom` on <html>) as `el` sees it: rects and the window's scroll
  *  are screen px, while `el`'s own scrollLeft, border, padding and scroll-margin are local px, this
  *  many times smaller on screen (cards/preview-pos.ts). 1 where nothing is laid out. */
 function zoomOf(el: HTMLElement): number {
   const z = el.getBoundingClientRect().width / el.offsetWidth
   return Number.isFinite(z) && z > 0 ? z : 1
-}
-
-/** Per track: stops listening for the card-width transitions after its last sideways move. */
-const anchorSettles = new WeakMap<HTMLElement, () => void>()
-const ANCHOR_SETTLE_PROPS = new Set(['width', 'min-width', 'max-width', 'flex-basis'])
-const ANCHOR_SETTLE_MS = 1000
-
-/** Px the cards before `item` will lose once their running width transitions end. None of them is
- *  focused, so each heads back to the width of a card in the track that is not animating; with no
- *  such card there is nothing to aim for. `transitionProperty` is only on a CSSTransition. */
-function settlingShrink(item: HTMLElement, track: HTMLElement): number {
-  const moving = new Set<Element>()
-  for (const animation of track.getAnimations?.({ subtree: true }) ?? []) {
-    const target = (animation.effect as KeyframeEffect | null)?.target
-    if (target && ANCHOR_SETTLE_PROPS.has((animation as CSSTransition).transitionProperty)) moving.add(trackItem(target as HTMLElement, track))
-  }
-  if (!moving.size) return 0
-  const cards = [...track.children]
-  const rest = cards.find((card) => card !== item && !moving.has(card))
-  if (!rest) return 0
-  const restWidth = rest.getBoundingClientRect().width
-  let shrink = 0
-  for (const card of cards) {
-    if (card === item) break
-    if (moving.has(card)) shrink += card.getBoundingClientRect().width - restWidth
-  }
-  return shrink
-}
-
-/** Anchored rows (`data-row-focus="anchor"`, a theme's `rows.*.focus`; the Netflix TV model): a
- *  sideways move slides the track until the focused card sits where the first card rests (clamped
- *  at the track's ends), and entering the row snaps its top to its scroll-margin-top, or 16 px under
- *  the top bar when it has none. `instant`: reduced motion jumps; `chase`: a held repeat follows its
- *  focus (chaseScroll) rather than restarting the slide each step. A theme may
- *  animate the focused card's width (a portrait tile growing to 16:9), so the slide is measured
- *  while the previous card is still wide: it aims for where that card's shrink will leave the
- *  focused one, and for a second each width transition ending in the track re-measures and slides
- *  the rest of the way. */
-function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, vertical: boolean, instant: boolean, chase = false): void {
-  const z = zoomOf(track)
-  if (vertical) {
-    const to = anchorScrollTop({
-      rowTop: row.getBoundingClientRect().top,
-      scrollY: window.scrollY,
-      offset: parseFloat(getComputedStyle(row).scrollMarginTop) * z || shellTop() + 16 * z,
-      maxScroll: document.documentElement.scrollHeight - window.innerHeight,
-    })
-    runAnchorScroll(window, () => window.scrollY, (top) => window.scrollTo({ top, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SNAP_MS, chase)
-    return
-  }
-  // The rects and settlingShrink are screen px; the track's scroll, border and padding are its own.
-  const measure = () => anchorScrollLeft({
-    cardLeft: (trackItem(el, track).getBoundingClientRect().left - settlingShrink(trackItem(el, track), track)) / z,
-    trackLeft: track.getBoundingClientRect().left / z + track.clientLeft,
-    paddingLeft: parseFloat(getComputedStyle(track).paddingLeft) || 0,
-    scrollLeft: track.scrollLeft,
-    maxScroll: track.scrollWidth - track.clientWidth,
-  })
-  const ms = instant ? 0 : ANCHOR_SLIDE_MS
-  const slide = (to: number) => runAnchorScroll(track, () => track.scrollLeft, (left) => track.scrollTo({ left, behavior: 'instant' }), to, Math.abs(to - track.scrollLeft) < 1 ? 0 : ms, chase)
-  let to = measure()
-  slide(to)
-  anchorSettles.get(track)?.()
-  const settle = (event: TransitionEvent) => {
-    if (!ANCHOR_SETTLE_PROPS.has(event.propertyName) || !el.isConnected) return
-    const next = measure()
-    // Unchanged: leave the running slide on its curve.
-    if (Math.abs(next - to) < 1) return
-    to = next
-    slide(to)
-  }
-  const stop = () => {
-    clearTimeout(timer)
-    track.removeEventListener('transitionend', settle)
-    track.removeEventListener('transitioncancel', settle)
-    anchorSettles.delete(track)
-  }
-  const timer = setTimeout(stop, ANCHOR_SETTLE_MS)
-  track.addEventListener('transitionend', settle)
-  track.addEventListener('transitioncancel', settle)
-  anchorSettles.set(track, stop)
 }
 
 /** The position:fixed layer holding `el` (a dialog, the on-screen keyboard), or null when `el`
@@ -610,11 +450,9 @@ function scrollRoom(pane: HTMLElement | null, direction: 1 | -1): number {
  *  end of a page), never so far that the focused control leaves the view. A modal layer (a native
  *  <dialog>, or a position:fixed overlay such as the add-on configurator, which a settings page
  *  renders inline) is fixed to the viewport: a window scroll would only move the page underneath
- *  it, as revealFocused already knows. There only a scroller inside the layer moves, or nothing.
- *  Returns false, so the press is not consumed, when nothing can move that way. `rapid` (a held
- *  button's repeats) steps instantly, as revealFocused does: each repeat would otherwise abort the
- *  previous smooth step at its interpolated position, a stuttering crawl on WebKitGTK. */
-function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
+ *  it. There only a scroller inside the layer moves, or nothing. Returns false, so the press is not
+ *  consumed, when nothing can move that way. */
+function deadEndScroll(active: HTMLElement, dir: Dir): boolean {
   const dialog = active.closest<HTMLElement>('dialog[open]')
   if (!dialog && !active.closest('[data-nav-surface]')) return false
   const layer = dialog ?? fixedLayerOf(active)
@@ -637,7 +475,7 @@ function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
   if (!room) return false
   const item = navRect(active, true, controllerSurface())
   // The window's port leaves out the fixed chrome over the page: the desktop titlebar on top and
-  // a theme's button-hint bar at the bottom (the same band revealFocused keeps at its start).
+  // a theme's button-hint bar at the bottom.
   const inset = clamp(window.innerHeight * 0.12, 40, 96)
   const port = pane?.getBoundingClientRect() ?? { top: inset, bottom: window.innerHeight - inset }
   const delta = deadEndScrollDelta({
@@ -649,13 +487,14 @@ function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
     room,
   })
   if (!delta) return false
-  const reduced = document.documentElement.dataset.motion === 'reduced'
-    || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
-  const target: RevealScrollTarget = pane ?? window
-  runControllerScroll(target, behavior, () => scrollByExact(target, delta, 0, behavior))
+  const scroller = pane ?? window
+  scroller.scrollBy({ top: delta, behavior: scrollBehavior() })
   return true
 }
+
+/** Smooth unless motion is reduced. Explicit, since the page's `scroll-behavior: smooth` would
+ *  turn 'auto' into a smooth scroll anyway. */
+const scrollBehavior = (instant = false): ScrollBehavior => instant || reducedMotion() ? 'instant' : 'smooth'
 
 /** Any control of a Home banner that opens the page (a theme template's buttons as much as izumi's
  *  own Play): reaching it shows the whole banner, as the page looked when it opened. A banner placed
@@ -665,119 +504,23 @@ export function inTopBanner(el: Element, scrollY = window.scrollY): boolean {
   return !!hero && hero.getBoundingClientRect().top + scrollY < 160
 }
 
-/** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
- * settings category rail owns its own viewport; moving it must never scroll the category content. */
-function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
-  // The navigation shell is fixed to the viewport, so every row of it is always on screen. Scrolling
-  // the page cannot bring one into view; it only dragged the page underneath the menu on each press.
+/** Reveal controller focus as Crunchy Deck does: one native scroll, which Chromium animates and
+ *  retargets itself (a held direction included). A Home banner's controls bring the page back to its
+ *  top so the whole banner shows. An anchored row (a theme's `rows.*.focus: "anchor"`, the Netflix TV
+ *  model) holds its focused card at the first column and, entered from above or below, snaps the row
+ *  to its scroll-margin-top (app.css: under the top bar). */
+function revealFocus(el: HTMLElement, vertical: boolean, instant: boolean): void {
+  // The navigation shell is fixed to the viewport: scrolling only dragged the page under it.
   if (el.closest('[data-nav-sidebar]')) return
-  // A single D-pad press should visibly carry the selected card with it. Held-key repeats follow
-  // their focus on a spring (chase) that each repeat retargets, so a held direction glides; every
-  // write is an instant one, so WebKitGTK never queues smooth scrolls of its own behind the thumb.
-  const reduced = document.documentElement.dataset.motion === 'reduced'
-    || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
-  const chase = rapid && !reduced
-  // The featured carousel is taller than the safe-band math can infer from its bottom action row.
-  // Entering its primary action means reveal the whole feature, not just the focused button.
+  const behavior = scrollBehavior(instant)
   if (vertical && (el.hasAttribute('data-nav-scroll-top') || inTopBanner(el))) {
-    runControllerScroll(window, behavior, () => scrollByExact(window, -window.scrollY, 0, behavior, chase))
+    window.scrollTo({ top: 0, behavior })
     return
   }
-  const track = el.closest<HTMLElement>('[data-carousel-scroller]')
-  const row = track?.closest<HTMLElement>('[data-slot="row"]')
-  if (track && row?.dataset.rowFocus === 'anchor') {
-    revealAnchored(el, track, row, vertical, rapid || reduced, chase)
-    return
-  }
-  // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
-  // destination on the page, rather than trying to scroll the destination row inside itself.
-  let pane = vertical
-    ? el.closest<HTMLElement>('[data-nav-scroll-container]')
-    : el.closest<HTMLElement>('[data-carousel-scroller], [data-nav-scroll-x], [data-nav-scroll-container]')
-  // A dialog or the on-screen keyboard is fixed to the viewport, so scrolling the window cannot
-  // reveal its controls. It only moved the page underneath (and a popover that follows its anchor
-  // on scroll). Reveal within the dialog's own scrolling body, or leave everything where it is. A
-  // menu that sits in the page is not fixed and still reveals through the window.
-  if (!pane && el.closest('[data-nav-trap]')) {
-    const layer = fixedLayerOf(el)
-    if (layer) {
-      pane = scrollPortWithin(el, layer, vertical)
-      if (!pane) return
-    }
-  }
-  const item = navRect(el, vertical, controllerSurface())
-  const port = pane?.getBoundingClientRect() ?? {
-    top: 0,
-    left: 0,
-    bottom: window.innerHeight,
-    right: window.innerWidth,
-  }
-  const portHeight = Math.max(0, port.bottom - port.top)
-  const portWidth = Math.max(0, port.right - port.left)
-  // A settings section's pinned bar (SettingsSection) sits under the titlebar/top bar, and under a
-  // top bar the two outgrow the start margin: keep the control clear of the bar's bottom edge.
-  const pinned = vertical && !pane
-    ? document.querySelector('[data-settings-sticky][data-visible]')?.getBoundingClientRect().bottom ?? 0
-    : 0
-  // Keep extra space in the direction of travel. This makes the NEXT row/card visible and prevents
-  // controller focus from slowly riding the bottom/right edge until it disappears from view.
-  // A list that keeps its focused row at one height (data-nav-scroll-pivot: the controller Settings
-  // rail and pane, NuvioTV's 42%) centres the row there instead of riding the edge margins.
-  const pivot = vertical && pane ? Number(pane.dataset.navScrollPivot) : Number.NaN
-  const top = Number.isFinite(pivot)
-    ? pivotScrollDelta({ itemStart: item.top, itemEnd: item.bottom, portStart: port.top, portEnd: port.bottom, pivot })
-    : revealAxisDelta({
-      itemStart: item.top,
-      itemEnd: item.bottom,
-      portStart: port.top,
-      portEnd: port.bottom,
-      startMargin: Math.max(clamp(portHeight * 0.12, 40, 96), pinned + 16),
-      endMargin: clamp(portHeight * 0.2, 64, 144),
-    })
-  const left = revealAxisDelta({
-    itemStart: item.left,
-    itemEnd: item.right,
-    portStart: port.left,
-    portEnd: port.right,
-    startMargin: clamp(portWidth * 0.08, 24, 96),
-    endMargin: clamp(portWidth * 0.18, 48, 176),
-  })
-  // A capped list inside the page (data-nav-scroll-container="nested": the extensions package
-  // list) moves only its own content. When the list itself runs below the fold, or is not capped
-  // at all on a phone, the window also brings the item's post-scroll position into view.
-  if (vertical && pane?.dataset.navScrollContainer === 'nested') {
-    const paneShift = clamp(top, -pane.scrollTop, Math.max(0, pane.scrollHeight - pane.clientHeight - pane.scrollTop))
-    const windowTop = revealAxisDelta({
-      itemStart: item.top - paneShift,
-      itemEnd: item.bottom - paneShift,
-      portStart: 0,
-      portEnd: window.innerHeight,
-      startMargin: clamp(window.innerHeight * 0.12, 40, 96),
-      endMargin: clamp(window.innerHeight * 0.2, 64, 144),
-    })
-    if (windowTop) runControllerScroll(window, behavior, () => scrollByExact(window, windowTop, 0, behavior, chase))
-  }
-  if (!top && !left) return
-  const target: RevealScrollTarget = pane ?? window
-  runControllerScroll(target, behavior, () => {
-    scrollByExact(target, vertical ? top : 0, vertical ? 0 : left, behavior, chase)
-  })
-}
-
-/** Reveal a region's default item (the Settings rail's current category) when a press lands on it.
- *  A sideways press reveals only the horizontal axis, but the default can sit below its region's
- *  fold: on the Deck the rail holds about 20 links in a ~600 px port, and nothing scrolls it to the
- *  current category on a route load. So a sideways entry also reveals the item vertically, inside
- *  the region's own [data-nav-scroll-container] only. Never the window: that would scroll the
- *  category content, or the page under a floating panel. The vertical pass runs second, so its
- *  smooth scroll is the one that survives when both passes move the same pane. */
-function revealRegionEntry(el: HTMLElement, vertical: boolean, rapid: boolean): void {
-  revealFocused(el, vertical, rapid)
-  if (vertical) return
-  const region = regionOf(el)
-  const pane = el.closest<HTMLElement>('[data-nav-scroll-container]')
-  if (region && pane && region.contains(pane)) revealFocused(el, true, rapid)
+  const row = el.closest('[data-carousel-scroller]')?.closest<HTMLElement>('[data-slot="row"][data-row-focus="anchor"]')
+  // optional-chain: jsdom (tests) has no scrollIntoView; browsers do
+  if (row && vertical) row.scrollIntoView?.({ block: 'start', behavior })
+  else el.scrollIntoView?.({ block: 'nearest', inline: row ? 'start' : 'center', behavior })
 }
 
 /** The pane that can lift `field` above a docked keyboard: a `[data-nav-scroll-container]`; else,
@@ -822,8 +565,8 @@ export function revealAboveKeyboard(field: HTMLElement, keyboardTop: number): ()
     const current = Number.parseFloat(getComputedStyle(padded).paddingBottom) || 0
     padded.style.paddingBottom = `${current + delta - room}px`
   }
-  const scroller: RevealScrollTarget = pane ?? window
-  scrollByExact(scroller, delta, 0, 'auto')
+  const scroller = pane ?? window
+  scroller.scrollBy({ top: delta, behavior: 'instant' })
   return room < delta ? () => { padded.style.paddingBottom = previousPadding } : () => {}
 }
 
@@ -961,7 +704,7 @@ function boxInSurface(el: HTMLElement, surface: HTMLElement): NavBox {
 }
 
 /** Outside a surface this is one closest() lookup. Inside one it reads two boxes from the layout that
- *  revealFocused measures right after anyway, and the scroll offsets of the ancestors up to the
+ *  the reveal measures right after anyway, and the scroll offsets of the ancestors up to the
  *  surface, so it adds no layout pass. */
 function recordLastNav(el: HTMLElement): void {
   const surface = el.closest<HTMLElement>('[data-nav-surface]')
@@ -1030,28 +773,23 @@ function recoverLostFocus(root: ParentNode, active: Element | null): HTMLElement
 
 /** Every arrow move lands here: focus without the browser's jump-scroll, note a landing on a value
  *  field, remember the move for focus-loss recovery (measured before the reveal scrolls), then
- *  reveal along the axis of travel (`rapid`, a held repeat, reveals without smooth scrolling).
- *  `regionEntry`: the move entered a region on its default item (the Settings rail's current
- *  category), which is also revealed inside that region's own pane (revealRegionEntry). */
-export function focusByNav(el: HTMLElement, vertical: boolean, rapid = false, regionEntry = false): void {
+ *  reveal it (`vertical`: the move was Up/Down; `instant`: no smooth scroll, for restored focus). */
+export function focusByNav(el: HTMLElement, vertical: boolean, instant = false): void {
   el.focus({ preventScroll: true })
   markNavArrived(el)
   recordLastNav(el)
-  if (regionEntry) revealRegionEntry(el, vertical, rapid)
-  else revealFocused(el, vertical, rapid)
+  revealFocus(el, vertical, instant)
 }
 
 // A navigation that has landed has removed the page it left, so the last arrow move and a landing
 // that pointed into it are dropped then (forgetStaleNav), not kept until the next arrow press, which
-// a mouse user may never make. One subscription per window; a re-init (HMR) replaces it. A
-// navigation starting also stops an anchored row's eased scroll, which would keep writing its frames
-// over the page that replaces it.
+// a mouse user may never make. One subscription per window; a re-init (HMR) replaces it.
 const NAV_LANDED_WATCH = Symbol.for('izumi.navLandedWatch')
 
 function forgetStaleNavOnLanding(): void {
   const scope = globalThis as unknown as Record<symbol, (() => void) | undefined>
   scope[NAV_LANDED_WATCH]?.()
-  scope[NAV_LANDED_WATCH] = navInFlight.subscribe((inFlight) => { if (inFlight) stopAllScrolls(); else forgetStaleNav() })
+  scope[NAV_LANDED_WATCH] = navInFlight.subscribe((inFlight) => { if (!inFlight) forgetStaleNav() })
 }
 
 /** Test hook: forget the landing and the last arrow move, module state that every test in a file
@@ -1150,7 +888,7 @@ export function initDpadNav() {
       // (nav/overlay.ts): the first d-pad press lands back on it, not on the page's first control.
       const hinted = takeFocusHint(root)
       if (hinted?.closest('[data-focusable]') && isNavigable(hinted)) {
-        focusByNav(hinted, vertical, e.repeat)
+        focusByNav(hinted, vertical)
         e.preventDefault()
         return
       }
@@ -1160,7 +898,7 @@ export function initDpadNav() {
       // the first press after it.
       const recovered = recoverLostFocus(root, active)
       if (recovered) {
-        focusByNav(recovered, vertical, e.repeat)
+        focusByNav(recovered, vertical)
         e.preventDefault()
         return
       }
@@ -1174,7 +912,7 @@ export function initDpadNav() {
       // go back to that region's current item rather than to whatever comes first.
       const regionDefault = regionReturnTarget(root)
       if (regionDefault) {
-        focusByNav(regionDefault, vertical, e.repeat, true)
+        focusByNav(regionDefault, vertical)
         e.preventDefault()
         return
       }
@@ -1187,7 +925,7 @@ export function initDpadNav() {
       // doesn't auto-focus the filter/search field and trap the arrows in the on-screen keyboard).
       const first = content.find(el => !isTextInput(el)) ?? content[0] ?? els[0]
       if (first) {
-        focusByNav(first, vertical, e.repeat)
+        focusByNav(first, vertical)
         e.preventDefault()
       }
       return
@@ -1205,7 +943,7 @@ export function initDpadNav() {
     const owned = trap ? undefined : moveOwner?.(active, dir)
     if (owned !== undefined) {
       // An owner hands over a row in a vertical list (a pane): reveal it along that list.
-      if (owned) focusByNav(owned, true, e.repeat)
+      if (owned) focusByNav(owned, true)
       e.preventDefault()
       return
     }
@@ -1220,7 +958,7 @@ export function initDpadNav() {
       : undefined
     if (explicit) {
       const target = rovingEntry(explicit, active)
-      focusByNav(target, vertical, e.repeat)
+      focusByNav(target, vertical)
       e.preventDefault()
       return
     }
@@ -1230,7 +968,7 @@ export function initDpadNav() {
     const rowPick = pickInNavRows(active, dir)
     if (rowPick) {
       const target = rovingEntry(rowPick, active)
-      focusByNav(target, vertical, e.repeat)
+      focusByNav(target, vertical)
       e.preventDefault()
       return
     }
@@ -1240,7 +978,7 @@ export function initDpadNav() {
     if (railPick !== undefined) {
       if (railPick) {
         // Through focusByNav like every move, so the landing is noted; the fixed rail never scrolls.
-        focusByNav(railPick, vertical, e.repeat)
+        focusByNav(railPick, vertical)
         e.preventDefault()
       }
       return
@@ -1272,7 +1010,6 @@ export function initDpadNav() {
     // focus seemed to vanish. Only a region beside the row (the side rail) can take the press.
     const rowEnd = rowPick === null && !vertical
     let pick: ElCand | null = neighbour ? { id: '', rect: navRect(neighbour, false), el: neighbour } : rowEnd ? null : pickInDirection(cur, sameRegion, dir)
-    let entersRegionDefault = false
     if (!pick) {
       if (vertical) {
         // Nothing straight down/up in-region: drop the alignment cone (still same-region) so a
@@ -1282,7 +1019,7 @@ export function initDpadNav() {
         pick = pickInDirection(cur, sameRegion, dir, /* cone */ false)
         // A true dead end. A controller has no other way to scroll a text-only stretch (a
         // changelog, a licence, the end of a settings page), so scroll it along instead.
-        if (!pick && isPadEvent(e) && !get(isTv) && deadEndScroll(active, dir, e.repeat)) {
+        if (!pick && isPadEvent(e) && !get(isTv) && deadEndScroll(active, dir)) {
           e.preventDefault()
           return
         }
@@ -1306,17 +1043,12 @@ export function initDpadNav() {
         const preferred = entered?.querySelector<HTMLElement>('[data-nav-region-default]')
         if (preferred && preferred !== active && els.includes(preferred)) {
           pick = { id: '', rect: preferred.getBoundingClientRect(), el: preferred }
-          entersRegionDefault = true
         }
       }
     }
     if (pick?.el) {
-      // Focus WITHOUT the browser's instant jump-scroll, then smooth-scroll ONLY along the axis
-      // we moved: horizontal moves scroll the row horizontally (block:nearest avoids a vertical
-      // re-center jitter on every left/right); vertical moves scroll the page vertically. A
-      // region's default is the one exception: it is also revealed inside its own region's pane.
       const target = rovingEntry(pick.el, active)
-      focusByNav(target, vertical, e.repeat, entersRegionDefault)
+      focusByNav(target, vertical)
       e.preventDefault()
     } else if (dir === 'left' && !trap && document.documentElement.dataset.themeNav === 'drawer') {
       // Left from the left edge opens the drawer navigation, where the rail would have been.

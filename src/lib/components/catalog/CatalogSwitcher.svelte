@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import { fade } from 'svelte/transition'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
   import Check from '@lucide/svelte/icons/check'
   import { isOskTarget } from '$lib/nav/osk'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'

@@ -53,31 +53,23 @@ describe('hero slide count, pool and transition (API 4)', () => {
     expect(hero).toContain('const FADE_MS = 650')
     // The outgoing template copy is inert and hidden from assistive technology, and renders the same
     // markup as the live slide (its title an h1), so heading styles do not change as it starts fading.
-    expect(hero).toContain('<div class="hero-fade-out" class:hero-fade-pending={!fadeFrom.shown} aria-hidden="true" inert use:fadeOutWhen={fadeFrom.running}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>')
+    expect(hero).toContain('<div class="hero-fade-out" class:hero-fade-pending={!fadeFrom.shown} aria-hidden="true" inert class:running={fadeFrom.running}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>')
     // The slide changes under it only once that copy has painted, then it fades.
     expect(hero).toContain('void tick().then(outgoingDecoded).then(async () => {')
     expect(hero).toContain('.hero-fade-pending { visibility: hidden; }')
     expect(hero).toContain('if (fadeFrom) fadeFrom = { ...fadeFrom, running: true }')
-    // Game mode fades the outgoing copy from script: its keyframes blinked as they ended.
-    expect(hero).toContain(':global(html.gamemode) .hero-fade-out { animation: none; }')
     expect(hero).toContain('<div data-part="hero.slide" data-state="leaving" aria-hidden="true" class="absolute inset-0">')
   })
 
-  // The WebKitGTK 2.52 layer-drop blink (hero-game-mode-flicker.test.ts): a layer that animates must
-  // hold a static translateZ(0) for its whole life, so the fade animates opacity alone.
-  it('animates opacity alone and keeps the static layer anchor in Game mode', () => {
+  it('cross-fades with opacity alone', () => {
     const keyframes = (name: string) => hero.slice(hero.indexOf(`@keyframes ${name} {`), hero.indexOf('}\n  }', hero.indexOf(`@keyframes ${name} {`)) + 4)
     for (const name of ['hero-fade-in', 'hero-fade-out']) {
       const block = keyframes(name)
       expect(block, name).toContain('opacity')
       expect(block, name).not.toMatch(/transform|translate|scale/)
     }
-    expect(hero).toContain('.hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateZ(0); }')
+    expect(hero).toContain('.hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; }')
     expect(hero).toContain('.hero-fade-out:global(.running) { animation: hero-fade-out 650ms ease both; }')
-    expect(hero).toContain(':global(html.gamemode) .hero-carousel-slide,\n  :global(html.gamemode) .hero-copy,\n  :global(html.gamemode) .hero-progress { transform: translateZ(0); }')
-    // Game mode fades the same way from script (gm-motion): opacity alone, over the same 650 ms.
-    expect(hero).toContain('? { gameModeOnly: true, opacity: [0, shown], duration: FADE_MS, easing: linear }')
-    expect(hero).toContain('? { gameModeOnly: true, opacity: [0, 1], duration: FADE_MS, easing: linear }')
     expect(hero).toContain(":global(html[data-motion='reduced']) .hero-fade-out { animation-duration: 1ms; }")
   })
 })

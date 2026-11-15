@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { isTv } from '$lib/platform'
 import { deadEndScrollDelta, initDpadNav, regionOf } from './index'
 import { dispatchPadKey } from './pad-controls'
@@ -20,6 +19,7 @@ function rectOf(this: Element): DOMRect {
 const extent = (node: Element, index: number) => Number((node.getAttribute('data-scroll') ?? '0,0').split(',')[index])
 
 const paneScrolls: Array<{ el: Element; options: ScrollToOptions }> = []
+const reveals: Array<{ el: Element; options: ScrollIntoViewOptions }> = []
 let windowMoves: ReturnType<typeof vi.fn<(options: ScrollToOptions) => void>>
 
 const el = (label: string) => [...document.querySelectorAll<HTMLElement>('[data-focusable]')].find((node) => node.textContent?.trim() === label)!
@@ -114,18 +114,19 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   paneScrolls.length = 0
-  HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {
-    const move = asMove(this, options as ScrollToOptions)
-    if (move) paneScrolls.push({ el: this, options: move })
-  } as HTMLElement['scrollTo']
+  reveals.length = 0
+  // Every scroll the nav engine asks for is native: a reveal is one scrollIntoView (the browser
+  // picks the scrollers), a dead-end step one scrollBy, read here as a move.
+  Element.prototype.scrollIntoView = function (this: Element, options?: boolean | ScrollIntoViewOptions) {
+    reveals.push({ el: this, options: options as ScrollIntoViewOptions })
+  } as Element['scrollIntoView']
+  HTMLElement.prototype.scrollBy = function (this: HTMLElement, options?: ScrollToOptions | number) {
+    paneScrolls.push({ el: this, options: options as ScrollToOptions })
+  } as HTMLElement['scrollBy']
   windowMoves = vi.fn()
-  window.scrollTo = vi.fn((options: ScrollToOptions) => {
-    const move = asMove(window, options)
-    if (move) windowMoves(move)
-  }) as unknown as typeof window.scrollTo
+  window.scrollBy = vi.fn((options: ScrollToOptions) => windowMoves(options)) as unknown as typeof window.scrollBy
   isTv.set(false)
   // The top of a long page: 3200 px left below, nothing above.
   documentBox(0, 4000)
@@ -173,19 +174,13 @@ describe('nav regions', () => {
     expect(document.activeElement).toBe(el('Refresh sources'))
   })
 
-  it('scrolls the rail, and only the rail, to a current category below its fold on Left', () => {
+  it('reveals a current category below the rail fold on Left', () => {
     document.body.innerHTML = appSidebar + longRail + shortPage
-    const rail = document.querySelector<HTMLElement>('[data-nav-region] nav')!
     el('Refresh sources').focus()
     press('ArrowLeft')
     expect(document.activeElement).toBe(el('About'))
-    // The sideways pass leaves the rail where it is; the vertical pass brings About (680..716)
-    // above the port's end band (520 - 80).
-    expect(paneScrolls.every((scroll) => scroll.el === rail)).toBe(true)
-    expect(paneScrolls.filter((scroll) => scroll.options.top)).toEqual([
-      { el: rail, options: expect.objectContaining({ top: 276, left: 0 }) },
-    ])
-    expect(windowMoves).not.toHaveBeenCalled()
+    // block 'nearest' moves only a scroller that does not already show it: the rail, not the page.
+    expect(reveals).toEqual([{ el: el('About'), options: { block: 'nearest', inline: 'center', behavior: 'smooth' } }])
   })
 
   it('still crosses from the rail into the app sidebar', () => {
@@ -259,19 +254,15 @@ describe('first press with nothing focused (body fallback step 3)', () => {
     expect(document.activeElement).toBe(el('Add source'))
   })
 
-  it('also scrolls the rail to the current category on a sideways first press', () => {
+  it('also reveals the current category on a sideways first press', () => {
     document.body.innerHTML = appSidebar + longRail + shortPage
-    const rail = document.querySelector<HTMLElement>('[data-nav-region] nav')!
     tap(el('About'))
     el('About').focus()
     resetFocusAfterNavigation()
     // The rail was then dragged by touch: About now sits below the rail's port (the fixture).
     press('ArrowRight')
     expect(document.activeElement).toBe(el('About'))
-    expect(paneScrolls.filter((scroll) => scroll.options.top)).toEqual([
-      { el: rail, options: expect.objectContaining({ top: 276, left: 0 }) },
-    ])
-    expect(windowMoves).not.toHaveBeenCalled()
+    expect(reveals.map((reveal) => reveal.el)).toEqual([el('About')])
   })
 
   it('returns to Theme Studio on its current tab after a tap inside the panel', () => {
@@ -297,8 +288,8 @@ describe('first press with nothing focused (body fallback step 3)', () => {
   })
 })
 
-describe('scroll helpers', () => {
-  it('scrolls a horizontal strip (data-nav-scroll-x) itself, not the window', () => {
+describe('focus reveal', () => {
+  it('reveals a strip item (data-nav-scroll-x) with one native call, never a scripted scroll', () => {
     document.body.innerHTML = `
       <div data-nav-surface="settings">
         <nav data-nav-scroll-x data-rect="320,300,300,48">
@@ -311,32 +302,8 @@ describe('scroll helpers', () => {
     el('Behaviour').focus()
     press('ArrowRight')
     expect(document.activeElement).toBe(el('Advanced'))
-    expect(paneScrolls.map((scroll) => scroll.el)).toEqual([document.querySelector('[data-nav-scroll-x]')])
-    expect(paneScrolls[0].options).toMatchObject({ top: 0, left: 224 })
-    expect(windowMoves).not.toHaveBeenCalled()
-  })
-
-  const packageList = (marker: string) => `
-    <div data-nav-surface="settings">
-      <ul ${marker} data-rect="320,500,400,600">
-        ${[520, 580, 640, 700, 760, 820].map((top, index) => `<li><button data-focusable data-rect="360,${top},320,40">Package ${index + 1}</button></li>`).join('')}
-      </ul>
-    </div>`
-
-  it('reveals an item of a nested scroller through the window when the list runs below the fold', () => {
-    document.body.innerHTML = packageList('data-nav-scroll-container="nested"')
-    el('Package 5').focus()
-    press('ArrowDown')
-    expect(document.activeElement).toBe(el('Package 6'))
-    expect(windowMoves).toHaveBeenCalledTimes(1)
-    expect(windowMoves.mock.calls[0][0]).toMatchObject({ top: 204 })
-  })
-
-  it('leaves an ordinary scroll container to itself (no window pass)', () => {
-    document.body.innerHTML = packageList('data-nav-scroll-container')
-    el('Package 5').focus()
-    press('ArrowDown')
-    expect(document.activeElement).toBe(el('Package 6'))
+    expect(reveals).toEqual([{ el: el('Advanced'), options: { block: 'nearest', inline: 'center', behavior: 'smooth' } }])
+    expect(paneScrolls).toEqual([])
     expect(windowMoves).not.toHaveBeenCalled()
   })
 })
@@ -377,30 +344,14 @@ describe('dead-end scroll', () => {
     expect(windowMoves.mock.calls[0][0]).toMatchObject({ top: 243 })
   })
 
-  it('eases to the destination itself, not by a distance (WebKitGTK cuts a smooth scrollBy short)', () => {
-    Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
-    try {
-      document.body.innerHTML = page(600)
-      el('Last').focus()
-      dispatchPadKey('ArrowDown')
-      // Both axes on every write: WebKitGTK fills a missing one in device pixels (a left-only write
-      // moved the page down a quarter at 1.25, so a reveal to the right ran it to the end).
-      expect(vi.mocked(window.scrollTo).mock.lastCall?.[0]).toEqual({ top: 743, left: 0, behavior: 'instant' })
-      expect(windowMoves.mock.lastCall?.[0]).toMatchObject({ top: 243, behavior: 'smooth' })
-    } finally {
-      Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
-    }
-  })
-
-  it('steps smoothly on a press and instantly on the repeats of a held button', () => {
+  it('steps smoothly, the repeats of a held button included (the browser retargets the scroll)', () => {
     document.body.innerHTML = page(600)
     el('Last').focus()
     dispatchPadKey('ArrowDown')
-    expect(windowMoves.mock.calls[0][0]).toMatchObject({ top: 243, behavior: 'smooth' })
-    // A repeat inside the previous step's smooth window would abort it mid-flight on WebKitGTK.
+    expect(windowMoves.mock.calls[0][0]).toEqual({ top: 243, behavior: 'smooth' })
     dispatchPadKey('ArrowDown', { repeat: true })
     expect(windowMoves).toHaveBeenCalledTimes(2)
-    expect(windowMoves.mock.calls[1][0]).toMatchObject({ top: 243, behavior: 'instant' })
+    expect(windowMoves.mock.calls[1][0]).toEqual({ top: 243, behavior: 'smooth' })
   })
 
   it('never scrolls the focused control out of view or under the titlebar', () => {

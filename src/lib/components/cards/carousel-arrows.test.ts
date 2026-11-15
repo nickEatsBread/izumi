@@ -29,8 +29,8 @@ describe('Carousel edge arrows', () => {
   it('exposes gesture handling only for horizontal rows but keeps every row nav-discoverable', () => {
     expect(src).toContain(`data-carousel-scroller={!grid ? '' : undefined}`)
     expect(src).toContain('use:scrollBehavior={!grid}')
-    expect(src).toContain('gameModeCarouselTouch(node)')
-    expect(src).toContain('touch.destroy()')
+    expect(src).toContain('const drag = dragScroll(node)')
+    expect(src).not.toContain('gameModeCarouselTouch')
     // Grid rows stay inside the game/TV nav fast path. The section keeps `data-nav-row` and marks
     // itself wrapping, so pickInNavRows scopes its geometric search to the row's own cards instead
     // of stepping whole sections (which would skip grid lines) or passing over the whole page.

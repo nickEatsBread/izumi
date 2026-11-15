@@ -2,7 +2,7 @@
   import { getContext, type Snippet } from 'svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { densityScale, resolveRow, ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
-  import { dragScroll, gameModeCarouselTouch } from '$lib/nav/actions'
+  import { dragScroll } from '$lib/nav/actions'
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
@@ -64,8 +64,8 @@
     const update = (next: boolean) => {
       cleanup?.(); cleanup = undefined
       if (next) {
-        const drag = dragScroll(node), touch = gameModeCarouselTouch(node)
-        cleanup = () => { drag.destroy(); touch.destroy() }
+        const drag = dragScroll(node)
+        cleanup = () => drag.destroy()
       }
     }
     update(enabled)
@@ -84,34 +84,12 @@
   // listens for this), so clicking the arrow never pops the card beneath it.
   const dismissPreview = () => window.dispatchEvent(new Event('carousel-nav'))
 
-  // WebKitGTK turns a finger drag into synthesized wheel events. While a finger (or Game mode's touch
-  // pointer) is down on the row those events are the drag itself, which the touch driver owns, so
-  // only real wheel and touchpad input reaches onWheel.
-  let pressed = false
-  function onTrackPointerDown(e: PointerEvent) {
-    if (e.pointerType === 'mouse' && !$gameMode) return
-    pressed = true
-    const release = () => {
-      pressed = false
-      window.removeEventListener('pointerup', release, true)
-      window.removeEventListener('pointercancel', release, true)
-    }
-    window.addEventListener('pointerup', release, true)
-    window.addEventListener('pointercancel', release, true)
-  }
-  $effect(() => {
-    const node = scroller
-    if (!node) return
-    node.addEventListener('pointerdown', onTrackPointerDown)
-    return () => node.removeEventListener('pointerdown', onTrackPointerDown)
-  })
-
   // Horizontal wheel/trackpad input moves the row. Vertical input only dismisses a hover preview
   // and remains entirely owned by the page — scrolling down over a carousel must still go down.
-  // Desktop rows are not native scrollers (app.css), so this is the only way a wheel moves one.
+  // Mouse-and-touchpad desktop rows are not native scrollers (app.css), so this is the only way a wheel moves one.
   // A portalled preview forwards horizontal input back here because it sits outside the row DOM.
   function onWheel(e: WheelEvent) {
-    if (grid || pressed) return
+    if (grid) return
     if (!$wheelScrollAcross) return // Settings → Interface; arrows otherwise
     if (!scroller) return
     const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)

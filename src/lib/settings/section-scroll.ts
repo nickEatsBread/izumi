@@ -1,8 +1,6 @@
-import { get } from 'svelte/store'
 import { rootZoom } from '$lib/components/cards/preview-pos'
-import { reducedMotion } from '$lib/motion/gm-motion'
+import { reducedMotion } from '$lib/motion/motion'
 import { focusRestoreAllowed } from '$lib/nav/focus-memory'
-import { gameMode } from '$lib/player/session'
 import { firstSafeControl } from './search-target'
 import { SUBCATEGORY_OPEN_EVENT } from './sections'
 import { activeSubcategory, SCROLL_SPY_GAP } from './scroll-spy'
@@ -117,8 +115,7 @@ export function trackSectionScroll(
 }
 
 /** `in:fly` params for a desktop section switch (settings +layout.svelte): a 160 ms fade with a
- *  6 px rise. Instant under reduced motion (izumi's setting or the OS) and in Game mode, where the
- *  end of a CSS animation blinks (motion/gm-motion.ts). */
+ *  6 px rise. Instant under reduced motion (izumi's setting or the OS). */
 export function sectionFade() {
-  return { y: 6, opacity: 0, duration: reducedMotion() || get(gameMode) ? 0 : 160 }
+  return { y: 6, opacity: 0, duration: reducedMotion() ? 0 : 160 }
 }

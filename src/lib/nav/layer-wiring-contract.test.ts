@@ -22,7 +22,7 @@ describe('nav engine trap resolution', () => {
     expect(index).toContain('const trap = activeNavTrap()')
     expect(index).not.toContain('[aria-label="On-screen keyboard"][data-nav-trap]')
     const fallback = between(index, 'const hinted = takeFocusHint(root)', 'const els = focusables(root)')
-    expect(fallback).toContain('focusByNav(hinted, vertical, e.repeat)')
+    expect(fallback).toContain('focusByNav(hinted, vertical)')
     expect(count(index, 'const els = focusables(root)')).toBe(2)
   })
 })
@@ -92,9 +92,5 @@ describe('PlayerOverlay layer wiring', () => {
     expect(listener).toContain("if ((e.payload.name === 'a' || e.payload.name === 'b') && e.payload.pressed && performance.now() - get(navLayerDismissedAt) < 500) return")
     expect(overlay).not.toContain('activeElement as HTMLElement | null)?.click()')
     expect(overlay).toContain('padActivate()')
-  })
-
-  it('treats an open layer or keyboard as full-screen chrome', () => {
-    expect(overlay).toContain('|| sourceConnectingVisible || $navLayerOpen || $oskOpen)')
   })
 })

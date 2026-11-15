@@ -8,7 +8,6 @@ import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
 import type { SharedSourceState } from '$lib/watch-together/source'
 import type { DirectTorrentHealth } from '$lib/player/direct-torrent'
 import type { Chapter } from '$lib/player/chapter-skip'
-import type { PlayerCompositorPath } from '$lib/player/gm-overlay'
 import type { StageFractions } from '$lib/player/insets'
 import { getDrmEngine } from '$lib/player/drm'
 
@@ -240,14 +239,9 @@ export const chapters = writable<Chapter[]>([])
 // handlers early-return so d-pad/A/B drive the menu instead of seeking/pausing/focus-nav.
 export const trackMenuOpen = writable(false)
 
-// True while any player popover (playback options / track list in Controls) is open. Drives a
-// full-viewport Game-mode snapshot (and keeps Controls mounted so the sheet can paint).
+// True while any player popover (playback options / track list in Controls) is open. Keeps
+// Controls mounted so the sheet can paint.
 export const playerMenuOpen = writable(false)
-
-// The compact playback/settings popovers are rendered as right-hand sheets in Game mode. Keep
-// this distinct from `playerMenuOpen`: the native compositor uses it to crop just the sheet and
-// animate that small bitmap horizontally while the 60 Hz controls remain native underneath.
-export const playerSideSheetOpen = writable(false)
 
 // Windowed desktop playback: true while the player's top bar is up under the transparent
 // titlebar. The titlebar then lets pointer events through (its own buttons excepted) and the
@@ -259,14 +253,9 @@ export const playerTopBarUnderTitlebar = writable(false)
 // titlebar's window buttons and chips fade out with them. PlayerOverlay resets it to true on close.
 export const playerChromeVisible = writable(true)
 
-/** Bump so Game-mode overlay-add re-snapshots after a d-pad move (no 60fps crawl). */
-export const playerOverlayRev = writable(0)
-export function bumpPlayerOverlay() {
-  playerOverlayRev.update((n) => n + 1)
-}
 
-// In-player discussion/comments panel, keyed on nowPlaying.{id,malId,episode}. Gamescope presents
-// it as an opaque live WebKit surface; desktop keeps the docked/expanded panel layouts.
+// In-player discussion/comments panel, keyed on nowPlaying.{id,malId,episode}. Game mode presents
+// it full screen; desktop keeps the docked/expanded panel layouts.
 export const commentsOpen = writable(false)
 
 // Active debrid caching session: set while an UNCACHED torrent downloads at the debrid
@@ -338,19 +327,11 @@ export const pictureInPicture = writable(false)
 // while playing. Resolved once from Rust (`player_is_game_mode`) at boot. When true it
 // implies "always fullscreen" for the chrome-hiding + video-inset logic.
 export const gameMode = writable(false)
-/** Native window/compositor contract. Native Wayland keeps HTML chrome live; Gamescope XWayland
- * uses the bitmap/native-OSD bridge because it cannot blend the transparent webview over mpv. */
-export const playerCompositorPath = writable<PlayerCompositorPath>('desktop-live')
 /** True once native Game-mode detection has answered (including an error fallback). */
 export const gameModeResolved = writable(false)
 export async function initGameMode() {
   try {
-    const [detected, compositor] = await Promise.all([
-      invoke<boolean>('player_is_game_mode'),
-      invoke<PlayerCompositorPath>('player_compositor_path'),
-    ])
-    gameMode.set(detected)
-    playerCompositorPath.set(compositor)
+    gameMode.set(await invoke<boolean>('player_is_game_mode'))
   }
   catch { /* non-linux / no window yet — stays false with live Desktop chrome */ }
   finally { gameModeResolved.set(true) }

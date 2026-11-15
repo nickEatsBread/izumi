@@ -20,7 +20,7 @@
 </script>
 
 <!-- Rows of equal height either side of the spinner hold it on the screen's centre, where the
-     player's own ring (mpv's in Game mode) appears, so the hand-off does not move it. -->
+     player's own ring appears, so the hand-off does not move it. -->
 <div data-part="play.loader" class="grid w-full max-w-xl grid-rows-[1fr_auto_1fr] justify-items-center gap-6 px-6 text-center">
   {#if title}
     <h1 data-part="play.loader.title" class="row-start-1 self-end text-3xl font-black leading-tight tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] sm:text-4xl">

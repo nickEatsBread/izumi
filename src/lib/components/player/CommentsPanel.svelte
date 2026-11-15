@@ -18,7 +18,6 @@
   import { loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { embedResizeHeight, mobileEmbedSrc } from '$lib/comments/mobile'
   import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
-  import { restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
 
   // `inline`: the panel is part of the page (a theme's docked watch layout puts the discussion under
   // the video) — always open, no sheet chrome, no close/expand controls, and it fills its container.
@@ -46,7 +45,7 @@
   let loadedKey = ''
 
   // Closing can make a focused cross-origin iframe inert before its touch release reaches the
-  // parent webview. Blur that frame and explicitly clear/reassert Gamescope touch routing.
+  // parent webview, so blur that frame.
   let commentsWereOpen = false
   $effect(() => {
     const open = $commentsOpen
@@ -54,7 +53,6 @@
       const focused = document.activeElement as HTMLElement | null
       if (!open && focused?.closest?.('[data-comments-panel]')) focused.blur()
       if (!open) window.dispatchEvent(new Event('osk-close'))
-      restoreGmTouchAfterTransition()
     }
     commentsWereOpen = open
   })
@@ -614,14 +612,14 @@
   {@render panelBody()}
 </div>
 {:else}
-<div data-slot="watch.comments" data-variant="sheet" data-comments-panel data-gm-comments-surface data-capture-exclude-when-inert inert={!$commentsOpen}
+<div data-slot="watch.comments" data-variant="sheet" data-comments-panel data-capture-exclude-when-inert inert={!$commentsOpen}
      class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground {$gameMode ? 'inset-0 h-full w-full max-w-none border-0 shadow-none' : 'shadow-2xl'}
        {$gameMode
          ? ''
          : $discussionExpanded
          ? `inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] rounded-2xl border ${embedActive ? '' : 'overflow-hidden'}`
          : 'inset-y-0 right-0 w-full max-w-md border-l'}
-       {$commentsOpen ? '' : $gameMode ? 'dq-gm-hide' : $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">
+       {$commentsOpen ? '' : $gameMode || $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">
   {@render panelBody()}
 </div>
 {/if}
@@ -637,17 +635,6 @@
   /* Open/close animates via classes (not {#if} transitions) so the panel — and the embed iframe in
      it — stays in the DOM. Visibility flips only after the exit transform/fade finishes. */
   .dq-panel { transition: transform 200ms ease, opacity 160ms ease, visibility 0s 0s; }
-  /* A Game-mode panel is captured into mpv immediately. An entrance transition makes that first
-     bitmap half-transparent and keeps the hidden WebView busy while it should accept touch. */
-  :global(.gamemode) .dq-panel { transition: none; }
   .dq-closed-slide { visibility: hidden; transform: translateX(105%); transition: transform 200ms ease, opacity 160ms ease, visibility 0s 200ms; }
   .dq-closed-pop { visibility: hidden; opacity: 0; transform: scale(0.96); transition: transform 160ms ease, opacity 160ms ease, visibility 0s 160ms; }
-  /* Game mode snapshots the webview the instant comments close. A 200ms outro leaves
-     the panel in the bitmap so it lingers on the video after mpv remaps. */
-  .dq-gm-hide {
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    transition: none !important;
-  }
 </style>

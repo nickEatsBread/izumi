@@ -1,71 +1,32 @@
-//! Non-blocking command path for the Gamescope player.
+//! Non-blocking command path for the Linux player.
 //!
-//! Tauri's synchronous IPC handlers and GLib timers run on GTK's main thread.  Calling a
-//! synchronous libmpv command from either path can therefore stop WebKit, controller event
-//! delivery, and every controls animation while mpv waits for its VO.  This dispatcher owns a
-//! separate libmpv client on one worker thread.  Producers only copy/enqueue their newest state.
+//! Tauri's synchronous IPC handlers run on the main (CEF UI / GLib) thread. Calling a synchronous
+//! libmpv command there can stop the page, controller event delivery, and every controls
+//! animation while mpv waits for its VO. This dispatcher owns a separate libmpv client on one
+//! worker thread. Producers only enqueue; a newer seek supersedes an older pending one.
 
 #![cfg(target_os = "linux")]
 
 use std::collections::VecDeque;
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
 use std::sync::{Arc, Condvar, Mutex};
 
 use libmpv2::Mpv;
-use libmpv2_sys as sys;
 
 const MAX_PENDING: usize = 64;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CoalesceKey {
     Seek,
-    Bitmap(i64),
-    Ass(i64),
-    RenderOpts,
 }
 
 enum Work {
-    Control {
-        name: String,
-        args: Vec<String>,
-    },
-    BitmapAdd {
-        id: i64,
-        x: i64,
-        y: i64,
-        pixels: Vec<u8>,
-        width: i64,
-        height: i64,
-        stride: i64,
-    },
-    BitmapRemove {
-        id: i64,
-    },
-    Ass {
-        id: i64,
-        format: &'static str,
-        data: String,
-        res_x: i64,
-        res_y: i64,
-        z: i64,
-    },
-    /// Live render-option batch (the Game-mode ui-lite scaler swap). Only the newest batch
-    /// matters, so it coalesces like an animated surface.
-    RenderOpts {
-        opts: Vec<(String, String)>,
-    },
+    Control { name: String, args: Vec<String> },
 }
 
 impl Work {
     fn coalesce_key(&self) -> Option<CoalesceKey> {
         match self {
             Self::Control { name, .. } if name == "seek" => Some(CoalesceKey::Seek),
-            Self::BitmapAdd { id, .. } | Self::BitmapRemove { id } => {
-                Some(CoalesceKey::Bitmap(*id))
-            }
-            Self::Ass { id, .. } => Some(CoalesceKey::Ass(*id)),
-            Self::RenderOpts { .. } => Some(CoalesceKey::RenderOpts),
             _ => None,
         }
     }
@@ -73,14 +34,9 @@ impl Work {
     fn label(&self) -> &str {
         match self {
             Self::Control { name, .. } => name,
-            Self::BitmapAdd { .. } => "overlay-add",
-            Self::BitmapRemove { .. } => "overlay-remove",
-            Self::Ass { .. } => "osd-overlay",
-            Self::RenderOpts { .. } => "render-opts",
         }
     }
 }
-
 #[derive(Default)]
 struct Queue {
     pending: VecDeque<Work>,
@@ -117,65 +73,6 @@ impl MpvDispatcher {
         self.enqueue(Work::Control {
             name: name.to_owned(),
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn bitmap_add(
-        &self,
-        id: i64,
-        x: i64,
-        y: i64,
-        pixels: Vec<u8>,
-        width: i64,
-        height: i64,
-        stride: i64,
-    ) -> Result<(), String> {
-        let expected = stride
-            .checked_mul(height)
-            .and_then(|bytes| usize::try_from(bytes).ok())
-            .ok_or("invalid overlay dimensions")?;
-        if width <= 0 || height <= 0 || stride < width.saturating_mul(4) || pixels.len() < expected
-        {
-            return Err("invalid overlay buffer".into());
-        }
-        self.enqueue(Work::BitmapAdd {
-            id,
-            x,
-            y,
-            pixels,
-            width,
-            height,
-            stride,
-        })
-    }
-
-    pub fn bitmap_remove(&self, id: i64) -> Result<(), String> {
-        self.enqueue(Work::BitmapRemove { id })
-    }
-
-    /// Apply a render-option batch on the worker. A scaler/deband swap makes mpv's VO rebuild its
-    /// shader chain synchronously inside `set_property`; that wait must never land on GTK's timer.
-    pub fn render_opts(&self, opts: Vec<(String, String)>) -> Result<(), String> {
-        self.enqueue(Work::RenderOpts { opts })
-    }
-
-    pub fn ass(
-        &self,
-        id: i64,
-        format: &'static str,
-        data: String,
-        res_x: i64,
-        res_y: i64,
-        z: i64,
-    ) -> Result<(), String> {
-        self.enqueue(Work::Ass {
-            id,
-            format,
-            data,
-            res_x,
-            res_y,
-            z,
         })
     }
 
@@ -279,120 +176,5 @@ fn execute(client: &Mpv, work: Work) -> Result<(), String> {
             }
             Ok(())
         }
-        Work::BitmapAdd {
-            id,
-            x,
-            y,
-            pixels,
-            width,
-            height,
-            stride,
-        } => {
-            // The owned Vec stays alive until mpv has synchronously copied the frame.
-            let ids = id.to_string();
-            let xs = x.to_string();
-            let ys = y.to_string();
-            let file = format!("&{}", pixels.as_ptr() as usize);
-            let ws = width.to_string();
-            let hs = height.to_string();
-            let ss = stride.to_string();
-            client
-                .command(
-                    "overlay-add",
-                    &[&ids, &xs, &ys, &file, "0", "bgra", &ws, &hs, &ss],
-                )
-                .map_err(|error| error.to_string())
-        }
-        Work::BitmapRemove { id } => client
-            .command("overlay-remove", &[&id.to_string()])
-            .map_err(|error| error.to_string()),
-        Work::RenderOpts { opts } => {
-            // Best-effort per key, exactly like the synchronous path in PlayerHandle.
-            for (key, value) in &opts {
-                let _ = client.set_property(key.as_str(), value.as_str());
-            }
-            Ok(())
-        }
-        Work::Ass {
-            id,
-            format,
-            data,
-            res_x,
-            res_y,
-            z,
-        } => execute_ass(client, id, format, &data, res_x, res_y, z),
     }
-}
-
-fn execute_ass(
-    client: &Mpv,
-    id: i64,
-    format: &str,
-    data: &str,
-    res_x: i64,
-    res_y: i64,
-    z: i64,
-) -> Result<(), String> {
-    fn node_string(value: &CString) -> sys::mpv_node {
-        sys::mpv_node {
-            u: sys::mpv_node__bindgen_ty_1 {
-                string: value.as_ptr() as *mut c_char,
-            },
-            format: sys::mpv_format_MPV_FORMAT_STRING,
-        }
-    }
-
-    fn node_i64(value: i64) -> sys::mpv_node {
-        sys::mpv_node {
-            u: sys::mpv_node__bindgen_ty_1 { int64: value },
-            format: sys::mpv_format_MPV_FORMAT_INT64,
-        }
-    }
-
-    let key_names = ["name", "id", "format", "data", "res_x", "res_y", "z"];
-    let keys: Vec<CString> = key_names
-        .iter()
-        .map(|key| CString::new(*key))
-        .collect::<Result<_, _>>()
-        .map_err(|error| error.to_string())?;
-    let mut key_ptrs: Vec<*mut c_char> =
-        keys.iter().map(|key| key.as_ptr() as *mut c_char).collect();
-    let name = CString::new("osd-overlay").map_err(|error| error.to_string())?;
-    let format = CString::new(format).map_err(|error| error.to_string())?;
-    let data = CString::new(data).map_err(|error| error.to_string())?;
-    let mut values = vec![
-        node_string(&name),
-        node_i64(id),
-        node_string(&format),
-        node_string(&data),
-        node_i64(res_x),
-        node_i64(res_y),
-        node_i64(z),
-    ];
-    let mut list = sys::mpv_node_list {
-        num: values.len() as i32,
-        values: values.as_mut_ptr(),
-        keys: key_ptrs.as_mut_ptr(),
-    };
-    let mut root = sys::mpv_node {
-        u: sys::mpv_node__bindgen_ty_1 { list: &mut list },
-        format: sys::mpv_format_MPV_FORMAT_NODE_MAP,
-    };
-    let code =
-        unsafe { sys::mpv_command_node(client.ctx.as_ptr(), &mut root, std::ptr::null_mut()) };
-    if code >= 0 {
-        return Ok(());
-    }
-    let message = unsafe {
-        let pointer = sys::mpv_error_string(code);
-        if pointer.is_null() {
-            format!("mpv error {code}")
-        } else {
-            format!(
-                "mpv error {code}: {}",
-                CStr::from_ptr(pointer).to_string_lossy()
-            )
-        }
-    };
-    Err(message)
 }

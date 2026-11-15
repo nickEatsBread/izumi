@@ -32,8 +32,7 @@ describe('seek bar styling hooks', () => {
     expect(tag).not.toContain('style:left')
   })
 
-  it('keeps the root findable and hideable for the native player', () => {
+  it('keeps the root findable', () => {
     expect(seekbar).toContain('aria-label="Seek"')
-    expect(seekbar).toContain('class:opacity-0={native}')
   })
 })

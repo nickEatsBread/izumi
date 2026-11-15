@@ -35,8 +35,6 @@
      of it and the real screen replaces this in place with no brightness pop. -->
 <div data-slot="play.connecting" class="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-black px-8" role="status" aria-live="polite">
   {#if art}
-    <!-- Desktop blurs this still; game mode's `loading-backdrop` rule drops the filter, because
-         animating over a full-screen filtered layer makes Deck WebKit repaint it every frame. -->
     <img data-part="play.backdrop" src={art} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
   {/if}
   <div data-part="play.loader" class="relative grid w-full max-w-xl grid-rows-[1fr_auto_1fr] justify-items-center gap-6 px-6 text-center">

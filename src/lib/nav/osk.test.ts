@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
-import { gameMode, oskOpen, playerOverlayRev, playing } from '$lib/player/session'
+import { gameMode, oskOpen, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode, initInput, inputType } from './input'
 import { PAD_KEY } from './pad-controls'
@@ -362,21 +362,6 @@ describe('keyboard sessions', () => {
     closeOsk()
     expect(get(oskOpen)).toBe(false)
   })
-
-  it('re-snapshots the Game-mode player overlay on open, typing and close, only during playback', () => {
-    document.body.innerHTML = '<input id="f">'
-    playing.set(true)
-    const start = get(playerOverlayRev)
-    openOskForField(input('f'))
-    oskInsert('a')
-    closeOsk()
-    expect(get(playerOverlayRev)).toBe(start + 3)
-    playing.set(false)
-    openOskForField(input('f'))
-    oskInsert('b')
-    closeOsk()
-    expect(get(playerOverlayRev)).toBe(start + 3)
-  })
 })
 
 describe('keyboard listeners (startOsk)', () => {
@@ -689,15 +674,6 @@ describe('keyboard listeners (startOsk)', () => {
     expect(plain.getAttribute('inputmode')).toBe('none')
     plain.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
     expect(plain.hasAttribute('inputmode')).toBe(false)
-  })
-
-  it('re-snapshots on d-pad moves between keys during Game-mode playback', () => {
-    document.body.innerHTML = '<input id="f">' + KEYS
-    playing.set(true)
-    input('f').click()
-    const before = get(playerOverlayRev)
-    byId('key').focus()
-    expect(get(playerOverlayRev)).toBe(before + 1)
   })
 
   it('stops listening once uninstalled', () => {

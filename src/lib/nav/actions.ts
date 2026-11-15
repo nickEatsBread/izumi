@@ -1,23 +1,17 @@
 import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
 import { dragCarousels } from '$lib/settings/ui'
-import { isAndroid, isMacOS, isWindows } from '$lib/platform'
-
-/** A row the stylesheet pinned (`overflow: hidden` in app.css: every row in Game mode, every row on
- *  a hover + fine-pointer desktop). It is not a native scroller, so a finger can only move it through
- *  `gameModeCarouselTouch`. Phone rows stay native and are never pinned. */
-const pinnedRow = (node: HTMLElement) => getComputedStyle(node).overflowX === 'hidden'
 
 export function dragScroll(node: HTMLElement) {
   let down = false, moved = false, startX = 0, startLeft = 0
-  // Desktop mouse-drag-to-scroll. Game mode uses WebKitGTK's native touchscreen scrolling, so
-  // this bails there. Listeners live on the NODE — NOT on window — so a page with
+  // Desktop mouse-drag-to-scroll. Game mode scrolls rows natively by touch, so this bails there.
+  // Listeners live on the NODE — NOT on window — so a page with
   // many carousels doesn't pile up global pointermove handlers, which made scrolling lag more
   // and more the further you'd navigated (the accumulating-lag bug).
   const onDown = (e: PointerEvent) => {
     if (!get(dragCarousels) || get(gameMode) || get(playing) || e.button !== 0) return
-    // Mouse only. A finger or pen scrolls a phone row natively (driving it from JS too fought the
-    // browser's own pan and snap), and a pinned row through the carousel touch driver.
+    // Mouse only. A finger or pen scrolls a row natively (driving it from JS too fought the
+    // browser's own pan and snap).
     if (e.pointerType !== 'mouse') return
     down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft
   }
@@ -55,170 +49,6 @@ export function dragScroll(node: HTMLElement) {
       node.removeEventListener('click', onClick, true)
     }
   }
-}
-
-/** Steam Deck carousel arbitration. WebKitGTK otherwise lets an overflow-x row (or one of its
- * draggable poster links) claim an ambiguous finger gesture before the document can begin its
- * vertical pan. Advertise native pan-y up front, then own only a clearly-horizontal drag here.
- * Gamescope exposes Deck touch as a synthesized mouse pointer on the shipped GTK port, so this is
- * intentionally pointer-type agnostic while remaining strictly Game-mode gated.
- *
- * Native touch scrolling on WebKitGTK is a GTK drag gesture that synthesizes wheel events (both
- * axes, every sample) and it does NOT read `touch-action` — the `pan-y` above only reaches DOM
- * pointer-event logic. Rows are therefore `overflow: hidden` in Game mode (app.css) so they are
- * never a wheel target, and once a drag is clearly horizontal this handler cancels the DOM
- * `touchmove`: a prevented touch event is the one signal that makes WebKitGTK deny its whole touch
- * gesture group for that sequence (drag, swipe, zoom, tap), so the page does not creep vertically
- * under a row drag and no synthesized tap fires when the finger lifts. Pointer events keep
- * arriving regardless, so the scrollLeft drive below is unaffected.
- *
- * Desktop rows are pinned too (app.css), so outside Game mode the same driver owns a finger or pen
- * on a pinned row: a touchscreen laptop. The browser keeps the vertical pan through the stylesheet's
- * `touch-action: pan-y`; the mouse stays with dragScroll. Linux's WebKitGTK ignores `touch-action`
- * there exactly as in Game mode, so on Linux a pinned row also cancels the touch sequence once its
- * drag is horizontal. */
-export function gameModeCarouselTouch(node: HTMLElement) {
-  const previousTouchAction = node.style.touchAction
-  const stopMode = gameMode.subscribe((enabled) => {
-    node.style.touchAction = enabled ? 'pan-y' : previousTouchAction
-  })
-  let pointer = -1
-  let axis: 'pending' | 'horizontal' | 'vertical' = 'pending'
-  let startX = 0, startY = 0, startLeft = 0, lastX = 0, lastAt = 0, velocity = 0
-  let momentumFrame = 0
-  let suppressClickUntil = 0
-
-  const stopMomentum = () => {
-    if (momentumFrame) cancelAnimationFrame(momentumFrame)
-    momentumFrame = 0
-  }
-  const coast = () => {
-    if (Math.abs(velocity) < 0.05) return
-    let previous = performance.now()
-    const frame = (now: number) => {
-      const dt = Math.min(32, Math.max(1, now - previous))
-      previous = now
-      velocity *= Math.pow(0.91, dt / 16.67)
-      if (Math.abs(velocity) < 0.05) { momentumFrame = 0; return }
-      const before = node.scrollLeft
-      node.scrollLeft += velocity * dt
-      if (Math.abs(node.scrollLeft - before) < 0.1) { momentumFrame = 0; return }
-      momentumFrame = requestAnimationFrame(frame)
-    }
-    momentumFrame = requestAnimationFrame(frame)
-  }
-  const onDown = (event: PointerEvent) => {
-    if (get(playing) || event.button !== 0) return
-    if (!get(gameMode) && (event.pointerType === 'mouse' || !pinnedRow(node))) return
-    stopMomentum()
-    pointer = event.pointerId
-    axis = 'pending'
-    startX = lastX = event.clientX
-    startY = event.clientY
-    startLeft = node.scrollLeft
-    lastAt = performance.now()
-    velocity = 0
-  }
-  const onMove = (event: PointerEvent) => {
-    if (pointer !== event.pointerId) return
-    const dx = event.clientX - startX
-    const dy = event.clientY - startY
-    if (axis === 'pending') {
-      if (Math.hypot(dx, dy) < 8) return
-      // Bias a diagonal gesture toward the document. A row starts moving only when horizontal
-      // intent is unambiguous; vertical movement never calls preventDefault.
-      axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'horizontal' : 'vertical'
-      if (axis === 'horizontal') {
-        suppressClickUntil = performance.now() + 450
-        window.dispatchEvent(new Event('carousel-nav'))
-        try { node.setPointerCapture(event.pointerId) } catch { /* capture is optional */ }
-      }
-    }
-    if (axis !== 'horizontal') return
-    event.preventDefault()
-    const now = performance.now()
-    const dt = Math.max(1, now - lastAt)
-    const sample = Math.max(-3, Math.min(3, (lastX - event.clientX) / dt))
-    velocity = velocity * 0.55 + sample * 0.45
-    lastX = event.clientX
-    lastAt = now
-    node.scrollLeft = startLeft - dx
-  }
-  // The axis is settled by the pointermove derived from the same touch sample; whichever of the
-  // two the browser dispatches first, the cancel lands at most one sample after the decision —
-  // far inside GTK's own 8 px drag threshold. Vertical and undecided drags stay uncancelled so
-  // the document scrolls natively with its kinetic momentum.
-  const onTouchMove = (event: TouchEvent) => {
-    if (pointer === -1) return
-    if (axis === 'horizontal') event.preventDefault()
-  }
-  const onEnd = (event: PointerEvent) => {
-    if (pointer !== event.pointerId) return
-    const horizontal = axis === 'horizontal'
-    pointer = -1
-    axis = 'pending'
-    try { node.releasePointerCapture(event.pointerId) } catch { /* wasn't captured */ }
-    if (horizontal) coast()
-  }
-  const onClick = (event: MouseEvent) => {
-    if (performance.now() >= suppressClickUntil) return
-    event.preventDefault()
-    event.stopPropagation()
-  }
-  const onDragStart = (event: DragEvent) => {
-    if (get(gameMode)) event.preventDefault()
-  }
-
-  node.addEventListener('pointerdown', onDown)
-  node.addEventListener('pointermove', onMove)
-  // The non-passive touchmove exists only to cancel the document scroll once a Game-mode row
-  // drag has committed horizontally. Registered on every row on every platform, its mere presence
-  // made the WebView wait for the JS main thread before EVERY vertical fling that started on a row
-  // — most of Home on a phone — so it is attached only while Game mode is actually on, or on a
-  // pinned Linux row, where WebKitGTK needs it for the same reason as Game mode.
-  let touchBlocking = false
-  const setTouchBlocking = (on: boolean) => {
-    if (on === touchBlocking) return
-    touchBlocking = on
-    if (on) node.addEventListener('touchmove', onTouchMove, { passive: false })
-    else node.removeEventListener('touchmove', onTouchMove)
-  }
-  const linux = !get(isWindows) && !get(isMacOS) && !get(isAndroid)
-  const stopTouchMode = gameMode.subscribe((enabled) => setTouchBlocking(enabled || (linux && pinnedRow(node))))
-  node.addEventListener('pointerup', onEnd)
-  node.addEventListener('pointercancel', onEnd)
-  node.addEventListener('click', onClick, true)
-  node.addEventListener('dragstart', onDragStart)
-  return {
-    destroy() {
-      stopMomentum()
-      stopMode()
-      stopTouchMode()
-      setTouchBlocking(false)
-      node.style.touchAction = previousTouchAction
-      node.removeEventListener('pointerdown', onDown)
-      node.removeEventListener('pointermove', onMove)
-      node.removeEventListener('pointerup', onEnd)
-      node.removeEventListener('pointercancel', onEnd)
-      node.removeEventListener('click', onClick, true)
-      node.removeEventListener('dragstart', onDragStart)
-    },
-  }
-}
-
-// Game mode: WebKitGTK's two-finger pinch is a GTK zoom gesture wired straight to the page zoom
-// factor; it only clamps to the min/max zoom and never reads the viewport `user-scalable=no`
-// meta, so a thumb plus a resting palm edge zoomed the whole UI (and fought the persisted Deck
-// UI-scale zoom level). Cancelling the touchstart that brings the second finger down is the one
-// signal that makes WebKitGTK deny its touch gesture group for that sequence, so the zoom
-// gesture can never begin. Single-finger sequences are untouched: native scrolling and taps
-// keep their kinetic drag/swipe/tap recognizers. Idempotent; no-op outside Game mode.
-let pinchZoomSuppressed = false
-export function suppressPinchZoom() {
-  if (pinchZoomSuppressed || !get(gameMode)) return
-  pinchZoomSuppressed = true
-  const onTouchStart = (e: TouchEvent) => { if (e.touches.length > 1) e.preventDefault() }
-  window.addEventListener('touchstart', onTouchStart, { passive: false, capture: true })
 }
 
 // Game mode: kill the native `title` hover tooltips (the little accessibility popups). With a

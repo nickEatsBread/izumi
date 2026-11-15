@@ -34,10 +34,8 @@ describe('subtitle editor cross-platform contract', () => {
     expect(controls).toContain('<span>Move subtitles</span>')
     expect(desktop).toContain('getProperty={(name) => playerGetProperty(name)}')
     expect(desktop).toContain('<SubtitleEditor')
-    expect(desktop).toContain('subtitleEditorOpen,')
-    expect(desktop).toContain('onpaint={gmBitmapMode ? bumpPlayerOverlay : undefined}')
+    expect(desktop).toContain('{#if subtitleEditorOpen}')
     expect(editor).toContain('data-nav-trap')
-    expect(editor).toContain('onfocusin={requestPaint}')
     // The pad steps this slider through nav's shared adapter (padAdjust: snapped, clamped, `input`
     // then `change`), reached by one pad-marked arrow; the hand-rolled stepDown/stepUp is gone.
     expect(desktop).toContain('if (key) dispatchPadKey(key)')

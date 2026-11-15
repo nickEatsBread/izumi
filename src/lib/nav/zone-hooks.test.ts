@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { isTv } from '$lib/platform'
 import { initDpadNav, pivotScrollDelta, resetNavLandingForTests, setNavMoveOwner } from './index'
 import { dispatchPadKey, resetPadControlsForTests } from './pad-controls'
@@ -19,7 +18,6 @@ const press = (key: string) => {
   window.dispatchEvent(event)
   return event
 }
-const scrolls: Array<{ el: Element; options: ScrollToOptions }> = []
 
 beforeAll(() => {
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 540 })
@@ -28,13 +26,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
-  scrolls.length = 0
-  HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {
-    const move = asMove(this, options as ScrollToOptions)
-    if (move) scrolls.push({ el: this, options: move })
-  } as HTMLElement['scrollTo']
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
   resetNavLandingForTests()
   resetPadControlsForTests()
@@ -54,21 +46,6 @@ describe('pivotScrollDelta', () => {
     expect(pivotScrollDelta({ ...port, itemStart: 205, itemEnd: 225 })).toBe(0)
     // 495-515 is clipped by the 500 px port, so its 10 px shift is kept.
     expect(pivotScrollDelta({ ...port, itemStart: 495, itemEnd: 515, pivot: 0.99 })).toBe(10)
-  })
-})
-
-describe('data-nav-scroll-pivot', () => {
-  it('keeps the focused row centre at 42% of the scroller on a vertical move', () => {
-    document.body.innerHTML = `
-      <div data-nav-scroll-container data-nav-scroll-pivot="0.42" data-rect="240,0,600,500">
-        <button data-focusable data-rect="260,40,500,50">First row</button>
-        <button data-focusable data-rect="260,380,500,50">Second row</button>
-      </div>`
-    const pane = document.querySelector('[data-nav-scroll-container]')!
-    el('First row').focus()
-    press('ArrowDown')
-    expect(document.activeElement).toBe(el('Second row'))
-    expect(scrolls).toEqual([{ el: pane, options: { top: 195, left: 0, behavior: 'smooth' } }])
   })
 })
 

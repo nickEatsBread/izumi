@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { directTorrentStats, bumpPlayerOverlay, gameMode } from '$lib/player/session'
+  import { directTorrentStats } from '$lib/player/session'
   import { classifyAudioOutput, classifyVideoOutput, dolbyCapabilities } from '$lib/player/dolby'
 
   let values = $state<Record<string, string>>({})
@@ -22,7 +22,6 @@
       catch { return [label, '—'] as const }
     }))
     values = Object.fromEntries(entries)
-    if ($gameMode) bumpPlayerOverlay()
   }
 
   onMount(() => {

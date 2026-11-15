@@ -25,7 +25,7 @@ describe('player styling hooks', () => {
   const controls = read('./Controls.svelte')
   // The popovers hold menu entries, not controls, so they are cut out first.
   const rowButtons = () => buttonTags(controls
-    .slice(controls.indexOf('data-slot="player.controls"'), controls.indexOf('data-gm-menu-surface'))
+    .slice(controls.indexOf('data-slot="player.controls"'), controls.indexOf('{#if gm && showOptions}'))
     .replace(/data-options-menu[\s\S]*?<!-- Discussion/, '')
     .replace(/\{#if showTracks\}[\s\S]*?\{#if \$subtitleLineNavigation\}/, ''))
 
@@ -95,8 +95,7 @@ describe('player styling hooks', () => {
     expect(read('./PlayerOverlay.svelte')).toMatch(/data-part="player.skip"[^>]*data-theme-unthemed=\{gmMode \|\| undefined\} use:protectedSurface=\{gmMode\}/)
     expect(read('./UpNextOverlay.svelte')).toMatch(/data-theme-unthemed=\{\$gameMode \|\| undefined\}\s+use:protectedSurface=\{\$gameMode\}/)
     // The media menu only mounts in Game mode.
-    expect(read('./TrackMenu.svelte')).toMatch(/data-gm-menu-surface\s+data-theme-unthemed\s+use:protectedSurface\s/)
-    expect(read('../../player/theme-gm-osd.ts')).toMatch(/const surface = protectedSurface\(probe\)[\s\S]*probe\.remove\(\)\s+surface\.destroy\(\)/)
+    expect(read('./TrackMenu.svelte')).toMatch(/<div\s+data-theme-unthemed\s+use:protectedSurface\s/)
     // Unlike data-theme-protected, the marker carries no styling of its own.
     expect(read('../../../app.css')).not.toContain('data-theme-unthemed')
   })

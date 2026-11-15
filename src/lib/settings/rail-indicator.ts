@@ -1,4 +1,4 @@
-import { reducedMotion } from '$lib/motion/gm-motion'
+import { reducedMotion } from '$lib/motion/motion'
 
 /** Svelte action on the desktop Settings rail (SettingsNav): keeps its one selection indicator
  *  (`data-part="settings.rail.indicator"`) over the link of the current section (`data-section`).

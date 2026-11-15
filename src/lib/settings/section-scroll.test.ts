@@ -311,9 +311,4 @@ describe('sectionFade', () => {
     osPrefersReducedMotion()
     expect(sectionFade().duration).toBe(0)
   })
-
-  it('is instant in Game mode, where the end of a CSS animation blinks', () => {
-    gameMode.set(true)
-    expect(sectionFade().duration).toBe(0)
-  })
 })

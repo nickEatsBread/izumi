@@ -124,7 +124,7 @@ html[data-scheme='light'] { --izumi-safe-wordmark-filter: brightness(0) saturate
 }
 /* Phone rows settle on a card edge after a flick instead of stopping mid-poster, and a swipe that
    runs off a row's end stays in the row instead of handing the rest of the gesture to the page.
-   Phones only: Game mode drives its rows from controller focus and keeps them overflow-hidden. */
+   Phones only. */
 @media (max-width: 640px) and (pointer: coarse) {
   [data-carousel-scroller] { scroll-snap-type: x proximity; scroll-padding-inline: 1rem; overscroll-behavior-x: contain; }
   [data-carousel-scroller] > * { scroll-snap-align: start; }
@@ -133,11 +133,10 @@ html[data-scheme='light'] { --izumi-safe-wordmark-filter: brightness(0) saturate
    started over a scrollable row was given to the row, which took the dx and dropped the dy, so the
    page stalled under a slightly diagonal two-finger scroll. With overflow hidden every wheel scrolls
    the page; Carousel's onWheel moves the row for clearly horizontal input, and the arrows, mouse
-   drag, keyboard focus and scrollIntoView all still move it. A finger or pen on a touchscreen laptop
-   pans the page vertically (`pan-y`) while the carousel touch driver (nav/actions.ts) owns
-   horizontal drags, as it does in Game mode. */
+   drag, keyboard focus and scrollIntoView all still move it. Game mode keeps native rows: the
+   Deck's fingers swipe and fling them through Chromium's own touch scrolling. */
 @media (hover: hover) and (pointer: fine) {
-  [data-carousel-scroller] { overflow: hidden; touch-action: pan-y; }
+  html:not(.gamemode) [data-carousel-scroller] { overflow: hidden; touch-action: pan-y; }
 }
 /* Phone settings sub-pages: the back-header's <h1> shows the page title (settings/hierarchy.ts), so
    each page's own leading title, marked `data-settings-page-title`, is hidden: one title, right
@@ -151,28 +150,6 @@ html[data-scheme='light'] { --izumi-safe-wordmark-filter: brightness(0) saturate
 @keyframes schedule-in { from { transform: translate3d(0,0.65rem,0); opacity: 0; } to { transform: none; opacity: 1; } }
 .schedule-panel-in { animation: schedule-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .schedule-day-in { animation: schedule-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-/* Game mode (Deck): no card entrance animation — its fade/slide flashes as controller focus
-   moves into a row. Keep the browse calm and instant. */
-.gamemode .load-in { animation: none; }
-/* Game mode magnifies the browse UI (page zoom) and snapshots the player UI 1:1 into mpv. Both
-   RESAMPLE any element WebKit puts on its own GPU compositing layer — composited layers skip
-   WebKit's crisp contents-scale path (bug 27684) and drop to grayscale AA, so promoted text/images
-   render chunky/aliased while base-layer content stays sharp. `will-change` only ever exists here
-   as a hover/animation perf hint, and there is no hover under controller nav, so it never helps in
-   Game mode and always risks the pixelation. Neutralize it globally. Hardware compositing stays
-   ON; menus stay crisp by remaining on the base layer (opaque, no will-change). */
-.gamemode *, .gamemode *::before, .gamemode *::after { will-change: auto !important; }
-/* backdrop-filter forces a full-viewport filtered stacking context every gamescope frame. */
-html.gamemode, html.gamemode * {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-/* The mesh Theme-Studio backdrop is a full-viewport `filter: blur()` + scale layer — the same
-   per-frame cost the rule above removes, just spelled with `filter`. Flat gradients only on Deck. */
-html.gamemode .theme-studio-backdrop {
-  filter: none !important;
-  transform: none !important;
-}
 /* Gamescope parks a virtual mouse at the last touch. Hover chrome (play overlays,
    carousel chevrons, cover zoom) must not follow it while you scroll. Focus-within
    still shows the controller highlight. */
@@ -211,36 +188,10 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 .deferred-skeleton .skeloader::before { animation-play-state: paused; }
 /* Any other shimmer out of view, such as a lazy cover's below the fold (util/offscreen-shimmer.ts). */
 .skeloader[data-offscreen]::before { animation-play-state: paused; }
-/* Game mode keeps the sweep, a still placeholder reads as stuck, on its own compositor layer: the
-   blanket `will-change: auto` above made every sweeping skeleton a main-thread repaint, which dropped
-   frames scrolling Home on the Deck (9 frames over 34 ms in one walk, 2 with the sweep layered or
-   off). A gradient has no text to rasterise soft, and an endless sweep never ends, so it never drops
-   its layer. Rows below the fold still pause theirs (above). */
-html.gamemode .skeloader::before { will-change: transform !important; }
-/* Game mode: a cover's fade-in (and the shared banner's fade) promotes that image to a compositor
-   layer for the tween. Under the Deck's page zoom a promoted layer rasterises soft and snaps crisp
-   the moment it is dropped — a pixel pop per card as each row loads, and a blink on every banner.
-   Browse images appear in place instead; controller focus keeps its own (transform) motion. */
-html.gamemode main img { transition: none !important; animation: none !important; }
 /* Indeterminate progress bar (update download with no Content-Length): a short segment sweeps
    the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
 @keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
 .indeterminate { animation: indeterminate 1.2s ease-in-out infinite; }
-/* Loading screens normally blur a full-screen cover. Under Gamescope, WebKitGTK repaints that
-   filtered 1280x800 layer whenever a child spinner changes because Game mode deliberately avoids
-   compositor layer promotion. Keep the artwork but drop the expensive filter/scale there. */
-.gamemode .loading-backdrop {
-  filter: none !important;
-  transform: none !important;
-  opacity: 0.18 !important;
-}
-/* Eight discrete turns per second look intentional and leave most frames completely unchanged,
-   which keeps the Deck's WebKit renderer idle between steps. */
-.gamemode .loading-spinner {
-  animation-duration: 1s !important;
-  animation-timing-function: steps(8, end) !important;
-  contain: paint;
-}
 /* A left-right bar in pure CSS for the Android waits (the pending pill, connection status, watch
    details); playback start shows the player's ring instead. Transform-only, same reasoning as
    `.indeterminate` — the segment composites without repainting the track. */
@@ -383,22 +334,15 @@ html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
 /* Steam Deck (Game mode): touchscreen + controller — never show a mouse cursor, and make
    controller focus obvious. The focused tile pops + gets a bright ring (VacuumTube /
    YouTube-TV style); z-index keeps the grown tile above its neighbours. */
-/* Never a cursor, and never text selection. Gamescope passthrough delivers native touch to
-   WebKitGTK, whose built-in drag/swipe recognizers own scrolling and kinetic momentum. */
+/* Never a cursor, and never text selection. Chromium owns touch scrolling and fling; leaving
+   pinch-zoom out of `touch-action` keeps a thumb and a resting palm from zooming the whole UI
+   (the viewport meta's `user-scalable=no` only applies on mobile Chromium). */
 .gamemode { touch-action: pan-x pan-y; }
-/* WebKitGTK turns a finger drag into synthesized wheel events that carry BOTH axes, hit-tested at
-   the drag's START point, and it never consults `touch-action`. A scrollable overflow-x row accepts
-   any sample whose dx is non-zero and drops the dy, so a vertical swipe that began on a row moved
-   the page only on the rare perfectly-vertical samples. With `overflow: hidden` the row is not a
-   wheel target at all: the document takes every sample (native kinetic scroll, exactly as between
-   rows), while `gameModeCarouselTouch` keeps driving scrollLeft for clearly-horizontal drags,
-   controller focus and programmatic scrollIntoView, all of which work on hidden overflow. */
-.gamemode [data-carousel-scroller] { overflow: hidden; }
 .gamemode, .gamemode * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; -webkit-touch-callout: none; }
 /* Non-Deck browse containment: long search/list pages retain their DOM so browser find, focus and
-   back-navigation stay correct, but Chromium/WebKit can skip style/layout/paint work far outside
-   the viewport. Game mode deliberately opts out below: Deck WebKit's `contain: paint` clips the
-   controller focus ring/cover pop and used to flash black while kinetic-scrolling. */
+   back-navigation stay correct, but the engine can skip style/layout/paint work far outside
+   the viewport. Game mode deliberately opts out below: the paint containment that `content-visibility:
+   auto` brings clips the controller focus ring and cover pop. */
 .browse-render-row,
 .browse-render-list-item,
 .browse-render-grid-item { content-visibility: auto; }
@@ -411,6 +355,11 @@ html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
   content-visibility: visible;
   contain-intrinsic-size: none;
 }
+/* Controller focus is revealed by a native scrollIntoView (nav/index.ts): keep the whole control,
+   its ring and pop in view, never clipped at the scroller's edge (Crunchy Deck's margin). An
+   anchored row entered from above or below snaps under the top bar unless a theme sets its own. */
+[data-focusable] { scroll-margin: 1.5rem; }
+[data-row-focus='anchor'] { scroll-margin-top: calc(var(--theme-shell-top, 2rem) + 1rem); }
 /* Deck and controller focus ring: the plain 3px white ring the Deck always had, back on 2026-10-08
    in place of the theme-coloured two-tone ring. It stays a variable so the player, Theme Studio and
    the install preview can still give their own. */
@@ -461,13 +410,6 @@ html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
   to { opacity: 1; transform: none; }
 }
 .gamemode .gm-chrome-in { animation: gm-chrome-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-/* Game mode snapshots these surfaces into mpv. Snapshotting a CSS animation captures an
-   intermediate translucent frame; the native overlay supplies the entrance motion instead. */
-.gamemode .gm-sheet-in, .gamemode .gm-menu-col-in { animation: none; }
-/* The Game-mode compositor supplies the dim layer natively. Keeping this transparent makes the
-   WebKit snapshot contain only the compact sheet, so its right-to-left motion is cheap and the
-   backdrop does not visibly travel with it. */
-.gamemode .gm-sheet-backdrop { background: transparent; }
 /* The Game-mode player panels are always dark, whatever the theme's foreground is. */
 .gamemode [data-gm-tv-panel] [data-part="hints.glyph"] {
   background: #fff;
@@ -511,14 +453,12 @@ html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
    controller mode: enough for the 4% pop of a 152 px poster (9.1 px) plus the old 3 px white ring.
    The two-tone ring reaches 6 px (6.2 px popped): 15.4 px in all, 16.8 px at large density. In
    these modes this rule replaces that `pt-3` and outranks a plain theme rule on the `row.track`
-   part, so the room is client-owned while a controller drives the page. Keep this after the
-   `overflow: hidden` rule above, the first `.gamemode [data-carousel-scroller]` match, which
-   deck-touch-scroll.test.ts reads. */
+   part, so the room is client-owned while a controller drives the page. */
 html.gamemode [data-carousel-scroller],
 html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px); }
 
 /* Paired controllers on ordinary desktop/mobile clients share the Deck's focus language without
-   inheriting Gamescope-only zoom, compositor snapshots, fullscreen policy, or touch routing. */
+   inheriting the Deck-only zoom, fullscreen policy, or touch routing. */
 .controller-mode,
 .controller-mode * {
   cursor: none !important;
@@ -560,7 +500,7 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
 .gamemode [data-nav-sidebar] [data-focusable]:focus { box-shadow: none; background: hsl(var(--foreground) / 0.16); }
 
 /* Android TV: a wide, remote-first ten-foot surface. This intentionally shares the Deck's visual
-   focus language without inheriting its gamescope/native-snapshot behaviour. */
+   focus language without inheriting its Deck-only behaviour. */
 .tv-mode { font-size: 18px; }
 .tv-mode, .tv-mode * { cursor: none !important; }
 .tv-mode main { margin-bottom: 0 !important; }

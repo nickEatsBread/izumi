@@ -9,7 +9,7 @@ const overlay = readFileSync(fileURLToPath(new URL('./PlayerOverlay.svelte', imp
 describe('player startup', () => {
   it('keeps the controls away until the first frame, then shows them once', () => {
     expect(overlay).toContain('let visible = $state(false)')
-    expect(overlay).toContain('visible || (firstFrame && !(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive))')
+    expect(overlay).toContain('visible || (firstFrame && !quietPadSeek && ((transportPaused && !pausedIdle) || loading || $scrubActive))')
     expect(overlay).toContain('$effect(() => { if (firstFrame) untrack(poke) })')
   })
 
@@ -19,13 +19,8 @@ describe('player startup', () => {
     expect(overlay).toContain('const moved = !!lastPointer && at !== lastPointer')
   })
 
-  it('draws mpv\'s Game-mode spinner itself until mpv can', () => {
-    const gm = overlay.slice(overlay.indexOf('{:else if loading && !firstFrame && $gmFrozenFrame == null}'))
-    expect(gm.slice(0, gm.indexOf('{/if}'))).toContain('<Spinner size="player" />')
-  })
-
-  it('shows the connecting screen\'s ring for every other playback wait too', () => {
-    const live = overlay.slice(overlay.indexOf('{#if loading && !gmBitmapMode}'))
-    expect(live.slice(0, live.indexOf('{:else if'))).toContain('<Spinner size="player" />')
+  it('shows the connecting screen\'s ring for every playback wait, Game mode included', () => {
+    const live = overlay.slice(overlay.indexOf('{#if loading}'))
+    expect(live.slice(0, live.indexOf('{/if}'))).toContain('<Spinner size="player" />')
   })
 })

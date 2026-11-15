@@ -1,5 +1,5 @@
 import { get, writable, type Readable } from 'svelte/store'
-import { bumpPlayerOverlay, gameMode, oskOpen, playing } from '$lib/player/session'
+import { gameMode, oskOpen } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
 import { controllerMode, inputType } from './input'
@@ -91,11 +91,6 @@ let doneEnter: Event | null = null
 
 const isNumberField = (field: TextEntryField): field is HTMLInputElement =>
   field instanceof HTMLInputElement && field.type === 'number'
-
-/** Game mode during playback shows HTML over mpv only through the player's snapshot. */
-function bump(): void {
-  if (get(gameMode) && get(playing)) bumpPlayerOverlay()
-}
 
 function labelOf(field: TextEntryField): string {
   const labelledBy = (field.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean)
@@ -220,7 +215,6 @@ function openBuiltInSession(field: TextEntryField): void {
   // The keyboard has no cursor keys, so typing continues from the end of what is there.
   try { field.setSelectionRange(field.value.length, field.value.length) } catch { /* no caret */ }
   setSession({ kind: 'field', field, layout, initialValue: field.value, draft: field.value })
-  bump()
 }
 
 /** Close `field`'s session only if it is still the open one. A handler that Done ran (an Enter
@@ -245,7 +239,6 @@ export function openOskForField(field: TextEntryField): boolean {
 export function openRemoteOsk(remote: RemoteKeyboard): void {
   if (get(session)) closeOsk({ restore: false })
   setSession({ kind: 'remote', remote, layout: 'text' })
-  bump()
 }
 
 /** Type at the caret: maxLength holds, a keypad drops everything but digits, '.' and '-', and a
@@ -256,7 +249,6 @@ export function oskInsert(text: string): void {
   if (!current) return
   if (current.kind === 'remote') {
     current.remote.insert(text)
-    bump()
     return
   }
   const { field } = current
@@ -278,7 +270,6 @@ export function oskInsert(text: string): void {
     writeValue(field, field.value.slice(0, start) + insert + field.value.slice(end), start + insert.length)
   }
   refreshEcho()
-  bump()
 }
 
 /** Delete the character before the caret (or the selection); a number field edits its draft. */
@@ -287,7 +278,6 @@ export function oskBackspace(): void {
   if (!current) return
   if (current.kind === 'remote') {
     current.remote.backspace()
-    bump()
     return
   }
   const { field } = current
@@ -306,7 +296,6 @@ export function oskBackspace(): void {
     writeValue(field, field.value.slice(0, from) + field.value.slice(end), from)
   }
   refreshEcho()
-  bump()
 }
 
 /** Done. A controller field session: focus back on the field, commit (`change`), a cancellable
@@ -361,7 +350,6 @@ export function closeOsk(options: { restore?: boolean } = {}): void {
   setSession(null)
   if (current.kind === 'remote') {
     current.remote.close?.()
-    bump()
     return
   }
   const { field } = current
@@ -376,7 +364,6 @@ export function closeOsk(options: { restore?: boolean } = {}): void {
   if (field.isConnected && field.value !== current.initialValue) field.dispatchEvent(new Event('change', { bubbles: true }))
   if (document.activeElement !== field) restoreIme(field)
   fieldRect = null
-  bump()
 }
 
 export function resetOskForTests(): void {
@@ -407,10 +394,7 @@ export function startOsk(): () => void {
   let okTarget: EventTarget | null = null
   const onFocusIn = (event: FocusEvent) => {
     const target = event.target
-    if (isOskTarget(target)) {
-      bump() // a d-pad move between keys repaints the Game-mode snapshot
-      return
-    }
+    if (isOskTarget(target)) return
     if (!isTextEntryField(target)) return
     if (currentOskPolicy() === 'off') return
     // Only a field the keyboard can serve loses its system IME: one inside an open modal <dialog>

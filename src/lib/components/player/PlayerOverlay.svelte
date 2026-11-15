@@ -20,7 +20,7 @@
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching, upNextPrompt } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching, upNextPrompt } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -39,7 +39,7 @@
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
-    hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
+    hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility,
     preferredAudioLang, preferredSubLang, scrubThumbnails,
   } from '$lib/settings/ui'
   import { registerThumbTiles } from '$lib/player/thumb-tiles'
@@ -51,7 +51,7 @@
   import { dispatchPadKey, padActivate } from '$lib/nav/pad-controls'
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
-  import { reportWatchPlayback, watchParty } from '$lib/watch-together/client'
+  import { reportWatchPlayback } from '$lib/watch-together/client'
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, reportDirectTorrentFirstFrame, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
@@ -59,17 +59,13 @@
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { sessionSubtitleStyle, sessionSubtitleAdjustments, effectiveSubtitleStyle, resetSubtitleSession } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
-  import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeLiveMenuOpen, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
-  import { GM_THAW_DELAY_MS, captureFrozenFrame, framePainted, gmFrozenFrame, gmPanel, gmPanelOut, gmStage } from '$lib/player/gm-freeze'
-  import { readGmOsdTheme, type GmOsdTheme } from '$lib/player/theme-gm-osd'
-  import { motion } from '$lib/motion/gm-motion'
+  import { presenceAllowed, presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import Spinner from '$lib/components/Spinner.svelte'
-  import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
+  import { isDirectP2PStream, shouldShowP2PStatus } from '$lib/player/p2p-status'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
   import PlayPauseIcon from './PlayPauseIcon.svelte'
@@ -145,9 +141,8 @@
   let dpadVisualT: ReturnType<typeof setTimeout>
   let suppressTouchRevealClickUntil = 0
 
-  // Game mode (Gamescope / Steam Deck) always uses the fullscreen Deck layout. Native Wayland
-  // composites this webview live over the layer-shell video; XWayland keeps the established
-  // native-OSD/bitmap bridge. On touch, a tap reveals the auto-hiding controls.
+  // Game mode (Steam Deck) always uses the fullscreen TV layout. On touch, a tap reveals the
+  // auto-hiding controls.
   const gmMode = $derived($gameMode)
   // Browse chrome is around the video (windowed playback): the root is inset from the edge the
   // navigation occupies and reports its geometry to the native surface.
@@ -170,7 +165,6 @@
   const hides = (chrome: PlayerChrome) => docked && dock.hide.includes(chrome)
   const bottomNavInset = 'calc(var(--theme-bottom-nav, 4rem) + env(safe-area-inset-bottom))'
   const controllerInputMode = $derived(gmMode || $controllerMode)
-  const gmBitmapMode = $derived(usesGameModeBitmapCompositor(gmMode, $playerCompositorPath))
   // Desktop right-click: reveal the bar and hand the point to Controls, which owns the actions
   // (same handoff as `player-open-settings`). The discussion panel, prompts and the source picker
   // keep the plain no-menu behaviour.
@@ -199,18 +193,16 @@
 
   function onOverlayPointerDown(e: PointerEvent) {
     pipDragDown(e)
-    // Deck WebKit exposes a physical finger as a synthesized primary mouse pointer. Reveal on the
-    // down edge regardless of pointerType so native chrome starts in the same frame as an A press;
-    // waiting for the compatibility click added WebKit/Gamescope's release latency first.
-    if (!gmMode || e.button !== 0 || !e.isPrimary) return
+    // Reveal on the down edge, in the same frame as an A press. A finger is left to touchstart,
+    // which comes after this and must still find the controls hidden to cancel its click.
+    if (!gmMode || e.pointerType === 'touch' || e.button !== 0 || !e.isPrimary) return
     if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
     poke()
   }
 
   function revealFromTouchBegin(): boolean {
-    // Gamescope's GTK touch-begin event reaches this listener before old WebKitGTK synthesizes
-    // its DOM mouse event. Only reveal bare video here: visible controls, menus, and comments must
-    // retain their ordinary touch/click behaviour.
+    // Only reveal bare video here: visible controls, menus, and comments must retain their
+    // ordinary touch/click behaviour.
     if (!gmMode || controlsVisible || get(commentsOpen) || get(playerMenuOpen) || get(trackMenuOpen) || subtitleEditorOpen) return false
     suppressTouchRevealClickUntil = performance.now() + 900
     armTouchReveal()
@@ -227,21 +219,14 @@
     if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
     const touch = e.touches[0]
     if (performance.now() < suppressTouchRevealClickUntil) {
-      if (revealTouch) {
-        // A new touch: the revealing touch's click has come and gone (or was prevented), and this
-        // touch's own click is a real press on whatever the reveal put there.
-        suppressTouchRevealClickUntil = 0
-        revealTouch = null
-        clearTouchReveal()
-      } else {
-        // Gamescope's native touch-begin armed the reveal a moment before this DOM start.
-        revealTouch = { x: touch.clientX, y: touch.clientY }
-      }
+      // A new touch: the revealing touch's click has come and gone (or was prevented), and this
+      // touch's own click is a real press on whatever the reveal put there.
+      suppressTouchRevealClickUntil = 0
+      revealTouch = null
+      clearTouchReveal()
     }
-    // WebKitGTK on SteamOS exposes touch PointerEvents as compatibility mouse events, which can
-    // arrive only after the finger lifts. Native TouchEvent starts are immediate. Preventing this
-    // bare-video sequence's compatibility click also stops it being re-hit-tested against the Play
-    // button that the same touch just caused Svelte to mount.
+    // Preventing this bare-video sequence's compatibility click stops it being re-hit-tested
+    // against the Play button that the same touch just caused Svelte to mount.
     if (revealFromTouchBegin()) {
       revealTouch = { x: touch.clientX, y: touch.clientY }
       e.preventDefault()
@@ -307,13 +292,7 @@
   const loading = $derived(overlayIsLoading({
     eof, paused, buffering, seeking, coreIdle, firstFrame, pos,
   }))
-  // Keep the controls in the DOM while scrubbing (even if the 3s auto-hide fired during a long
-  // trigger hold) so the seek bar element stays measurable — otherwise the native scrub bar
-  // loses its geometry and jumps to the fallback position lower on screen.
-  // D-pad seeking is intentionally quiet. Keep Controls mounted (the native scrub bar needs its
-  // measured geometry), but do not turn a hidden player into the complete title/button chrome.
-  // Triggers and touch retain the established reveal behaviour.
-  const quietDpadScrub = $derived(gmMode && $scrub.active && $scrub.source === 'dpad')
+  // Keep the controls up while scrubbing, even if the 3s auto-hide fired during a long trigger hold.
   const playerControls = $derived(resolvePlayerControls($themePresentation))
   // API 6 paused summary: five seconds after the last input while paused on the full (not docked)
   // player, never in Game mode, at the end of the file, under an open menu or prompt, over the stats or while a cast plays it. `inputTick` is bumped by poke(), so any
@@ -335,13 +314,9 @@
   let exiting = $state(false)
   const controlsVisible = $derived(!exiting && (
     // A new file starts out paused and loading: neither pins the chrome before there is a picture.
-    visible || (firstFrame && !(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen
+    visible || (firstFrame && !quietPadSeek && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen
   ))
   $effect(() => { if (firstFrame) untrack(poke) })
-  // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
-  // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
-  let gmVideoHidden = $state(false)
-  const controlsMounted = $derived(controlsVisible || quietDpadScrub || gmVideoHidden)
   // The windowed titlebar's buttons fade with the controls; never leave them hidden after playback.
   // A docked player sits inside the page, where the bar serves the page rather than the video.
   $effect(() => { playerChromeVisible.set(controlsVisible || docked) })
@@ -402,7 +377,7 @@
   }
   const drmActive = $derived(!!$nowPlayingStream.drm)
   // Linux plays protected streams in izumi's own mpv player: the mpv-side features (subtitle
-  // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
+  // policy) work as for any file. Elsewhere the webview's <video> plays them.
   const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported))
   const drmWebview = $derived(drmActive && !drmNative)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
@@ -466,11 +441,10 @@
       return controlDesktopCast({ action }).then(() => undefined)
     }
     // Reflect pause intent immediately. Waiting exclusively for mpv's property-change event left
-    // the snapshotted Game-mode icon one state behind on a quick A/touch toggle. The native event
-    // remains authoritative and reconciles this optimistic value after the command lands.
+    // the icon one state behind on a quick A/touch toggle. The native event remains authoritative
+    // and reconciles this optimistic value after the command lands.
     const previousPaused = paused
     let changedPause = false
-    if (args[0] === 'pause' && !gmOwnPause) gmPausedForMenu = false
     if (args[0] === 'pause') {
       if (name === 'cycle') paused = !paused
       else if (name === 'set' && (args[1] === 'yes' || args[1] === 'no')) paused = args[1] === 'yes'
@@ -483,8 +457,8 @@
   }
   function togglePlayback() {
     // Resuming after a long pause used to make `paused` stop pinning the controls in the same tick,
-    // so the outgoing bitmap still contained Play. Keep the freshly-updated Pause icon visible for
-    // the normal idle interval before the controls fade away.
+    // so they left at once. Keep the freshly-updated Pause icon visible for the normal idle
+    // interval before the controls fade away.
     poke()
     cmd('cycle', ['pause'])
   }
@@ -693,9 +667,6 @@
         console.warn(remoteCastOwnsPlayback ? 'desktop_cast_control' : 'player_command', 'seek', [next.toFixed(3), 'absolute+exact'], error)
         return false
       })
-    // One snapshot per tap-seek so the HTML bar moves. Hold-skim uses the native ASS bar
-    // (a snapshot per pad step was the crawl).
-    if (gmBitmapMode && !get(scrub).active) bumpPlayerOverlay()
     return request
   }
 
@@ -709,7 +680,7 @@
       clearTimeout(quietPadSeekT)
       quietPadSeekT = setTimeout(() => (quietPadSeek = false), 900)
     }
-    // Keep the native bar on the newest requested target while mpv flushes the old exact seek.
+    // Keep the bar on the newest requested target while mpv flushes the old exact seek.
     // Its time-pos event can briefly describe the previous request; accepting that as the visual
     // position is what made rapid D-pad presses look as though only the first one registered.
     dpadVisualPos = t
@@ -729,12 +700,9 @@
       getPos: () => transportPos,
       getDur: () => transportDur,
       seek: (t, source) => source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t),
-      beginScrub: (t, source) => {
-        beginScrub(t, source === 'dpad' ? 'dpad' : 'pad')
-        scheduleGmDynamicOverlay()
-      },
-      moveScrub: (t) => { moveScrub(t, true); scheduleGmDynamicOverlay() },
-      endScrub: () => { endScrub(); scheduleGmDynamicOverlay() },
+      beginScrub: (t, source) => beginScrub(t, source === 'dpad' ? 'dpad' : 'pad'),
+      moveScrub: (t) => moveScrub(t, true),
+      endScrub: () => endScrub(),
       onActivity: () => poke(),
       // Change source (visible) and the on-screen keyboard own the d-pad and triggers while up, so
       // L2/R2 and d-pad Left/Right must not seek the video behind them.
@@ -745,8 +713,7 @@
 
   // The rating card a theme can ask for (`player.rating: "intro"`): the episode's age rating at the top
   // right from when mpv has the file (its first frame may still be loading), held 3.6 s, as TV apps
-  // show theirs. Game mode draws it natively (gm_osd.rs rating card); elsewhere the page does.
-  const RATING_CARD_MS = 4_300
+  // show theirs.
   const ratingIntro = $derived($themePresentation?.player?.rating === 'intro')
   const ratingLabel = $derived(ratingIntro ? ($nowPlayingStream.rating?.label ?? $nowPlayingMedia?.media?.sourceFacts?.rating ?? '') : '')
   const ratingDetail = $derived(ratingIntro ? ($nowPlayingStream.rating?.descriptors ?? []).join(' · ') : '')
@@ -758,7 +725,6 @@
       if (!ratingLabel || ratingFor === loadedKey) return
       ratingFor = loadedKey
       ratingShownAt = Date.now()
-      scheduleGmDynamicOverlay()
     })
     return () => { void off.then((unlisten) => unlisten()) }
   })
@@ -766,9 +732,7 @@
     if (!ratingShownAt) return
     const frame = requestAnimationFrame(() => (ratingOn = true))
     const hide = setTimeout(() => (ratingOn = false), 3_600)
-    // One more state once the card is over, so the native layer can let it go.
-    const done = setTimeout(() => scheduleGmDynamicOverlay(), RATING_CARD_MS + 50)
-    return () => { cancelAnimationFrame(frame); clearTimeout(hide); clearTimeout(done); ratingOn = false }
+    return () => { cancelAnimationFrame(frame); clearTimeout(hide); ratingOn = false }
   })
 
   let closing = false
@@ -794,12 +758,6 @@
     playing.set(false)
     spriteKey.set(null)
     bingeSource.set(null)
-    // Let Svelte mount/paint the browse surface before destroying mpv's opaque Game-mode child.
-    // Until then the existing video frame is a clean transition cover rather than a black gap.
-    if (gmMode) {
-      await tick()
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-    }
     invoke('close_player').catch(() => {})
     invoke('desktop_presence_clear').catch(() => {})
   }
@@ -992,575 +950,12 @@
     cmd('set', ['cursor-autohide', gmMode ? 'always' : controlsVisible ? 'no' : 'always'])
   })
 
-  // Gamescope/XWayland: normal controls, loading and moving scrub feedback are native ASS;
-  // complex HTML panels are snapshotted into mpv. Native Wayland leaves all HTML live.
   const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
-  const gmDynamicActive = $derived(gmBitmapMode && $playing && shouldUseGameModeDynamicOverlay({
-    loading,
-    scrubbing: $scrubActive,
-    commentsOpen: $commentsOpen,
-    directP2P: directP2pOverlay,
-  }))
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
-  const noticeVisible = $derived(!!$playerNotice)
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
   const sourceConnectingVisible = $derived(!!$connecting)
-  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
-  // A menu, the source picker, the switching card or a prompt is up: the video pauses and those
-  // surfaces render live over its frozen frame (gm-freeze.ts). Comments still unmap the video.
-  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmWebview && !$commentsOpen && gameModeLiveMenuOpen({
-    playerMenuOpen: $playerMenuOpen,
-    trackMenuOpen: $trackMenuOpen,
-    sourcePickerOpen: sourcePickerVisible,
-    connecting: sourceConnectingVisible,
-    cachingOpen: !!$debridCaching,
-    ratingOpen: !!$seriesRatingPrompt,
-    upNextOpen: !!$upNextPrompt,
-  }))
-  let gmFrameImg = $state<HTMLImageElement | null>(null)
-  let gmSpinnerTurn = $state(0)
-  // Bumped by every open, close and teardown: an older freeze or thaw stops at its next await.
-  let gmStageToken = 0
-  // The menu paused this stream, so closing it resumes; any other pause (the user, the subtitle
-  // editor, the sleep timer, a watch party) clears it in cmd().
-  let gmPausedForMenu = $state(false)
-  let gmPausedStream = ''
-  let gmOwnPause = false
-  // The stream whose paused frame the stage holds.
-  let gmFrameStream = ''
-  let gmFirstFrameWaiters: (() => void)[] = []
-  const GM_FIRST_FRAME_WAIT_MS = 4000
-  const GM_OSD_CLEAR_MS = 60
-  const GM_UNMAP_SETTLE_MS = 40
-
-  $effect(() => {
-    // Through the outro too: the menus' own backdrops stay clear until the video is back.
-    const frozen = gmMenuStage || gmVideoHidden
-    document.documentElement.classList.toggle('gm-frozen', frozen)
-    return () => document.documentElement.classList.remove('gm-frozen')
-  })
-  $effect(() => {
-    if (!gmMenuStage) return
-    const token = ++gmStageToken
-    untrack(() => void gmFreeze(token))
-    return () => {
-      const thaw = ++gmStageToken
-      untrack(() => void gmThaw(thaw))
-    }
-  })
-  // A source picked from a menu loads (and plays) on its own; never resume the old one over it.
-  $effect(() => {
-    const url = $nowPlayingStream.url
-    if (gmPausedForMenu && url !== gmPausedStream) gmPausedForMenu = false
-  })
-  $effect(() => {
-    if (firstFrame || !$playing) for (const resolve of gmFirstFrameWaiters.splice(0)) resolve()
-  })
-  // A menu opened before the video's first frame (a slow source): when it arrives behind the
-  // stage, pause it there and show it rather than let it play unseen.
-  $effect(() => {
-    if (!firstFrame || !gmMenuStage) return
-    untrack(() => {
-      if (get(gmStage) === 'frozen' && !get(gmFrozenFrame)) void gmCatchFirstFrame(gmStageToken)
-    })
-  })
-  // Stepped, not a CSS spin: a running animation composites the whole Deck screen every frame.
-  $effect(() => {
-    if (!gmBitmapMode || $gmFrozenFrame == null || gmMenuStage || firstFrame) return
-    const id = setInterval(() => { gmSpinnerTurn = (gmSpinnerTurn + 45) % 360 }, 110)
-    return () => clearInterval(id)
-  })
-  onDestroy(() => {
-    gmStageToken++
-    gmClearStage()
-  })
-
-  function gmSetFrame(url: string | null, stream = '') {
-    const previous = get(gmFrozenFrame)
-    gmFrozenFrame.set(url)
-    gmFrameStream = url ? stream : ''
-    if (previous && previous !== url) URL.revokeObjectURL(previous)
-  }
-
-  function gmClearStage() {
-    gmStage.set('live')
-    gmVideoHidden = false
-    gmSetFrame(null)
-  }
-
-  /** Pause for a menu unless something else owns the play state (a watch party pauses everyone). */
-  async function gmPauseForMenu(): Promise<void> {
-    if (!firstFrame || paused || get(watchParty)) return
-    gmPausedForMenu = true
-    gmPausedStream = $nowPlayingStream.url
-    gmOwnPause = true
-    const pausing = cmd('set', ['pause', 'yes'])
-    gmOwnPause = false
-    await pausing
-  }
-
-  /** Pause, paint the exact paused frame full-size under the menus, then unmap the video. */
-  async function gmFreeze(token: number) {
-    const stage = get(gmStage)
-    // Reopened before the last thaw finished: its frame of this stream is still painted.
-    if ((stage === 'thawing' || stage === 'frozen') && get(gmFrozenFrame) && gmFrameStream === $nowPlayingStream.url) {
-      gmStage.set('frozen')
-      gmVideoHidden = true
-      return
-    }
-    gmStage.set('freezing')
-    await gmPauseForMenu()
-    // The capture is the window as shown, OSD included: let mpv redraw without the controls.
-    await new Promise((resolve) => setTimeout(resolve, GM_OSD_CLEAR_MS))
-    if (token !== gmStageToken) return
-    const stream = $nowPlayingStream.url
-    const url = firstFrame ? await captureFrozenFrame() : ''
-    if (token !== gmStageToken) { if (url) URL.revokeObjectURL(url); return }
-    gmSetFrame(url, stream)
-    await tick()
-    await framePainted(gmFrameImg)
-    if (token !== gmStageToken) return
-    gmVideoHidden = true
-    // Reveal the menus once the video window is really gone. Started with the unmap request, the
-    // first frames of the dim ran behind the video and it appeared already part-way dark.
-    await framePainted()
-    await new Promise((resolve) => setTimeout(resolve, GM_UNMAP_SETTLE_MS))
-    if (token !== gmStageToken) return
-    gmStage.set('frozen')
-  }
-
-  /** The first frame arrived behind a frozen stage that had none to show. */
-  async function gmCatchFirstFrame(token: number) {
-    await gmPauseForMenu()
-    if (token !== gmStageToken) return
-    const stream = $nowPlayingStream.url
-    const url = await captureFrozenFrame()
-    if (token !== gmStageToken || get(gmStage) !== 'frozen') { if (url) URL.revokeObjectURL(url); return }
-    if (url) gmSetFrame(url, stream)
-  }
-
-  /** The menus closed: let them slide out, map the video back over the identical frame, resume. */
-  async function gmThaw(token: number) {
-    if (!$playing) { gmPausedForMenu = false; gmClearStage(); return }
-    const wasHidden = gmVideoHidden
-    gmStage.set('thawing')
-    if (wasHidden) await new Promise((resolve) => setTimeout(resolve, GM_THAW_DELAY_MS))
-    if (token !== gmStageToken) return
-    // A source picked from the menu shows its own first frame before the video comes back; a slow
-    // one brings the video window back after a few seconds, with mpv's own loading spinner.
-    if (!firstFrame) {
-      await new Promise<void>((resolve) => {
-        gmFirstFrameWaiters.push(resolve)
-        setTimeout(resolve, GM_FIRST_FRAME_WAIT_MS)
-      })
-      if (token !== gmStageToken) return
-    }
-    if (!$playing) { gmPausedForMenu = false; gmClearStage(); return }
-    gmVideoHidden = false
-    if (wasHidden) {
-      await framePainted()
-      await new Promise((resolve) => setTimeout(resolve, 60))
-      if (token !== gmStageToken) return
-    }
-    if (gmPausedForMenu) {
-      gmPausedForMenu = false
-      if ($nowPlayingStream.url === gmPausedStream) {
-        gmOwnPause = true
-        void cmd('set', ['pause', 'no'])
-        gmOwnPause = false
-      }
-    }
-    // The video covers the frame by now. Drop it at once: a control-strip snapshot taken while it
-    // was still in the page would paint the paused picture over the moving video.
-    gmStage.set('live')
-    gmSetFrame(null)
-  }
-  // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
-  // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
-  // Under the menu stage the video is paused behind live menus, so the OSD stays off.
-  const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && !gmMenuStage && !gmVideoHidden && (!overlayFull || $playerSideSheetOpen))
-  const gmDynamicOwnsChrome = $derived(gmNativeControls)
-  const overlayActive = $derived(gameModeBitmapOverlayActive({
-    gameMode: gmBitmapMode,
-    playing: $playing,
-    dynamicOverlay: gmDynamicOwnsChrome,
-    controlsVisible,
-    trackMenuOpen: $trackMenuOpen,
-    playerMenuOpen: $playerMenuOpen,
-    commentsOpen: $commentsOpen,
-    statsOpen: $playerStatsOpen,
-    p2pVisible,
-    noticeVisible,
-    skipVisible: showSkip,
-    sourcePickerOpen: sourcePickerVisible,
-    connectingOpen: sourceConnectingVisible,
-    subtitleEditorOpen,
-    navLayerOpen: $navLayerOpen,
-    oskOpen: $oskOpen,
-  }))
-  $effect(() => {
-    if (!gmBitmapMode) return
-    if (!$playing) {
-      invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
-      invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
-      return
-    }
-    const dock = gameModeDock({ commentsOpen: $commentsOpen, frozen: gmVideoHidden })
-    invoke('player_gm_dock', dock).catch(() => {})
-    // Between pausing and painting the frozen frame the menus are still behind the video: no
-    // snapshot for them, and the OSD is already off. Nor while the frame is still in the page: a
-    // snapshot would carry the paused picture over the moving video.
-    if (gmMenuStage || $gmFrozenFrame != null) {
-      invoke('player_gm_overlay', { visible: false, fast: false, animate: false, crop: null }).catch(() => {})
-      return
-    }
-    if (gameModeDockIsLive(dock)) {
-      invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
-      return
-    }
-    void $playerOverlayRev
-    void paused
-    const viewportWidth = window.innerWidth || 0
-    const viewportHeight = window.innerHeight || 0
-    const sheetElement = $playerSideSheetOpen
-      ? document.querySelector<HTMLElement>('[data-gm-side-sheet]')
-      : null
-    const sheetRect = sheetElement?.getBoundingClientRect() ?? null
-    const sheetMotion = !!sheetRect && $playerSideSheetOpen
-    const nativeSheet = sheetMotion
-    const crop = sheetMotion
-      ? gameModeSideSheetCrop(viewportWidth, viewportHeight, sheetRect)
-      : gameModeSnapshotCrop(viewportWidth, viewportHeight, overlayFull)
-    if (!overlayActive) {
-      invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
-      return
-    }
-    // Snapshot now (so tap/pause is not stuck behind a cancellable timer) and once more
-    // after paint so Controls/toasts are in the tree.
-    invoke('player_gm_overlay', { visible: true, fast: false, animate: $playerProgressAnimations, crop, sheet: nativeSheet, exactCrop: false }).catch(() => {})
-    return scheduleGameModeOverlay(() => {
-      const paintedSheet = $playerSideSheetOpen
-        ? document.querySelector<HTMLElement>('[data-gm-side-sheet]')?.getBoundingClientRect() ?? null
-        : null
-      const paintedSheetMotion = !!paintedSheet && $playerSideSheetOpen
-      const paintedCrop = paintedSheetMotion
-        ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedSheet)
-        : crop
-      const paintedNativeSheet = paintedSheetMotion
-      invoke('player_gm_overlay', { visible: true, fast: false, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedNativeSheet, exactCrop: false }).catch(() => {})
-    })
-  })
-
-  $effect(() => {
-    if (!gmBitmapMode || !p2pVisible) return
-    void $directTorrentStats
-    bumpPlayerOverlay()
-  })
-
-  let gmDynInFlight = false
-  let gmDynDirty = false
-  let gmDynDisposed = false
-  let gmDynLastVisible = false
-  let gmFocusRev = $state(0)
-  // Last known seek bar geometry (CSS px), so the native scrub bar keeps its place if the
-  // element is momentarily unmeasurable.
-  let lastBar = { x: 0, y: 0, w: 0 }
-  let lastBarLayoutKey = ''
-  let lastChromeLayoutKey = ''
-  let lastChrome = {
-    title: '', titleX: 0, titleY: 0, titleSize: 0, titleWeight: 0,
-    episodeText: '', episodeX: 0, episodeY: 0, episodeSize: 0, episodeWeight: 0,
-    controlItems: [] as { x: number; y: number; w: number; h: number; label: string; focused: boolean; primary: boolean }[],
-  }
-  let gmScrubBasePos = $state(0)
-  let gmScrubBaseBuffer = $state(0)
-  let gmScrubWasActive = false
-  // The native OSD draws in the theme's colours. Read once the player opens, then whenever theme.ts
-  // rewrites <html>'s palette or theme mark, so a theme switch reaches an open player too.
-  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '' })
-  $effect(() => {
-    if (!gmBitmapMode) return
-    const read = () => {
-      const next = readGmOsdTheme()
-      if (next.themeAccent !== gmTheme.themeAccent || next.themeFocus !== gmTheme.themeFocus) gmTheme = next
-    }
-    untrack(read)
-    const observer = new MutationObserver(read)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-surface'] })
-    return () => observer.disconnect()
-  })
-
-  $effect(() => {
-    const active = gmBitmapMode && $scrub.active
-    if (active && !gmScrubWasActive) {
-      gmScrubBasePos = pos
-      gmScrubBaseBuffer = buffer
-    }
-    // The settled bitmap normally contains the HTML progress line, and mpv bitmaps are above ASS.
-    // Re-snapshot at gesture edges after Seekbar hides/shows that line so the native moving bar is
-    // actually visible on top instead of appearing to skim underneath it.
-    if (gmBitmapMode && active !== gmScrubWasActive) bumpPlayerOverlay()
-    gmScrubWasActive = active
-  })
-
-  // Game mode: PAUSE decode for the duration of an active skim, then resume on release. Unlike the
-  // Electron reference (Chromium composites its DOM scrub bar on a separate thread, so it's smooth
-  // even while playing), our bar is a native mpv OSD driven over IPC — while the video plays, the
-  // Deck iGPU runs the libplacebo filter chain every frame AND mpv floods the WebKit main thread
-  // with time-pos events, both of which starve the 60fps OSD redraw (which is why skimming is smooth
-  // only when the video is already paused). Pausing frees the GPU + the event loop so the bar tracks
-  // the finger smoothly. We only auto-resume if WE paused it (a user-initiated pause is preserved);
-  // the exact seek still commits on release via endScrub. The frozen frame is fine — you're skimming.
-  let scrubAutoPaused = false
-  $effect(() => {
-    if (!gmBitmapMode) return
-    if ($scrub.active) {
-      if (!paused && !scrubAutoPaused) { scrubAutoPaused = true; cmd('set', ['pause', 'yes']) }
-    } else if (scrubAutoPaused) {
-      scrubAutoPaused = false
-      cmd('set', ['pause', 'no'])
-    }
-  })
-
-  const gmScrubFreezesProgress = $derived(gmMode && $scrub.active)
-  const gmDynamicPos = $derived(gmScrubFreezesProgress ? gmScrubBasePos : (dpadVisualPos ?? transportPos))
-  const gmDynamicBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
-  const controlsPos = $derived(gmScrubFreezesProgress ? $scrub.time : (dpadVisualPos ?? transportPos))
-  const controlsBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
-
-  const hiddenGmDynamicState = () => ({
-    visible: false,
-    loading: false,
-    firstFrame: false,
-    controls: false,
-    paused: false,
-    scrubbing: false,
-    pos: 0,
-    dur: 0,
-    buffer: 0,
-    scrubTime: 0,
-    width: 1,
-    height: 1,
-    barX: 0,
-    barY: 0,
-    barW: 0,
-    barH: 0,
-    skipText: '',
-    noticeText: '',
-    animateControls: $playerProgressAnimations,
-    title: '',
-    titleX: 0,
-    titleY: 0,
-    titleSize: 0,
-    titleWeight: 0,
-    episodeText: '',
-    episodeX: 0,
-    episodeY: 0,
-    episodeSize: 0,
-    episodeWeight: 0,
-    controlItems: [],
-    timelineSegments: [],
-    chapterMarks: [],
-    // The controls' native fade-out finishes after this, still in the theme's colours.
-    ...gmTheme,
-  })
-
-  function measureSeekBar() {
-    const rect = document.querySelector('[aria-label="Seek"]')?.getBoundingClientRect()
-    if (rect && rect.width > 0) lastBar = { x: rect.left, y: rect.top + rect.height / 2, w: rect.width }
-  }
-
-  /** A button named in words (`data-gm-text`, a theme's `player.trackButtons: "text"`) is drawn as that
-   *  word: its size is its own line box, as the title's is, since libass's size metric runs small. */
-  function gmTextOf(button: HTMLElement): { text?: string; textSize?: number; textWeight?: number } {
-    const text = button.dataset.gmText?.trim()
-    if (!text) return {}
-    const style = getComputedStyle(button)
-    const range = document.createRange()
-    range.selectNodeContents(button)
-    const line = range.getBoundingClientRect().height
-    const cssSize = Number.parseFloat(style.fontSize)
-    const weight = Number.parseInt(style.fontWeight, 10)
-    return {
-      text,
-      textSize: Math.max(Number.isFinite(cssSize) ? cssSize : 0, Number.isFinite(line) ? line : 0),
-      textWeight: Number.isFinite(weight) ? weight : 600,
-    }
-  }
-
-  function measureNativeChrome() {
-    const root = document.querySelector<HTMLElement>('[data-gm-control-root]')
-    const label = (selector: string) => {
-      const element = root?.querySelector<HTMLElement>(selector)
-      const rect = element?.getBoundingClientRect()
-      if (!element || !rect || rect.width <= 0 || rect.height <= 0) {
-        return { text: '', x: 0, y: 0, size: 0, weight: 0 }
-      }
-      const style = getComputedStyle(element)
-      const cssSize = Number.parseFloat(style.fontSize)
-      // libass's \fs metric is visibly smaller than Chromium's CSS font-size metric. The actual
-      // one-line box is the stable common unit here: it also includes native WebKit page zoom and
-      // the title's leading-tight / episode's leading-snug line height. This makes the native ASS
-      // title match the HTML title revealed beneath an options sheet instead of jumping in size.
-      const size = Math.max(Number.isFinite(cssSize) ? cssSize : 0, rect.height)
-      const weight = Number.parseInt(style.fontWeight, 10)
-      return {
-        text: element.textContent?.trim() ?? '',
-        x: rect.left,
-        y: rect.top + rect.height / 2,
-        size: Number.isFinite(size) ? size : 0,
-        weight: Number.isFinite(weight) ? weight : 0,
-      }
-    }
-    const title = label('[data-gm-title]')
-    const episode = label('[data-gm-episode]')
-    const controlItems = root
-      ? [...root.querySelectorAll<HTMLButtonElement>('button[data-focusable]')]
-          .filter((button) => {
-            const rect = button.getBoundingClientRect()
-            const style = getComputedStyle(button)
-            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'
-          })
-          .slice(0, 24)
-          .map((button) => {
-            const rect = button.getBoundingClientRect()
-            return {
-              x: rect.left,
-              y: rect.top,
-              w: rect.width,
-              h: rect.height,
-              label: button.getAttribute('aria-label') ?? '',
-              focused: document.activeElement === button,
-              primary: button.classList.contains('gm-play'),
-              ...gmTextOf(button),
-            }
-          })
-      : []
-    lastChrome = {
-      title: title.text,
-      titleX: title.x,
-      titleY: title.y,
-      titleSize: title.size,
-      titleWeight: title.weight,
-      episodeText: episode.text,
-      episodeX: episode.x,
-      episodeY: episode.y,
-      episodeSize: episode.size,
-      episodeWeight: episode.weight,
-      controlItems,
-    }
-    return lastChrome
-  }
-
-  function currentGmDynamicState() {
-    const s = get(scrub)
-    // The exact HTML pill is snapshotted in Game mode. Native text is fallback-only so we never
-    // stack the simplified ASS chip over the polished button.
-    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? skipLabel : ''
-    const liveControls = controlsVisible && firstFrame && dur > 0
-    const nativeControls = liveControls && gmNativeControls
-    const ratingShowing = ratingShownAt > 0 && Date.now() - ratingShownAt < RATING_CARD_MS
-    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText || ratingShowing)
-    // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
-    // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
-    // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
-    // geometrically constant during a drag, so re-reading getBoundingClientRect() every scrub
-    // frame is a forced synchronous reflow 60x/s that jitters the input sample stream. Cached
-    // non-scrub geometry stays valid for the gesture; a one-time fallback covers a
-    // scrub that starts before any measurement exists (the "drifts down" bug).
-    // Geometry and computed styles do not change with playback progress. Cache them instead of
-    // forcing dozens of getBoundingClientRect/getComputedStyle calls for every D-pad/touch sample.
-    // Resize, episode/title, pause-icon, and focus changes all invalidate the relevant cache.
-    const barLayoutKey = `${window.innerWidth}:${window.innerHeight}:${loadedKey}:${nativeControls}`
-    if (lastBar.w <= 0 || (!s.active && lastBarLayoutKey !== barLayoutKey)) {
-      measureSeekBar()
-      if (lastBar.w > 0) lastBarLayoutKey = barLayoutKey
-    }
-    // The words on the bar's text buttons come and go with the tracks, so they are part of the key.
-    const gmTexts = [...document.querySelectorAll<HTMLElement>('[data-gm-control-root] [data-gm-text]')].map((button) => button.dataset.gmText).join(',')
-    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}:${gmTexts}`
-    const chrome = nativeControls
-      ? (lastChrome.controlItems.length > 0 && lastChromeLayoutKey === chromeLayoutKey
-          ? lastChrome
-          : (() => {
-              const measured = measureNativeChrome()
-              if (measured.controlItems.length > 0) lastChromeLayoutKey = chromeLayoutKey
-              return measured
-            })())
-      : {
-      title: '', titleX: 0, titleY: 0, titleSize: 0, titleWeight: 0,
-      episodeText: '', episodeX: 0, episodeY: 0, episodeSize: 0, episodeWeight: 0,
-      controlItems: [],
-    }
-    return {
-      visible,
-      loading: visible && loading,
-      firstFrame,
-      controls: visible && nativeControls,
-      paused: transportPaused,
-      // The menu stage captures the window, OSD included: its controls leave at once.
-      animateControls: $playerProgressAnimations && !gmMenuStage,
-      scrubbing: visible && s.active,
-      pos: gmDynamicPos,
-      dur: transportDur,
-      buffer: gmDynamicBuffer,
-      scrubTime: s.active ? s.time : transportPos,
-      width: Math.max(1, window.innerWidth || 1),
-      height: Math.max(1, window.innerHeight || 1),
-      barX: lastBar.x,
-      barY: lastBar.y,
-      barW: lastBar.w,
-      barH: 10,
-      skipText,
-      noticeText: '',
-      timelineSegments: segments.map((segment) => ({
-        start: segment.start,
-        end: segment.end,
-        kind: segment.type,
-      })),
-      chapterMarks: chapters.map((chapter) => chapter.time),
-      ratingLabel: ratingShowing ? ratingLabel : '',
-      ratingDetail: ratingShowing ? ratingDetail : '',
-      ratingShownAt: ratingShowing ? ratingShownAt : 0,
-      ...chrome,
-      ...gmTheme,
-    }
-  }
-
-  function scheduleGmDynamicOverlay() {
-    if (typeof window === 'undefined' || gmDynDisposed) return
-    if (!(gmBitmapMode && get(playing) && (loading || get(scrub).active || controlsVisible || showSkip)) && !gmDynLastVisible) return
-    if (gmDynInFlight) {
-      gmDynDirty = true
-      return
-    }
-
-    const state = currentGmDynamicState()
-    if (!state.visible && !gmDynLastVisible) return
-    gmDynInFlight = true
-    gmDynLastVisible = state.visible
-    invoke('player_gm_dynamic_overlay', { state })
-      .catch(() => {})
-      .finally(() => {
-        gmDynInFlight = false
-        if (gmDynDirty && !gmDynDisposed) {
-          gmDynDirty = false
-          scheduleGmDynamicOverlay()
-        }
-      })
-  }
-
-  $effect(() => {
-    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters; gmTheme; $playerOverlayRev
-    scheduleGmDynamicOverlay()
-  })
-
-  // NOTE: we intentionally KEEP accelerated compositing ON in Game mode. Forcing the software
-  // (non-accelerated) path made menu text crisp but routed the base layer through WebKit's software
-  // curve rasterizer, which aliases border-radius shapes (the play button circle looked pixelated).
-  // Instead the menus are kept crisp by NOT promoting them to their own compositing layer (opaque
-  // backgrounds, no will-change/translateZ) — see Controls.svelte + TrackMenu.svelte.
+  const controlsPos = $derived(gmMode && $scrub.active ? $scrub.time : (dpadVisualPos ?? transportPos))
 
   // Game mode: lock document scroll while the player is up so a finger swipe on the video can't pan
   // the whole app into horizontal overflow (the "app slides/shrinks" bug). The browse page behind
@@ -1582,7 +977,6 @@
   })
 
   onDestroy(() => {
-    invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
     // Close the discussion panel on every player-close path (← button, B, navigate-away) so the
     // desktop titlebar — which hides itself while commentsOpen — reappears once the player is gone.
     commentsOpen.set(false)
@@ -1591,9 +985,7 @@
     // (← button, B, navigate-away). play.ts's window listener is still live at this point.
     window.dispatchEvent(new CustomEvent('player-finalize', { detail: { pos, dur } }))
     void stopDirectTorrentPlayback()
-    gmDynDisposed = true
     clearTimeout(dpadVisualT)
-    if (gmDynLastVisible) invoke('player_gm_dynamic_overlay', { state: hiddenGmDynamicState() }).catch(() => {})
     invoke('set_idle_inhibit', { on: false }).catch(() => {})
     // Retract the OS media panel / Discord entry on EVERY teardown path, not just the ← button —
     // navigating away unmounts the overlay without ever running close().
@@ -1630,13 +1022,6 @@
       playerNotice.set(dir > 0 ? 'Press again for the next episode' : 'Press again for the previous episode')
     }
   }
-
-  $effect(() => {
-    if (!gmMode || !$playing) return
-    return listenSafe('gm-native-touch-begin', () => {
-      revealFromTouchBegin()
-    })
-  })
 
   $effect(() => {
     if (!controllerInputMode || !$playing) return
@@ -1902,8 +1287,8 @@
       // Outside an opening/ending the skip key is not the player's, so Enter still presses a focused button.
       if (action === 'playerSkipSegment' && !currentSeg) return
       e.preventDefault(); e.stopImmediatePropagation()
-      // Back/Escape is an exit command, not player activity. Game-mode arrow seeking is also quiet:
-      // the native seek feedback can move without flashing the complete controls over the video.
+      // Back/Escape is an exit command, not player activity. Game-mode arrow seeking is quiet, like a
+      // D-pad tap.
       const quietSeek = gmMode && (action === 'playerSeekBack' || action === 'playerSeekForward')
       const quietCapture = action === 'playerScreenshot' || action === 'playerGif'
       if (action !== 'playerClose' && !quietSeek && !quietCapture) poke()
@@ -2108,31 +1493,8 @@
   onpointermove={pipDragMove}
   onpointerup={endPipDrag}
   onpointercancel={endPipDrag}
-  onfocusin={() => { if (gmMode) gmFocusRev += 1 }}
   role="presentation"
 >
-  {#if gmBitmapMode && $gmFrozenFrame != null}
-    <!-- Game-mode menu stage (gm-freeze.ts): the paused frame, full size, standing in for the video
-         window while it is unmapped under the live menus. Pixel-identical to the paused picture,
-         so neither the swap in nor the swap back shows. -->
-    <div data-gm-stage class="pointer-events-none fixed inset-0 z-[25] bg-black" aria-hidden="true">
-      {#if $gmFrozenFrame}
-        <img bind:this={gmFrameImg} src={$gmFrozenFrame} alt="" draggable="false"
-             class="h-full w-full object-contain" />
-      {/if}
-      {#if gmMenuStage}
-        <div data-gm-scrim use:gmPanel={'fade'} out:motion={gmPanelOut('fade')} class="absolute inset-0 bg-black/55"></div>
-      {:else if !firstFrame}
-        <!-- A source picked from the menu is loading behind the frame; the native spinner is in
-             the unmapped video window, so the stage shows its own. -->
-        <div class="absolute bottom-8 right-8 flex items-center gap-3 rounded-full bg-black/70 px-5 py-3 text-base font-semibold text-white">
-          <span class="size-5 rounded-full border-[3px] border-white/25 border-t-white" style:rotate="{gmSpinnerTurn}deg"></span>
-          Loading
-        </div>
-      {/if}
-    </div>
-  {/if}
-
   {#if drmNative && $nowPlayingStream.drm}
     <NativeDrmSurface
       url={$nowPlayingStream.url}
@@ -2176,7 +1538,7 @@
        white webview + the transparent hole). Mid-playback stalls show just the
        spinner over the frozen frame. Stall-show is debounced in DrmSurface
        (~150ms); do not add a second fade delay here or unbuffered seeks feel idle. -->
-  {#if loading && !gmBitmapMode}
+  {#if loading}
     <!-- Keep teardown synchronous. WKWebView reports hidden behind macOS's native mpv surface,
          which suspends transition frames and can leave an outro spinner mounted forever. -->
     <div
@@ -2187,16 +1549,9 @@
            place, so starting playback shows one loader from the press to the picture. -->
       <Spinner size="player" />
     </div>
-  {:else if loading && !firstFrame && $gmFrozenFrame == null}
-    <!-- Game mode before mpv's window is up (a protected stream fetches its licence first): mpv's
-         own spinner cannot draw yet, so the page draws the same ring in the same place, colour and
-         turn (Spinner `player`) and the handover to it does not show. -->
-    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
-      <Spinner size="player" />
-    </div>
   {/if}
 
-  {#if ratingShownAt && ratingLabel && !gmBitmapMode}
+  {#if ratingShownAt && ratingLabel}
     <div data-part="player.rating" class="izumi-hud pointer-events-none absolute right-10 top-8 flex items-center gap-3 transition-opacity duration-700 ease-out" style:opacity={ratingOn ? 1 : 0}>
       <div class="text-right text-sm text-white/70">
         <div class="font-semibold uppercase tracking-wide text-white/90">Rating</div>
@@ -2208,7 +1563,7 @@
 
   <div class="izumi-hud"><P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} /></div>
 
-  <!-- Transient toast (next-episode loading / errors). Snapshotted onto the video in Game mode. -->
+  <!-- Transient toast (next-episode loading / errors). -->
   {#if $playerNotice}
     <div
       transition:fade={{ duration: gmMode ? 0 : 150 }}
@@ -2270,10 +1625,9 @@
         <span class="text-[0.65rem] tabular-nums text-white/70">{Math.floor(transportPos / 60)}:{String(Math.floor(transportPos % 60)).padStart(2, '0')}</span>
       </div>
     </div>
-  {:else if controlsMounted}
-    <!-- XWayland measures this bar for Rust's native 60Hz OSD. Native Wayland paints it live. -->
-    <div class="izumi-hud" class:opacity-0={(gmBitmapMode && gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
-      <Controls pos={controlsPos} dur={transportDur} buffer={controlsBuffer} paused={transportPaused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} onscrubinput={scheduleGmDynamicOverlay} hideBack={hides('back')} hideTitle={hides('title')} />
+  {:else if controlsVisible}
+    <div class="izumi-hud">
+      <Controls pos={controlsPos} dur={transportDur} {buffer} paused={transportPaused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} hideBack={hides('back')} hideTitle={hides('title')} />
     </div>
   {/if}
 
@@ -2288,13 +1642,12 @@
 
   {#if subtitleEditorOpen}
     <SubtitleEditor
-      paused={paused && !gmPausedForMenu}
+      {paused}
       command={cmd}
       getProperty={(name) => playerGetProperty(name)}
       position={dialogueBottom(effectiveSubtitle, subtitleTrack, $sessionSubtitleAdjustments, subtitleDefaults)}
       authoredPosition={dialogueBottom(effectiveSubtitle, subtitleTrack, { ...$sessionSubtitleAdjustments, position: null }, subtitleDefaults)}
       ass={subtitleTrack.ass}
-      onpaint={gmBitmapMode ? bumpPlayerOverlay : undefined}
       onclose={() => { subtitleEditorOpen = false; poke() }}
     />
   {/if}
@@ -2344,15 +1697,3 @@
   </aside>
 {/if}
 </div>
-
-<style>
-  /* Game-mode menu stage (gm-freeze.ts): menus render live over the paused video's frozen frame,
-     which already carries the dim (data-gm-scrim), so the menus' own backdrops stay clear and the
-     paused picture reads through them. The HTML control bars belong to the moving video. */
-  :global(html.gm-frozen [data-gm-menu-surface]) {
-    background: transparent !important;
-  }
-  :global(html.gm-frozen [data-gm-bar]) {
-    visibility: hidden;
-  }
-</style>

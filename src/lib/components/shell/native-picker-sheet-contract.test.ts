@@ -110,7 +110,7 @@ describe('NativePickerSheet contract', () => {
 
   it("re-reads the check mark when the value changes under it, on every row focus and on the select's own events", () => {
     expect(source).toContain('onfocusin={onPanelFocusIn}')
-    expect(source).toMatch(/function onPanelFocusIn\(\) \{\n\s+syncNativePickerSelection\(\)\n\s+bump\(\)\n\s+\}/)
+    expect(source).toContain('syncNativePickerSelection()')
     expect(source).toContain('onValue: syncNativePickerSelection,')
   })
 
@@ -122,21 +122,15 @@ describe('NativePickerSheet contract', () => {
     expect(read('../../nav/native-picker.ts')).toContain('if (!get(state) || get(oskOpen)) return false')
   })
 
-  it('asks for Game-mode overlay snapshots only while playing, through untracked reads', () => {
-    expect(source.match(/bumpPlayerOverlay\(\)/g)).toHaveLength(1)
-    expect(source).toContain('if (get(gameMode) && get(playing)) bumpPlayerOverlay()')
-    // A tracked store read inside the per-open effect would re-run it when Game mode or playback
-    // changes, and throw focus back to the current value under the user.
+  it('reads the stores untracked, so a store change never moves focus back under the user', () => {
+    expect(source).not.toContain('bumpPlayerOverlay')
+    // A tracked store read inside the per-open effect would re-run it, and throw focus back to the
+    // current value under the user.
     expect(source).not.toContain('$gameMode')
     expect(source).not.toContain('$playing')
     expect(source).toContain("import { tick, untrack } from 'svelte'")
-    expect(source).toMatch(/untrack\(\(\) => \{\n\s+focusPickerRow\(node\)\n\s+bump\(\)\n\s+\}\)/)
-    for (const call of [
-      'onfocusin={onPanelFocusIn}',
-      'requestAnimationFrame(() => requestAnimationFrame(() => { if (!cancelled) bump() }))',
-      'setTimeout(() => { if (!cancelled) bump() }, 120)',
-      'requestAnimationFrame(() => bump())',
-    ]) expect(source).toContain(call)
+    expect(source).toContain('untrack(() => focusPickerRow(node))')
+    expect(source).toContain('onfocusin={onPanelFocusIn}')
   })
 
   it('is mounted in the app layout on the line after the on-screen keyboard', () => {
