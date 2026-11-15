@@ -22,7 +22,7 @@ describe('hero trailers (API 6 `hero.preview` / `detail.preview: "trailer"`)', (
     // Before the image branch, so `model.trailer` is never read as an image.
     expect(branch).toBeLessThan(artwork)
     const body = node.slice(branch, artwork)
-    expect(body).toContain('{#if trailer}<div class="theme-artwork relative" style={nodeStyle(item)} data-part={item.part}>{@render trailer()}</div>{/if}')
+    expect(body).toContain('{#if trailer}<div class="theme-artwork relative" style={nodeStyle(item, unit)} data-part={item.part}>{@render trailer()}</div>{/if}')
     expect(body).not.toContain('{:else}')
     expect(body).not.toContain('theme-artwork-fallback')
     expect(body).not.toContain('model[')

@@ -6,7 +6,7 @@
   import Copy from '@lucide/svelte/icons/copy'
   import X from '@lucide/svelte/icons/x'
   import Cast from '@lucide/svelte/icons/cast'
-  import { commentsOpen, gifRecordingStart, playerNotice, playerStage, playerTopBarUnderTitlebar } from '$lib/player/session'
+  import { commentsOpen, gifRecordingStart, playerChromeVisible, playerNotice, playerStage, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { playerGifStop } from '$lib/player/native'
   import { desktopCastSession, stopDesktopCast } from '$lib/player/desktop-cast'
   import { isMacOS } from '$lib/platform'
@@ -79,10 +79,16 @@
   rail) keeps a drag region of its own, sized from the player's measured stage, and every control
   opts back in with `pointer-events-auto`. The side regions come first so the slot, chips and
   window buttons (all positioned) paint and hit-test above them.
+
+  While the player's controls have auto-hidden (`playerChromeVisible` false), the bar fades out with
+  them, on the player chrome's 300ms opacity curve (Tailwind's default, as the Game-mode controls).
+  Its buttons stop taking clicks so an unseen Close can never close the window; the bar itself stays
+  a drag region. Any mouse move brings the controls, and so the buttons, back first. macOS's native
+  traffic lights are not webview content and stay put.
 -->
 <div
   data-tauri-drag-region
-  class="fixed inset-x-0 top-0 z-50 flex h-8 items-center justify-between"
+  class="fixed inset-x-0 top-0 z-50 flex h-8 items-center justify-between transition-opacity duration-300 {$playerChromeVisible ? '' : 'opacity-0 [&_button]:pointer-events-none'}"
   class:invisible={$commentsOpen}
   class:pointer-events-none={$playerTopBarUnderTitlebar}
 >

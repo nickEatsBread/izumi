@@ -5,10 +5,13 @@ type CancelFrame = (handle: number) => void
 export class ActiveFrameLoop {
   private frame: number | null = null
 
+  // The defaults call the globals rather than storing them: `this.schedule(cb)` on a stored
+  // requestAnimationFrame calls it on this object, which WebKit and Chromium reject ("Can only call
+  // Window.requestAnimationFrame on instances of Window"), so a held D-pad never repeated.
   constructor(
     private readonly step: () => boolean,
-    private readonly schedule: ScheduleFrame = requestAnimationFrame,
-    private readonly cancel: CancelFrame = cancelAnimationFrame,
+    private readonly schedule: ScheduleFrame = (callback) => requestAnimationFrame(callback),
+    private readonly cancel: CancelFrame = (handle) => cancelAnimationFrame(handle),
   ) {}
 
   private readonly tick: FrameRequestCallback = () => {
