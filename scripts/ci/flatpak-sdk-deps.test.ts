@@ -36,11 +36,16 @@ describe('Flatpak SDK deps', () => {
     expect(deps).not.toContain('install_ref org.freedesktop.Sdk.Extension.rust-stable')
   })
 
-  it('stages Nunito as a hash-pinned Flatpak source in clean checkouts', () => {
-    expect(manifest).toContain('dest-filename: Nunito-flatpak.ttf')
-    expect(manifest).toContain('sha256: bb55a5ca5c2042335b3991af27c4d0705d0ef41cac6164ac737fd8f2a1e85207')
-    expect(manifest).toContain('install -Dm644 Nunito-flatpak.ttf')
-    expect(manifest).not.toContain('assets/fonts/Nunito.ttf /app/share/fonts')
+  it('ships CEF beside the binary and starts it through zypak', () => {
+    expect(manifest).toContain('url: https://github.com/refi64/zypak')
+    expect(manifest).toContain('install -Dm755 src-tauri/target/release/izumi /app/lib/izumi/izumi')
+    expect(manifest).toContain('/app/lib/izumi/locales/en-US.pak')
+    expect(manifest).toContain('install -Dm755 flatpak/izumi.sh /app/bin/izumi')
+    expect(manifest).toContain('--socket=x11')
+    expect(manifest).not.toContain('--socket=wayland')
+    const launcher = readFileSync(new URL('../../flatpak/izumi.sh', import.meta.url), 'utf8')
+    expect(launcher).toContain('ZYPAK_CEF_LIBRARY_PATH=/app/lib/izumi/libcef.so')
+    expect(launcher).toContain('exec zypak-wrapper /app/lib/izumi/izumi "$@"')
   })
 
   it('publishes stable and beta releases to matching Flatpak branches', () => {

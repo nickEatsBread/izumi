@@ -1,8 +1,8 @@
 id: com.nicho.izumi
 runtime: org.gnome.Platform
-# GNOME 50 = WebKitGTK 2.52 (lock-free async scrolling, adaptive tiles, non-blocking composition
-# scheduling, faster text) on the SAME freedesktop 25.08 base as 49, so Mesa/GL/codecs extensions
-# are unchanged. The .flatpak bundle carries --runtime-repo, so the Deck pulls the runtime itself.
+# GNOME 50 provides GTK 4 (the CEF runtime's toolkit) on the freedesktop 25.08 base, so the
+# Mesa/GL/codecs extensions match. The .flatpak bundle carries --runtime-repo, so the Deck pulls
+# the runtime itself.
 runtime-version: '50'
 sdk: org.gnome.Sdk
 sdk-extensions:
@@ -12,8 +12,8 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
 command: izumi
 
-# Why Flatpak (not AppImage) for the Steam Deck: the GNOME runtime provides webkit2gtk-4.1
-# + gtk3 + mesa/EGL + pipewire as a version-matched set. We never bundle those host-coupled
+# Why Flatpak (not AppImage) for the Steam Deck: the GNOME runtime provides gtk4 + mesa/EGL +
+# pipewire as a version-matched set. We never bundle those host-coupled
 # libs, so the two AppImage failures on SteamOS disappear by construction:
 #   - bundled mesa/EGL vs the Deck's newer Mesa  → EGL_BAD_PARAMETER / white screen
 #   - bundled libpipewire vs the Deck's libjack  → "undefined symbol: pw_log_topic_register"
@@ -21,17 +21,12 @@ command: izumi
 finish-args:
   - --share=network          # streaming, AniList/MAL, debrid
   - --share=ipc
-  - --socket=wayland         # native Wayland: Desktop/KWin composites the video subsurface
-                             # below the webview; Game mode (gamescope) composites the video
-                             # LAYER-SHELL surface below the webview — both need Wayland.
-  - --socket=fallback-x11    # X11-only sessions (and XWayland) still get a display
-  - --filesystem=xdg-run/gamescope-0  # gamescope's own Wayland socket (Game mode), so the app
-                             # can connect natively to it (WAYLAND_DISPLAY=gamescope-0) instead
-                             # of falling to XWayland — required for the layer-shell overlay.
+  - --socket=x11             # the CEF runtime is X11-only (XWayland under KWin and gamescope);
+                             # izumi draws page + video into one X11 window
   - --socket=pulseaudio      # audio via the host PipeWire pulse socket (no bundled libpipewire)
-  - --device=dri             # host GL/VAAPI — webkit compositing + the mpv render path
-  - --device=all             # /dev/input — the webview Gamepad API reads the Deck controller
-                             # (L2/R2 seek in Game mode); without it the sandbox hides all pads.
+  - --device=dri             # host GL/VAAPI — Chromium's GPU process + izumi's compositor and mpv
+  - --device=all             # /dev/input + hidraw — the Rust reader for the Deck controller;
+                             # without it the sandbox hides all pads.
                              # (This flatpak version lacks the narrower --device=input.)
   - --filesystem=xdg-download # offline downloads
   # Steam Deck on-screen keyboard: reach the host Steam install to dlopen Steam's steamclient.so and
@@ -113,6 +108,19 @@ modules:
         url: https://github.com/mpv-player/mpv.git
         tag: v0.41.0
 
+  # ----- zypak: Chromium cannot use its setuid/user-namespace sandbox inside Flatpak. zypak runs
+  #       CEF's sandboxed helper processes through flatpak-spawn instead. -----
+  - name: zypak
+    buildsystem: simple
+    build-commands:
+      - make -j"$FLATPAK_BUILDER_N_JOBS"
+      - make install FLATPAK_DEST=/app
+    sources:
+      - type: git
+        url: https://github.com/refi64/zypak
+        tag: v2025.09
+        commit: 693a71c5ffa80ec9c9ce2ae03b1ccc493c698e53
+
   # ----- izumi (Tauri app). Network build (self-hosted bundle, not Flathub → no vendoring).
   #       Builds the local checkout, so on the Deck: clone, cd flatpak, flatpak-builder. -----
   - name: izumi
@@ -147,11 +155,16 @@ modules:
       - npm ci
       # Prod builds NEVER include the webview inspector. For a debug build with devtools,
       # use flatpak/dev-build.sh (it injects --features devtools) — do not add it here.
-      - npm run tauri build -- --no-bundle
-      - install -Dm755 src-tauri/target/release/izumi /app/bin/izumi
-      # Native Game-mode OSD uses the same Nunito family as the WebKit interface. libass/fontconfig
-      # cannot read the frontend's WOFF2, so install the hash-pinned Flatpak source below.
-      - install -Dm644 Nunito-flatpak.ttf /app/share/fonts/truetype/izumi/Nunito.ttf
+      # The build downloads CEF. Keep it in flatpak-builder's ccache directory when there is one,
+      # so CI restores it with the rest of .flatpak-builder instead of fetching it again.
+      - if [ -d /run/ccache ]; then export CEF_PATH=/run/ccache/cef; fi; npm run tauri build -- --no-bundle
+      # The app and CEF's runtime files share one directory: the binary's RUNPATH is $ORIGIN.
+      # Only the en-US locale ships; Chromium falls back to it for the few strings it shows.
+      - install -Dm755 src-tauri/target/release/izumi /app/lib/izumi/izumi
+      - for f in libcef.so libEGL.so libGLESv2.so libvk_swiftshader.so vk_swiftshader_icd.json libvulkan.so.1 chrome_100_percent.pak chrome_200_percent.pak icudtl.dat resources.pak v8_context_snapshot.bin; do if [ -e "src-tauri/target/release/$f" ]; then cp "src-tauri/target/release/$f" /app/lib/izumi/; fi; done
+      - install -Dm644 src-tauri/target/release/locales/en-US.pak /app/lib/izumi/locales/en-US.pak
+      - strip --strip-unneeded /app/lib/izumi/libcef.so
+      - install -Dm755 flatpak/izumi.sh /app/bin/izumi
       - install -Dm644 flatpak/com.nicho.izumi.desktop /app/share/applications/com.nicho.izumi.desktop
       # Sync the metainfo <release> version to the app version at build time. The file's
       # static version drifts otherwise (it lagged at 0.1.0 while the app moved on), which
@@ -169,9 +182,3 @@ modules:
     sources:
       - type: dir
         path: ..
-      # Keep this explicit instead of relying on the gitignored Android build-time font: clean CI
-      # checkouts do not contain that generated asset. The content hash pins the Google Fonts file.
-      - type: file
-        url: https://raw.githubusercontent.com/google/fonts/604936664fd62c14271209b51f98e7f495dd1a3e/ofl/nunito/Nunito%5Bwght%5D.ttf
-        sha256: bb55a5ca5c2042335b3991af27c4d0705d0ef41cac6164ac737fd8f2a1e85207
-        dest-filename: Nunito-flatpak.ttf

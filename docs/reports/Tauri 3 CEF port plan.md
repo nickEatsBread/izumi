@@ -14,6 +14,20 @@ The owner approved the port after the Deck spike ([Tauri 3 CEF spike on the Stea
 | **4. Flatpak and data migration** | The izumi manifest:<br>• gains zypak (v2025.09), the CEF files with the en-US locale only, `StartupWMClass`, `%u` and `--socket=x11`;<br>• keeps the mpv modules;<br>• drops `WEBKIT_DISABLE_DMABUF_RENDERER`.<br>The release workflow's Flatpak job caches the CEF download.<br>One-time migration: the last WebKitGTK build writes izumi's existing backup export to the app data folder, and the first CEF launch imports it when its own storage is empty. | Installed over the owner's existing devel install on the Deck, settings, sign-ins and library survive. Cold start in Game mode with the sandbox on and no blank-window stall. The owner accepts the size (spike: 112 MB download, 337 MB installed). VA-API works inside the sandbox. |
 | **5. Release** | Pin tauri, tauri-runtime-cef and CEF to exact versions, carry the vendored patches, and roll out through the devel Flatpak branch first. | An explicit owner decision to ship on a Tauri alpha, or to wait for a beta. |
 
+## Status (2026-11-15)
+
+| Phase | Code | Gate |
+|---|---|---|
+| 1 | Done (0f740cc9, 0e3484ae). CI green on all four platforms. | Windows smoke test on the laptop and Android install on a phone: pending, both need the owner. |
+| 2 | Done (3ba66525 and follow-ups). Linux selects `tauri-runtime-cef` by target; `player/linux_cef.rs` holds the compositor, input forwarding, page-focus keepalive, touch passthrough, mpv attach/detach, video insets (mpv's `video-margin-ratio-*`) and page zoom. The #16189 spin is fixed app-side (`linux_cef::release_idle_spin`, run in `setup`); `download-cef` 3.0.1 carries the index fix, so nothing is vendored. The CEF profile lives in `~/.local/share/<identifier>/cef`. Linux `close_player` now idles the core like macOS. | Deck check (one window in both modes, 5-minute scrub soak, Home idle, the owner's input check): pending, needs the owner. |
+| 3 | Rust half done with phase 2: `linux_embed`, `linux_x11`, `linux_overlay`, `gm_osd`, `linux_proc`, the WebKit damage FFI, the UI-lite scaler swap, the Game-mode OSD overlays and the `gtk` 0.18/`webkit2gtk` dependencies are gone. The retired Game-mode commands are no-ops until the frontend half removes their callers. | Owner's Deck pass: pending. |
+| 4 | Manifest: zypak v2025.09, CEF files beside the binary in `/app/lib/izumi` (en-US locale only), `--socket=x11`, launcher `flatpak/izumi.sh`, `Exec=izumi %u`; the CEF download is kept in flatpak-builder's ccache directory so CI's `.flatpak-builder` cache carries it. The Nunito OSD font is no longer installed. | Install over the devel build, sandboxed cold start, size, VA-API: pending, needs the owner. |
+| 5 | Not started. | Owner decision. |
+
+**Data migration.** The CEF build reads `engine-migration.json` from app data on first launch, restores it as an app backup (secrets included) and deletes it. Writing that file is the job of the last WebKitGTK release, which is a separate change on `main`.
+
+**Linux release job.** `release.yml`'s `ubuntu-24.04` entry still asks `tauri-action` for the default Linux bundles. Whether the Tauri 3 alpha CLI bundles CEF into a `.deb` or AppImage is unverified; the Flatpak is the shipped Linux target either way.
+
 ## Risks
 
 - **Alpha churn.** Tauri 3 is an alpha. Pinning exact versions in phase 1 keeps the rest of the port from moving under it.
