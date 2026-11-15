@@ -22,7 +22,7 @@
   import TrendingUp from '@lucide/svelte/icons/trending-up'
   import Award from '@lucide/svelte/icons/award'
   import * as h from '$lib/haptics'
-  import { isAndroid, isMobile } from '$lib/platform'
+  import { isAndroid, isMobile, isWebKitGtk } from '$lib/platform'
   import { get } from 'svelte/store'
   import { linear, quintOut } from 'svelte/easing'
   import { motion, type MotionParams } from '$lib/motion/gm-motion'
@@ -400,7 +400,7 @@
     }
   })
 
-  // Game mode: the bar's 15 s compositor tween made WebKitGTK composite the whole Deck screen at
+  // Game mode on WebKitGTK: the bar's 15 s compositor tween made it composite the whole Deck screen at
   // 60 Hz, which was nearly all of Home's idle cost (~40% CPU, ~20% GPU). A timer stepping it at
   // 15 fps jittered visibly on the Deck. The fill follows the display's frames from the slide clock.
   // WebKitGTK puts a scaled or translated layer's edge on whole pixels, so a fill growing ~8 px a
@@ -408,9 +408,12 @@
   // drifted a frame apart at each pixel. The fill is one gradient with a one-pixel soft edge instead,
   // which draws between pixels in a single paint. Quarter pixels: WebKitGTK repaints it ~30 times a
   // second here anyway, so finer writes only cost CPU. Like the auto-advance above, it restarts when
-  // Home comes back from under the player.
+  // Home comes back from under the player. Chromium (WebView2, Android, CEF) keeps the CSS scaleX
+  // keyframe on its compositor: this loop repainted the fill on the page's main thread every frame
+  // (the CEF spike's Home idle). The WebKitGTK branch goes with the Linux CEF port.
+  const scriptedBar = isWebKitGtk()
   $effect(() => {
-    if (!$gameMode || !medias.length || !showOverlay || heroTheme?.hidden) return
+    if (!$gameMode || !scriptedBar || !medias.length || !showOverlay || heroTheme?.hidden) return
     void cycle
     let start = 0
     let frame = 0
@@ -1224,8 +1227,9 @@
   :global(html.gamemode) .hero-carousel-slide,
   :global(html.gamemode) .hero-copy,
   :global(html.gamemode) .hero-fade-out { animation: none; }
-  /* The bar keeps its layer but no tween: the script above shows it and paints the fill as a gradient. */
-  :global(html.gamemode) .hero-progress { animation: none; translate: -100% 0; }
+  /* On WebKitGTK the bar keeps its layer but no tween: the script above shows it and paints the fill as
+     a gradient. Chromium keeps the scaleX keyframe (`webkitgtk` is set by initPlatform). */
+  :global(html.gamemode.webkitgtk) .hero-progress { animation: none; translate: -100% 0; }
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
      Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives
      after the decode deadline, and the dim when Home scrolls. */

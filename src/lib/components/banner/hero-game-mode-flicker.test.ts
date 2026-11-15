@@ -91,10 +91,17 @@ describe('Steam Deck featured banner flicker', () => {
     const rule = gameMode('.hero-progress')
     // The bar keeps a layer for its whole life, so a write to `translate` never drops it.
     expect(rule).toContain('transform: translateZ(0)')
-    // A running tween composited the whole screen every frame (nearly all of Home's idle cost);
-    // CSS steps() did not help, since WebKitGTK still composited at the display rate.
-    expect(rule).toContain('animation: none; translate: -100% 0;')
+    // On WebKitGTK a running tween composited the whole screen every frame (nearly all of Home's idle
+    // cost); CSS steps() did not help, since WebKitGTK still composited at the display rate.
+    expect(hero).toContain(':global(html.gamemode.webkitgtk) .hero-progress { animation: none; translate: -100% 0; }')
     expect(rule).not.toMatch(/steps\(|animation-timing-function/)
+    // Chromium (CEF, WebView2, Android) keeps the scaleX keyframe on its compositor even in Game mode:
+    // the script below repainted the fill on the main thread every frame there.
+    expect(rule).not.toContain('animation: none')
+    expect(hero).toContain('const scriptedBar = isWebKitGtk()')
+    expect(hero).toContain('if (!$gameMode || !scriptedBar || !medias.length')
+    const platform = readFileSync(fileURLToPath(new URL('../../platform.ts', import.meta.url)), 'utf8')
+    expect(platform).toContain("document.documentElement.classList.toggle('webkitgtk', isWebKitGtk())")
     expect(hero).not.toContain('hero-progress-steps')
     expect(hero).not.toContain('@keyframes hero-progress-fill-layer')
     // A script steps it from the slide clock instead, on display frames (a 15 fps timer jittered on
