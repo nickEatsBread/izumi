@@ -2,14 +2,16 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
+const read = (relative: string) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+const page = read('./+page.svelte')
+const pane = read('../../../../lib/components/themes/ThemePane.svelte')
+const grid = read('../../../../lib/components/themes/ThemeGrid.svelte')
 
 describe('themes settings add dialog', () => {
   it('opens a single add popup instead of inline link and file controls', () => {
     expect(page).toContain('Add theme')
     expect(page).toContain('role="dialog"')
     expect(page).toContain('aria-labelledby="add-theme-title"')
-    expect(page).not.toContain('onclick={() => showLink = !showLink}')
   })
   it('links the community catalog and accepts a URL, file or folder', () => {
     expect(page).toContain('THEME_CATALOG_PROJECT_URL')
@@ -20,44 +22,50 @@ describe('themes settings add dialog', () => {
     expect(page).toContain('collectLocalThemes')
     expect(page).toContain('Install all')
   })
-  it('browses themes from every store and keeps each theme tied to its store', () => {
-    expect(page).toContain('loadThemeListings')
-    expect(page).not.toContain('loadThemeCatalog')
-    expect(page).toContain('prepareRelease(entry, originOf(entry))')
-    expect(page).toContain("page.url.searchParams.get('theme')")
-    expect(page).toContain('item.id === entry.id && item.origin === originOf(entry)')
-  })
-})
-
-describe('themes store front', () => {
-  it('renders the storefront and the theme page from components', () => {
-    expect(page).toContain('<ThemeBrowse')
-    expect(page).toContain('<ThemeDetail')
-  })
-  it('opens a theme page through the URL and steps into its preview', () => {
-    expect(page).toContain("goto(`?${new URLSearchParams({ store: store.id, theme: listing.release.id })}`)")
-    expect(page).toContain('stepIntoPreview(from, () => previewTheme(target)')
-  })
-  it('lets people add other theme stores from the store header', () => {
+  it('lets people add other theme stores from the header', () => {
     expect(page).toContain('<StoresDialog {loaded}')
     expect(page).toContain('onclick={() => showStores = true}')
   })
-  it('shows screenshots for this device instead of a platform filter', () => {
-    expect(page).not.toContain('PLATFORMS')
-    expect(page).toContain("platformFor(entry, $isMobile ? 'phone' : 'desktop')")
-  })
 })
 
-describe('themes installed list with a controller', () => {
-  it('shows the controller card list in Game mode, on TV or with a pad, and keeps the desktop rows otherwise', () => {
-    expect(page).toContain('const pad = $derived($gameMode || $isTv || $controllerMode)')
-    expect(page).toContain('{#if pad}\n      <ControllerThemeList')
-    expect(page).toContain('onclick={() => apply(item)}>Apply</button>')
+describe('themes gallery and theme page', () => {
+  it('is one gallery with section chips, no Discover / Installed tabs', () => {
+    expect(page).toContain('<ThemeGrid sections={shown}')
+    expect(page).not.toContain('Discover')
+    expect(page).toContain('themeSections($installedThemes, listings, THEME_CATALOG_URL, query)')
+    expect(page).toContain("const shown = $derived(filter === 'all' ? sections : sections.filter((section) => section.id === filter))")
   })
-  it('opens on Installed for a controller unless a theme page is in the URL', () => {
-    expect(page).toContain("get(installedThemes).length && !page.url.searchParams.has('theme') ? 'installed' : 'browse'")
+  it('opens a theme as its own page through the URL, at its top, and Back returns to the same card', () => {
+    expect(grid).toContain('onclick={() => onopen(entry)}')
+    expect(page).toContain('forgetScroll(url)')
+    expect(page).toContain("const key = themeId ? keyFromUrl(page.url.searchParams.get('store'), themeId) : ''")
+    expect(page).toContain('void tick().then(() => focusCard(key))')
   })
-  it('returns focus to the theme from an update view', () => {
-    expect(page).toContain("close(prepared ? keyOf(prepared.origin, prepared.package.id) : '')")
+  it('browses every store and keeps each theme tied to its store', () => {
+    expect(page).toContain('loadThemeListings')
+    expect(page).toContain('prepareRelease(listing.release, listing.origin, undefined, controller.signal)')
+    expect(page).toContain('item.id === prepared.package.id && item.origin !== prepared.origin')
+  })
+  it('lands a controller on the main action of an opened theme', () => {
+    expect(page).toContain("if (pad) void tick().then(() => { const target = document.querySelector<HTMLElement>('[data-theme-primary]'); if (target) focusByNav(target, true) })")
+  })
+  it('jumps straight into a preview, with no scripted transition', () => {
+    expect(page).toContain('previewTheme(prepared)\n    void goto(screenRoute(screen, newestSeriesId(get(cwSnapshot))))')
+    expect(page).not.toContain('preview-transition')
+  })
+  it('never disables the focused action: Apply turning into Applied keeps a controller on it', () => {
+    expect(pane).toContain('aria-disabled={primary.disabled || undefined} onclick={() => { if (!primary.disabled) primary.run() }}')
+    expect(pane).not.toMatch(/data-theme-primary[^>]*\sdisabled=/)
+  })
+  it('opens an install\'s other actions from More or ☰', () => {
+    expect(page).toContain('<OptionsSheet')
+    expect(page).toContain('window.addEventListener(PAGE_OPTIONS_EVENT, claim)')
+    expect(page).toContain('onmore={install ? () => sheetFor = install : undefined}')
+  })
+  it('never covers a screenshot with text, lifts cards instead of outlining them, and moves with CSS only', () => {
+    expect(grid).toContain('.card:hover .shot, .card:focus-visible .shot { transform: translateY(-.25rem);')
+    expect(grid).not.toMatch(/\.card:hover[^{]*\{[^}]*outline/)
+    expect(pane).toContain('.stage > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s ease; }')
+    for (const source of [pane, grid]) expect(source).not.toContain('gm-motion')
   })
 })
