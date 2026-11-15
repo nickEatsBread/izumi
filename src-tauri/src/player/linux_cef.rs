@@ -287,10 +287,10 @@ const SLOTS: usize = 3;
 
 /// A GLsync handle, shareable across the share group.
 #[derive(Clone, Copy)]
-struct Sync(usize);
-impl Sync {
-    unsafe fn new() -> Sync {
-        Sync(gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0) as usize)
+struct Fence(usize);
+impl Fence {
+    unsafe fn new() -> Fence {
+        Fence(gl::FenceSync(gl::SYNC_GPU_COMMANDS_COMPLETE, 0) as usize)
     }
     unsafe fn gpu_wait_and_delete(self) {
         gl::WaitSync(self.0 as gl::types::GLsync, 0, gl::TIMEOUT_IGNORED);
@@ -303,14 +303,14 @@ impl Sync {
 
 struct Published {
     slot: usize,
-    fence: Sync,
+    fence: Fence,
 }
 
 /// What both threads touch, behind one mutex.
 struct Ring {
     latest: Option<Published>,
     in_use: Option<usize>,
-    read_fence: [Option<Sync>; SLOTS],
+    read_fence: [Option<Fence>; SLOTS],
     tex: [u32; SLOTS],
     tex_size: [(i32, i32); SLOTS],
 }
@@ -544,7 +544,7 @@ fn render_thread(parent: u64, w: i32, h: i32, tx: mpsc::Sender<SendInit>) {
                 gl::Disable(gl::BLEND);
                 gl::BindVertexArray(0);
                 gl::UseProgram(0);
-                let fence = Sync::new();
+                let fence = Fence::new();
                 let mut ring = shared.ring.lock().unwrap();
                 if let Some(slot) = ring.in_use {
                     if let Some(old) = ring.read_fence[slot].replace(fence) {
@@ -719,7 +719,7 @@ fn write_slot(w: i32, h: i32, fill: impl FnOnce(&MainCtx, u32)) -> bool {
             gl::FramebufferTexture2D(gl::DRAW_FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, tex, 0);
             fill(m, tex);
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-            let fence = Sync::new();
+            let fence = Fence::new();
             // amdgpu fences shared BOs implicitly, so a flush orders our read before CEF's next write.
             gl::Flush();
             let mut ring = shared.ring.lock().unwrap();
