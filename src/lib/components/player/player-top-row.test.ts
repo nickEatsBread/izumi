@@ -8,9 +8,9 @@ describe('player top row', () => {
   it('centres Back on the same line as the P2P readout', () => {
     const controls = read('./Controls.svelte')
     const overlay = read('./P2PStatusOverlay.svelte')
-    // Back: 8px top padding + a 36px pill (py-2 around a 20px row) = centre at 26px.
+    // Back: 8px top padding + Navigator's 36px circle = centre at 26px.
     expect(controls).toContain("{gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}")
-    expect(controls).toContain('rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold')
+    expect(controls).toContain('grid size-9 shrink-0 select-none place-items-center rounded-full bg-[#1a1a1a] text-white')
     // Readout: 12px top padding + a 28px text-lg line = centre at 26px.
     expect(overlay).toContain("'gap-4 pt-3 text-lg'")
   })
@@ -19,7 +19,7 @@ describe('player top row', () => {
     const controls = read('./Controls.svelte')
     expect(controls).toContain("const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && ($shellNav !== 'top' || $playerCoversWindow))")
     expect(controls).toContain('<div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>')
-    expect(controls).toContain('class="pointer-events-auto relative flex shrink-0 select-none items-center')
+    expect(controls).toContain('class="pointer-events-auto relative grid size-9 shrink-0 select-none')
     expect(controls).toContain('playerTopBarUnderTitlebar.set(true)')
     expect(controls).toContain('return () => playerTopBarUnderTitlebar.set(false)')
   })

@@ -5,7 +5,7 @@
     playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying, videoQualityPreset, rawMpvOptions,
     gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip, audioProcessing, windowsVsr,
     systemMediaControls, discordRichPresence, subtitleLineNavigation, hideSidebarWhilePlaying, trailerOpenMode,
-    PLAYER_CONTROLS, playerHiddenControls, type PlayerControlId,
+    PLAYER_CONTROLS, playerHiddenControls, type PlayerControlId, videoFit, VIDEO_FITS,
     audioOutputMode, audioOutputDevice, audioExclusive,
     audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd,
     audioPassthroughDts, audioPassthroughDtsHd, dolbyVisionOutputMode,
@@ -231,6 +231,7 @@
             {/each}
           </div>
         </SettingsRow>
+        <SettingsChoiceRow settingKey="video-framing" title="Video framing" description="How the picture fills the player. The player's settings menu changes it too." learnMore="Best fit shows the whole picture with bars where the shapes differ. Fill crops the edges to cover the player. Stretch fills it by changing the picture's proportions." value={$videoFit} onChange={(value) => ($videoFit = value as typeof $videoFit)} options={VIDEO_FITS.map((fit) => ({ value: fit.id, label: fit.label }))} />
       {/if}
       <SettingsChoiceRow settingKey="p2p-playback-status" title="P2P playback status" description="Peers and live speeds at the top of the player during Direct P2P playback." learnMore="Debrid playback never shows it." value={$p2pStatusVisibility} onChange={(value) => ($p2pStatusVisibility = value as typeof $p2pStatusVisibility)} options={[
         { value: 'hidden', label: 'Always hidden' },
