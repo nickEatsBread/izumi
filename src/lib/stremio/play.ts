@@ -1899,6 +1899,19 @@ export function savedProtectedStream(path: string, fresh: ResolvedShakaDownload)
   } as Stream
 }
 
+/** A protected episode the module already decrypted to clear files, as a plain local stream: its
+ *  `video.mp4` with `audio.mp4` as a separate audio track. No DRM, no licence, no network — it plays
+ *  exactly like any downloaded file. The folder name is encoded so a `#`, `?` or `%` cannot break
+ *  the path; the two file names inside are fixed (see widevine/save.rs). */
+export function clearProtectedStream(folder: string): Stream {
+  const base = folder.split(/[/\\]/).map(encodeURIComponent).join('/')
+  return {
+    url: `file://${base}/video.mp4`,
+    name: '📥 Downloaded',
+    __audioTracks: [{ url: `file://${base}/audio.mp4` }],
+  } as Stream
+}
+
 export async function playEpisode(
   media: Media,
   episode: number | undefined,
@@ -1962,8 +1975,14 @@ export async function playEpisode(
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = !options.remoteOnly && episode != null ? downloadOf(media.id, episode) : undefined
+  if (local?.status === 'done' && local.kind === 'drm-local' && local.path && local.requiresOnlineLicense === false) {
+    // A protected episode the module already decrypted to clear files: it plays like any local file,
+    // with no licence and no network. Its video and audio are separate clear tracks in the folder.
+    traceResolve(trace, 'completed clear protected download hit; playing it offline')
+    return await playStream(media, episode, clearProtectedStream(local.path), onState, { autoplay, startSeconds: options.startSeconds })
+  }
   if (local?.status === 'done' && local.kind === 'drm-local' && local.path) {
-    // A protected episode saved by izumi's own Widevine module: its files are on this device and
+    // A protected episode saved still-encrypted (older downloads): its files are on this device but
     // its licence comes from the source again, so playing it needs the source to be reachable.
     traceResolve(trace, 'completed protected download hit; licensing it again')
     onState({ status: 'resolving' })

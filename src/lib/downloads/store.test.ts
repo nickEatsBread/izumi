@@ -254,7 +254,7 @@ describe('protected episodes on Linux, through the native Widevine module', () =
 
   afterEach(() => { nativeDrm.on = false })
 
-  it('saves the encrypted files natively instead of storing them in the webview, then frees the session', async () => {
+  it('decrypts the episode to clear files natively instead of storing them in the webview, then frees the session', async () => {
     nativeDrm.on = true
     resolveDownloadUrl.mockResolvedValue(shaka)
     invoke.mockImplementation(async (command: string) => command === 'download_dir_default' ? '/downloads'
@@ -266,9 +266,11 @@ describe('protected episodes on Linux, through the native Widevine module', () =
     await vi.waitFor(() => expect(get(downloads)['7:2']?.status).toBe('done'))
 
     expect(storeShakaOffline).not.toHaveBeenCalled()
-    expect(calls('widevine_save')[0]?.[1]).toMatchObject({ id: '7:2', manifestUrl: shaka.url, dir: '/downloads', name: shaka.filename, maxHeight: 1080 })
+    // The module needs the source's licence request (drm) to obtain the content keys for the decrypt.
+    expect(calls('widevine_save')[0]?.[1]).toMatchObject({ id: '7:2', manifestUrl: shaka.url, dir: '/downloads', name: shaka.filename, maxHeight: 1080, drm: shaka.drm })
     expect(get(downloads)['7:2']).toMatchObject({
-      kind: 'drm-local', path: '/downloads/Test Anime - E2.protected', requiresOnlineLicense: true,
+      // The saved files are clear, so playback needs no online licence.
+      kind: 'drm-local', path: '/downloads/Test Anime - E2.protected', requiresOnlineLicense: false,
       sourceOriginId: 'example.source', quality: '1080p', bytes: 600,
     })
     await vi.waitFor(() => expect(calls('ext_fetch')[0]?.[1]).toMatchObject({ url: shaka.drm.releaseUrl, method: 'DELETE' }))

@@ -132,13 +132,16 @@ async function runJob(item: DownloadItem) {
       const path = await invoke<string>('widevine_save_folder', { dir, name: r.filename })
       setItem(item.id, { path })
       try {
+        // The module decrypts every fragment as it arrives, so the saved folder is a clear fMP4 pair
+        // that plays with no module, licence or network. The source's licence request (drm) is what
+        // obtains the content keys for the decrypt.
         const saved = await invoke<{ path: string; bytes: number; height: number }>('widevine_save', {
-          id: item.id, manifestUrl: r.url, dir, name: r.filename, maxHeight: r.preferredHeight ?? null,
+          id: item.id, manifestUrl: r.url, dir, name: r.filename, maxHeight: r.preferredHeight ?? null, drm: r.drm,
         })
         setItem(item.id, {
           status: 'done',
           path: saved.path,
-          requiresOnlineLicense: true,
+          requiresOnlineLicense: false,
           sourceOriginId: r.sourceOriginId,
           preferences: { ...item.preferences, ...(r.sourceOriginId ? { sourceOriginId: r.sourceOriginId } : {}) },
           quality: `${saved.height}p`,
