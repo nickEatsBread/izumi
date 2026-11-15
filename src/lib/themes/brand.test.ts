@@ -44,7 +44,10 @@ describe('izumi logo pieces', () => {
   for (const file of ['../components/BrandText.svelte', '../components/Wordmark.svelte', '../components/catalog/CatalogBrandLogo.svelte']) {
     it(`${file} renders only an empty host drawn through brandShadow`, () => {
       const source = read(file)
-      const markup = source.replace(/<script[\s\S]*?<\/script>/g, '').trim()
+      // The markup is everything after the component's script block.
+      const scriptEnd = source.lastIndexOf('</script>')
+      expect(scriptEnd).toBeGreaterThan(-1)
+      const markup = source.slice(scriptEnd + '</script>'.length).trim()
       expect(markup).toMatch(/^<span data-theme-protected [^>]*use:brandShadow=\{[^}]+\}><\/span>$/)
       // A style= attribute would be rewritten by Svelte, dropping the inline guards.
       expect(markup).not.toMatch(/\sstyle[=:]/)
