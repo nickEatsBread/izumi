@@ -585,10 +585,30 @@
     cmd('set', ['mute', volLatest === 0 ? 'yes' : 'no'])
   }
   function setVolume(e: Event) {
-    volume = Number((e.target as HTMLInputElement).value)
+    applyVolume(Number((e.target as HTMLInputElement).value))
+  }
+  function applyVolume(value: number) {
+    volume = value
     muted = volume === 0
     volLatest = volume
     if (!volPending) { volPending = true; requestAnimationFrame(flushVolume) }
+  }
+  // The range input's own drag ignores a finger (Chromium jumps to the touch point, then drops the
+  // moves). Capture the pointer and follow it, as the seek bar does, for every pointer type.
+  function volumeAtPointer(e: PointerEvent) {
+    const input = e.currentTarget as HTMLInputElement
+    const box = input.getBoundingClientRect()
+    if (box.width <= 0) return
+    const value = Math.round(Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * Number(input.max))
+    input.value = String(value)
+    applyVolume(value)
+  }
+  function onVolumePointerDown(e: PointerEvent) {
+    try { (e.currentTarget as HTMLInputElement).setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+    volumeAtPointer(e)
+  }
+  function onVolumePointerMove(e: PointerEvent) {
+    if ((e.currentTarget as HTMLInputElement).hasPointerCapture(e.pointerId)) volumeAtPointer(e)
   }
   function toggleMute() {
     muted = !muted
@@ -1085,6 +1105,8 @@
             class="h-1 w-0 cursor-pointer touch-none accent-white opacity-0 transition-all duration-200 group-focus-within/vol:w-20 group-focus-within/vol:opacity-100 group-hover/vol:w-20 group-hover/vol:opacity-100"
             min="0" max="130" step="1" value={muted ? 0 : volume}
             oninput={setVolume}
+            onpointerdown={onVolumePointerDown}
+            onpointermove={onVolumePointerMove}
             aria-label="Volume"
           />
         </div>

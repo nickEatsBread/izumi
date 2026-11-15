@@ -332,7 +332,9 @@
   const CHROME_FADE_MS = 200
   let hudFadingOut = $state(false)
   let hudWasMounted = false
-  $effect(() => {
+  // `.pre`: it must run before the `{#if}` below re-evaluates, or the block drops for one flush and
+  // remounts already transparent (no fade).
+  $effect.pre(() => {
     const mounted = controlsMounted
     const was = hudWasMounted
     hudWasMounted = mounted
