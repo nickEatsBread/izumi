@@ -44,14 +44,21 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: "@types/node"
         update-types: [version-update:semver-major]
-      # Tauri's JS APIs are version-locked to the Rust crates in src-tauri/Cargo.toml. A major
-      # here without the matching crate bump breaks the IPC contract, so those move together
-      # in a deliberate migration, never as an automatic PR.
+      # Tauri's JS APIs are version-locked to the Rust crates in src-tauri/Cargo.toml, down to the
+      # minor version (a test checks each package against its crate). A JS bump without the
+      # matching crate bump fails CI, so those move together in a deliberate Tauri update, never
+      # as an automatic PR.
       - dependency-name: "@tauri-apps/api"
-        update-types: [version-update:semver-major]
+        update-types: [version-update:semver-major, version-update:semver-minor]
       - dependency-name: "@tauri-apps/cli"
-        update-types: [version-update:semver-major]
+        update-types: [version-update:semver-major, version-update:semver-minor]
       - dependency-name: "@tauri-apps/plugin-*"
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      # SvelteKit 3 drops svelte.config.js for options passed to the Vite plugin, so the build
+      # fails until the config moves. That migration is its own change.
+      - dependency-name: "@sveltejs/kit"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@sveltejs/adapter-static"
         update-types: [version-update:semver-major]
       # Tailwind 4 replaces the PostCSS plugin and the JS config this app is built on, so the
       # build fails until the stylesheets are migrated. That migration is its own change.
