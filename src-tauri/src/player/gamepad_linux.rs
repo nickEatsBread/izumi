@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use gilrs::{Axis, Button, EventType, GilrsBuilder};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static RUN_ID: AtomicU64 = AtomicU64::new(0);

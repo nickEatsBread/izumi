@@ -26,7 +26,7 @@ use std::{
 use khronos_egl as egl;
 use libmpv2_sys as sys;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use tauri::{AppHandle, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 use tauri_runtime_cef::{
     cef::{
         self, rc::Rc as _, sys::cef_event_flags_t, wrap_render_handler, Browser, BrowserHost,

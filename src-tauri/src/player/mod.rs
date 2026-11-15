@@ -604,6 +604,8 @@ impl PlayerHandle {
     /// webview becomes opaque before this runs, so keeping the idle surface costs no visual state
     /// and lets the next episode/source skip libmpv initialization entirely.
     pub fn idle(&self) -> Result<(), String> {
+        // The Deck grip reader drops to its browse cadence (see gm_perf::grip_poll_sleep_ms).
+        crate::gm_perf::PLAYER_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
         self.gif_abort()?;
         if let Some(mpv) = self.mpv.lock().map_err(|e| e.to_string())?.as_ref() {
             let _ = mpv.command("stop", &[]);
