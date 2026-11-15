@@ -39,7 +39,9 @@ describe('Flatpak SDK deps', () => {
   it('ships CEF beside the binary and starts it through zypak', () => {
     expect(manifest).toContain('url: https://github.com/refi64/zypak')
     expect(manifest).toContain('install -Dm755 src-tauri/target/release/izumi /app/lib/izumi/izumi')
-    expect(manifest).toContain('/app/lib/izumi/locales/en-US.pak')
+    expect(manifest).toContain('sh flatpak/stage-cef.sh /app/lib/izumi')
+    const stage = readFileSync(new URL('../../flatpak/stage-cef.sh', import.meta.url), 'utf8')
+    expect(stage).toContain('cp "$src/locales/en-US.pak" "$dest/locales/"')
     expect(manifest).toContain('install -Dm755 flatpak/izumi.sh /app/bin/izumi')
     expect(manifest).toContain('--socket=x11')
     expect(manifest).not.toContain('--socket=wayland')
