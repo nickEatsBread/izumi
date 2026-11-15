@@ -596,7 +596,7 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. On a catalog title page it carries its number in `data-episode`, `data-watched` once it is finished and what this device has of it in `data-download` (`done`, `progress`, `paused`, `queued` or `error`). | `data-variant`, `data-state`, `data-next`, `data-filler`, `data-episode`, `data-download` |
+| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. On a catalog title page it carries its number in `data-episode`, `data-watched` once it is finished and what this device has of it in `data-download` (`done`, `progress`, `paused`, `queued` or `error`). | `data-variant`, `data-state`, `data-next`, `data-filler`, `data-episode`, `data-watched`, `data-download` |
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.progress` | part | The watch-progress track over an episode thumbnail on a catalog title page, where the source reports progress; the fill is its child. |  |

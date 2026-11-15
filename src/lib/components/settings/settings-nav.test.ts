@@ -35,7 +35,7 @@ describe('SettingsNav', () => {
     expect(dpad).toContain("closest<HTMLElement>('[data-nav-scroll-container]')")
     expect(dpad).toContain("const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'")
     expect(dpad).toContain('const target: RevealScrollTarget = pane ?? window')
-    expect(dpad).toContain('scrollByExact(target, vertical ? top : 0, vertical ? 0 : left, behavior)')
+    expect(dpad).toContain('scrollByExact(target, vertical ? top : 0, vertical ? 0 : left, behavior, chase)')
   })
 
   // The engine side (regionOf, the region default, data-nav-scroll-x) is exercised in
