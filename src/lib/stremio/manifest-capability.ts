@@ -16,6 +16,9 @@ export interface AddonCatalog {
   /** Legacy manifest field. Modern add-ons expose these as genre extra options. */
   genres?: string[]
   extra?: AddonCatalogExtra[]
+  /** Legacy manifest fields: the extra names a catalog takes, and those it requires. */
+  extraSupported?: string[]
+  extraRequired?: string[]
 }
 
 export interface AddonManifest {
@@ -35,6 +38,11 @@ export interface AddonManifest {
 /** Whether a manifest declares support for this stream type and id namespace. Unknown manifests
  * remain accepted, matching local Izumi's fail-open dispatch behaviour. */
 export function acceptsStreamId(manifest: AddonManifest | null, type: string, id: string): boolean {
+  return acceptsResourceId(manifest, 'stream', type, id)
+}
+
+/** acceptsStreamId for any resource (`meta`, `subtitles`, …). */
+export function acceptsResourceId(manifest: AddonManifest | null, name: string, type: string, id: string): boolean {
   const resources = manifest?.resources
   if (!resources?.length) return true
   const matches = (types: string[] | undefined, prefixes: string[] | undefined) =>
@@ -42,9 +50,11 @@ export function acceptsStreamId(manifest: AddonManifest | null, type: string, id
     && (!prefixes?.length || prefixes.some((prefix) => id.startsWith(prefix)))
   for (const resource of resources) {
     if (typeof resource === 'string') {
-      if (resource === 'stream' && matches(manifest?.types, manifest?.idPrefixes)) return true
-    } else if (resource && resource.name === 'stream'
-      && matches(resource.types ?? manifest?.types, resource.idPrefixes ?? manifest?.idPrefixes)) {
+      if (resource === name && matches(manifest?.types, manifest?.idPrefixes)) return true
+    } else if (resource && resource.name === name
+      // An object resource without its own idPrefixes accepts every id (Stremio's rule); the
+      // manifest-level prefixes only apply to bare string resources.
+      && matches(resource.types ?? manifest?.types, resource.idPrefixes)) {
       return true
     }
   }

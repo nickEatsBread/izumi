@@ -51,6 +51,13 @@ describe('Stremio catalog identity', () => {
       .toBe('https://addon.test/meta/series/tt123%3A1%3A2.json')
   })
 
+  it('keeps a configuration query after catalog and meta routes', () => {
+    expect(stremioCatalogUrl('https://h.test/addon/manifest.json?token=x', { type: 'movie', id: 'top' }, { skip: 20 }))
+      .toBe('https://h.test/addon/catalog/movie/top/skip=20.json?token=x')
+    expect(stremioMetaUrl('https://h.test/addon?token=x', 'movie', 'tt0000001'))
+      .toBe('https://h.test/addon/meta/movie/tt0000001.json?token=x')
+  })
+
   it('offers both an unfiltered catalog and every optional manifest filter', () => {
     const variants = stremioCatalogVariants({
       type: 'movie', id: 'top', name: 'Popular',

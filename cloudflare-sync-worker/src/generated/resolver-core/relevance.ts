@@ -9,8 +9,16 @@ import { BATCH_MARKER, type Stream } from './parse'
 
 // "and" is not a title word: "Tanuki & Kitsune" is released as "Tanuki and Kitsune", and the "&"
 // was already gone.
-const lexicalTitleTokens = (s: string): string[] =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((t) => t && t !== 'and')
+// Romaji writes a long vowel several ways ("Souma", "Soma"; "Sayounara", "Sayonara"; "Ryuusei",
+// "Ryusei"), so words of five letters or more are compared with it folded to one vowel. Shorter
+// words stay as written: "Free" must not fold into the language tag "fre".
+const foldVowels = (t: string): string => t.length >= 5 && /^[a-z]+$/.test(t)
+  ? t.replace(/ou/g, 'o').replace(/([aeiou])\1+/g, '$1')
+  : t
+// "×" is read as the word "x": "HUNTER×HUNTER" is released as "Hunter x Hunter", "D×D" as "DxD".
+const rawTitleTokens = (s: string): string[] =>
+  s.toLowerCase().replace(/×/g, ' x ').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((t) => t && t !== 'and')
+const lexicalTitleTokens = (s: string): string[] => rawTitleTokens(s).map(foldVowels)
 
 export function titleTokens(s: string): string[] {
   return lexicalTitleTokens(s).filter((t) => t.length > 2)
@@ -19,6 +27,10 @@ export function titleTokens(s: string): string[] {
 /** The same normalisation titleTokens uses, minus the length filter, so a phrase keeps its short
  *  words: "Dr. Stone" has to stay "dr stone" to be findable in a release name. */
 const norm = (s: string) => lexicalTitleTokens(s).join(' ')
+
+/** Underscores separate words in older release names, and scene names glue the episode code to the
+ *  title ("Fire.ForceS01EP18"). */
+const unglue = (s: string) => s.replace(/_/g, ' ').replace(/([a-z])(s\d{1,2}ep?\d)/gi, '$1 $2')
 
 const nameOf = (s: Stream) =>
   s.behaviorHints?.filename || s.title?.split('\n')[0] || s.description?.split('\n')[0] || s.name || ''
@@ -29,17 +41,24 @@ const DIRECT_TRANSPORT_LABEL = /^direct\s+(?:hls|mp4|dash)(?:\s|$)/i
 
 // Release-name tokens that don't identify the anime (quality/codec/source/container/
 // language/crc). Stripped so a short-title release's title ratio isn't diluted.
-const RELEASE_JUNK = /^(?:\d{3,4}p|4k|uhd|x26[45]|h26[45]|hevc|avc|av1|xvid|10bit|8bit|hi10p?|bluray|bdrip|bd|blu|ray|web|webrip|webdl|hdtv|dvd|dvdrip|remux|batch|complete|repack|uncensored|dual|multi|subs?|dub|eng|jpn|jap|mkv|mp4|avi|aac|flac|opus|ac3|eac3|ddp?|dts|hdr|dv|nf|cr|amzn|[0-9a-f]{8})$/i
+const RELEASE_JUNK = /^(?:\d{3,4}p|4k|uhd|x26[45]|h26[45]|hevc|avc|av1|xvid|10bit|8bit|hi10p?|bluray|bdrip|bd|blu|ray|web|webrip|webdl|hdtv|dvd|dvdrip|remux|batch|complete|repack|uncensored|dual|multi|subs?|dub|eng|jpn|jap|mkv|mp4|avi|aac|flac|opus|ac3|eac3|ddp?|dts|hdr|dv|nf|cr|amzn|tv|rus|ukr|ita|fre|fra|ger|deu|spa|esp|por|kor|chs|cht|vostfr|[0-9a-f]{8})$/i
 
 // Scene episode/season markers (S04E25, E25, 1x25) — never part of the anime's TITLE,
 // so they must not count as content tokens (they diluted "Dr STONE S04E25" down to
 // {subsplease,stone,s04e25} → only 1/3 title match → wrongly dropped).
-const SCENE_CODE = /^(?:s\d{1,2}e\d{1,3}|e\d{1,3}|\d{1,3}x\d{1,3})$/i
+const SCENE_CODE = /^(?:s\d{1,2}ep?\d{1,3}|e\d{1,3}|\d{1,3}x\d{1,3})$/i
 
 // An episode/season marker: S01E01, 1x01, "- 067" (absolute), "Episode/EP 3". Zero-padding + a
 // leading [Group] tag are fine. NOT resolutions (1x → season ≤ 99; a bare NNNN is skipped).
 // Declared up here because releaseTitleTokens cuts a release name at it as well.
-const EPISODE_MARKER = /\bS\d{1,2}E\d{1,3}\b|\b\d{1,2}x\d{1,3}\b|\s[-–]\s?\d{1,4}(?:v\d)?(?:\b|_)|\bepisode\s?\d+\b|\bep\s?\d{1,3}\b/i
+// "Ep. 01", "EP01v2" and a split episode's "- 01A" are labels too.
+const EPISODE_MARKER = /\bS\d{1,2}EP?\d{1,3}(?:v\d)?\b|\b\d{1,2}x\d{1,3}\b|\s[-–]\s?\d{1,4}(?:v\d|[ab])?(?:\b|_)|\bepisode\s?\d+\b|\bep\.?\s?\d{1,4}(?:v\d)?\b/i
+// A season spelled out ends a release's title just as "S01" does: "Title Season 1 Episode 1".
+const SPELLED_SEASON = /\b(?:season|saison|temporada|stagione|staffel|part|cour|vol(?:ume)?\.?)\s*\d{1,2}\b|\bE\d{2,4}\b/i
+// Scripts a native catalogue title is written in, where whole-word Latin matching sees nothing.
+const NATIVE_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Cyrillic}]/u
+// Romanized particles have two spellings: catalogues write "Koi wo Suru", release groups "Koi o Suru".
+const PARTICLE_SPELLING: Record<string, string> = { o: 'wo', wo: 'o', wa: 'ha', ha: 'wa', e: 'he', he: 'e' }
 
 // Metadata words that can sit INSIDE a release's title run, before any episode marker or bracket.
 // Only the creditless-extra family: "Dr. Stone NCOP 2" has to stay title-relevant so refineStreams
@@ -78,11 +97,12 @@ function hasExactReleaseIdentity(name: string, wanted: string[]): boolean {
  *  This is what anchors the title test. Counting tokens anywhere in the name only ever answered
  *  "does this release mention the show", which every spin-off of a long-running series does. */
 export function releaseTitleTokens(name: string): string[] {
-  const bare = name
+  const bare = unglue(name) // underscores, and a scene code glued to the title
     .replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading [Group] tag
     .replace(SOURCE_HOST_PREFIX, '') // drop an explicit unbracketed indexer hostname
   const head = bare.split(/[[({]/)[0] // bracketed metadata / alternate title is not the title
-  const end = head.search(EPISODE_MARKER)
+  const cuts = [head.search(EPISODE_MARKER), head.search(SPELLED_SEASON)].filter((at) => at >= 0)
+  const end = cuts.length ? Math.min(...cuts) : -1
   const out: string[] = []
   for (const t of lexicalTitleTokens(end >= 0 ? head.slice(0, end) : head)) {
     // First metadata token ends the title run: everything after it is release description
@@ -90,7 +110,7 @@ export function releaseTitleTokens(name: string): string[] {
     // S2/S03 is release season shorthand rather than a literal title word. Short title identity
     // markers themselves (Z, GT, X, II, Dr) are retained: dropping them made sibling productions
     // collapse to the same title.
-    if (RELEASE_JUNK.test(t) || HEAD_JUNK.test(t) || SCENE_CODE.test(t) || /^s\d{1,2}$/.test(t) || /^\d+$/.test(t)) break
+    if (RELEASE_JUNK.test(t) || HEAD_JUNK.test(t) || SCENE_CODE.test(t) || /^s\d{1,2}(?:v\d)?$/.test(t) || /^\d+$/.test(t)) break
     out.push(t)
   }
   return out
@@ -111,19 +131,24 @@ const WORD_BREAK = /^(?:[\s._]+|-)$/
  *  single title count, so this re-spells words the request already has and never makes a new word
  *  known: "One Piece Fan Letter" is still a spin-off and "Dogulwang End Line" still names "End Line". */
 function alignWordBreaks(name: string, wanted: string[]): string {
+  // Spelled as written (glued runs are matched on the alias's own letters), with every word also known
+  // in its folded long-vowel form so "Ryuusei" and "Ryusei" are the same requested word.
   const words = new Set<string>()
   const glued = new Map<string, string>()
-  for (const alias of wanted) {
-    const tokens = lexicalTitleTokens(alias)
+  // A title written with "×" is also glued without it: "HunterHunter".
+  for (const alias of wanted.flatMap((w) => w.includes('×') ? [w, w.replace(/×/g, ' ')] : [w])) {
+    const tokens = rawTitleTokens(alias)
     for (let i = 0; i < tokens.length; i++) {
       words.add(tokens[i])
+      words.add(foldVowels(tokens[i]))
       for (let j = i + 2; j <= tokens.length; j++) {
         const run = tokens.slice(i, j)
         if (!glued.has(run.join(''))) glued.set(run.join(''), run.join(' '))
       }
     }
   }
-  const lower = name.toLowerCase()
+  const known = (text: string) => words.has(text) || words.has(foldVowels(text))
+  const lower = name.toLowerCase().replace(/×/g, ' x ')
   const runs = [...lower.matchAll(/[a-z0-9]+/g)].map((m) => ({ text: m[0], start: m.index, end: m.index + m[0].length }))
   let out = ''
   let at = 0
@@ -134,12 +159,12 @@ function alignWordBreaks(name: string, wanted: string[]): string {
       const parts = runs.slice(i, i + k)
       const spelled = parts.map((p) => p.text).join('')
       const adjacent = parts.slice(1).every((p, n) => WORD_BREAK.test(lower.slice(parts[n].end, p.start)))
-      if (adjacent && words.has(spelled) && !parts.every((p) => words.has(p.text))) span = k
+      if (adjacent && known(spelled) && !parts.every((p) => known(p.text))) span = k
     }
     // Otherwise split: "dewa" is the requested "de wa" written as one word.
     const text = span > 1
       ? runs.slice(i, i + span).map((p) => p.text).join('')
-      : (!words.has(runs[i].text) && glued.get(runs[i].text)) || runs[i].text
+      : (!known(runs[i].text) && glued.get(runs[i].text)) || runs[i].text
     out += lower.slice(at, runs[i].start) + text
     at = runs[i + span - 1].end
     i += span - 1
@@ -150,7 +175,9 @@ function alignWordBreaks(name: string, wanted: string[]): string {
 // Does a release filename plausibly belong to THIS anime? Guards against cross-title
 // matches on a shared id. Keeps unknowns (never drop on uncertainty).
 export function relevant(stream: Stream, wanted: string[]): boolean {
-  return relevantName(nameOf(stream), wanted) || relevantPackFile(stream, wanted)
+  // A title written with "×" is released both ways: "Hunter x Hunter", and "Kakegurui" for "Kakegurui ××".
+  const titles = wanted.flatMap((w) => w.includes('×') ? [w, w.replace(/×/g, ' ').trim()] : [w])
+  return relevantName(nameOf(stream), titles) || relevantPackFile(stream, titles)
 }
 
 // A label the season verifier can read, opening a file name after an optional [Group] tag:
@@ -319,6 +346,11 @@ function headIsAlias(head: string[], wanted: string[]): boolean {
     const identity = lexicalTitleTokens(alias)
     if (!identity.length) return false
     if (identity.length === head.length && identity.every((token, index) => token === head[index])) return true
+    // The release title stops at a tag ("X TV Series"), so a catalogue title carrying one ("X (TV)")
+    // is compared without it too.
+    const untagged = identity.filter((token) => !RELEASE_JUNK.test(token))
+    if (untagged.length && untagged.length < identity.length && untagged.length === head.length
+      && untagged.every((token, index) => token === head[index])) return true
     // Romanization word boundaries are inconsistent across catalogues and release groups:
     // Kitsu/AniList may say "Dogul Wang" or "Toukutsuou", while a release says "Dogulwang" or
     // "Toukutsu Ou". Only collapse separators for an exact WHOLE-title identity; an extended
@@ -333,9 +365,24 @@ function exactTitle(raw: string, wanted: string[]): boolean {
   return hasExactReleaseIdentity(name, wanted) || headIsAlias(releaseTitleTokens(name), wanted)
 }
 
+const NATIVE_SEQUEL_NEXT = /^\s*(?:[ivx]+\b|\d|[２-９]|第|[二三四五六七八九]期|season|s\d)/i
+function namesNativeTitle(raw: string, wanted: string[]): boolean {
+  const folded = raw.normalize('NFKC').toLowerCase()
+  let named = false
+  for (const alias of wanted) {
+    const native = alias.normalize('NFKC').toLowerCase().trim()
+    if (!NATIVE_SCRIPT.test(native) || native.length < 2) continue
+    for (let at = folded.indexOf(native); at >= 0; at = folded.indexOf(native, at + 1)) {
+      if (NATIVE_SEQUEL_NEXT.test(folded.slice(at + native.length))) return false
+      named = true
+    }
+  }
+  return named
+}
+
 /** relevant() for one release or file name on its own. */
 function relevantName(raw: string, wanted: string[]): boolean {
-  const name = alignWordBreaks(raw, wanted)
+  const name = alignWordBreaks(unglue(raw), wanted)
   const toks = new Set(titleTokens(name))
   const known = new Set(wanted.flatMap((w) => lexicalTitleTokens(w)))
   const head = releaseTitleTokens(name)
@@ -359,11 +406,26 @@ function relevantName(raw: string, wanted: string[]): boolean {
   // the request ("Loner Life In Another World" vs "Starting Life In Another World"). A head with
   // nothing recognisable in it at all (a CJK or Cyrillic release name, or an empty one) anchors
   // vacuously — never drop on uncertainty, and the tests below still have to find evidence.
-  const titleStart = head.findIndex((t) => known.has(t))
-  if (titleStart > 0 || (titleStart === 0 && !head.every((t) => known.has(t)))) return false
+  const isKnown = (t: string) => known.has(t) || known.has(PARTICLE_SPELLING[t] ?? '')
+  const titleStart = head.findIndex(isKnown)
+  if (titleStart > 0 || (titleStart === 0 && !head.every(isKnown))) return false
+  // A release named in the catalogue's native script ("ガチアクタ #01") has no Latin title to compare.
+  // Asked only once the Latin title, if any, raised no objection, and never for a native title that
+  // goes straight on to a sequel marker ("幼女戦記II", "魔道祖师 第二季").
+  if (namesNativeTitle(raw, wanted)) return true
   // Exact normalized identity is decisive even when every token is short and therefore absent
   // from the fuzzy token set (for example M*A*S*H).
   if (headIsAlias(head, wanted)) return true
+  // "Title 2 01": a single sequel digit between the title and the episode number names another entry,
+  // unless the request's own title carries that number. A lone number ("Bleach 12") stays an episode.
+  if (head.length) {
+    const words = lexicalTitleTokens(name.replace(/^\s*\[[^\]]*\]\s*/, '').replace(SOURCE_HOST_PREFIX, ''))
+    const [sequel, episode] = words.slice(head.length, head.length + 2)
+    // Only a space, dot or underscore between the two: "Title 3 - 13" may be a range of episodes.
+    const spaced = new RegExp(`(?:^|[^0-9])${sequel}[\\s._]+${episode}(?![0-9])`).test(name)
+    const isEpisode = /^\d{2,4}(?:v\d)?$/.test(episode ?? '') && !/^(?:19|20)\d\d$/.test(episode ?? '')
+    if (head.every((t, i) => words[i] === t) && /^[2-9]$/.test(sequel ?? '') && isEpisode && spaced && !known.has(sequel)) return false
+  }
   // The release's OWN title words: its tokens minus quality/codec/hash junk, bare
   // numbers, the leading [Group] tag, and scene episode codes. A short-title release
   // ("[SubsPlease] Dr STONE S04E25 NF WEB-DL") must reduce to just {stone} — NOT
@@ -373,9 +435,14 @@ function relevantName(raw: string, wanted: string[]): boolean {
   // "-Group" suffix, which outvoted "Spell.Lender.S01E01.Kicked.Out...MSubs-Group".
   const bare = name.replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading [Group] tag
   const marker = bare.search(EPISODE_MARKER)
-  const content = titleTokens(marker > 0 ? bare.slice(0, marker) : bare).filter(
+  const before = (at: number) => titleTokens(at > 0 ? bare.slice(0, at) : bare).filter(
     (t) => !RELEASE_JUNK.test(t) && !/^\d+$/.test(t) && !SCENE_CODE.test(t),
   )
+  // A spelled-out season ends the title words too ("Overlord Season 2 Episode 01" is about Overlord);
+  // a name with no title word before it (a CJK one) keeps every word before the episode marker.
+  const season = bare.search(SPELLED_SEASON)
+  const seasonCut = season > 0 && (marker < 0 || season < marker) ? before(season) : []
+  const content = seasonCut.length ? seasonCut : before(marker)
   for (const w of wanted) {
     // DISTINCT tokens: a repeated word in the official title used to inflate its own match ratio.
     // "Tsuma Tsuma" tokenises to [tsuma, tsuma], so any release containing that one very common
@@ -448,9 +515,13 @@ const EPISODE_EXTRA_WORDS = /(?<![\p{L}\p{N}])(?:трейлер|тизер|trái
 export function isEpisodeExtra(stream: Stream): boolean {
   // Underscores are word characters, so an underscore-separated release name hides every token
   // from \b. Test it with them as spaces.
-  const name = nameOf(stream).replace(/_/g, ' ')
+  const name = unglue(nameOf(stream))
   return EPISODE_EXTRA.test(name) || EPISODE_EXTRA_WORDS.test(name)
+    // An opening-and-ending pack ("[OP.ED][BD]"). With an episode number or range beside it, the
+    // pair describes the episodes' subtitles ("OP-ED Karaoke") or rides along in a batch.
+    || (OPENING_ENDING.test(name) && !EPISODE_MARKER.test(name) && !/\d\s*[-~]\s*\d/.test(name))
 }
+const OPENING_ENDING = /\bop\W{1,2}ed\b/i
 
 // Same-title, different production. A shared kitsu id (One Piece = the 1999 anime
 // AND the 2023 Netflix live action) survives relevant() because the title matches.
@@ -503,8 +574,21 @@ export function likelyOtherProduction(stream: Stream, animeYear?: number, absolu
 // real movie/OVA request WANTS the marker-less file.
 export function isStandaloneMovie(stream: Stream): boolean {
   // Underscores separate words in release names; read as spaces they no longer hide the markers.
-  const name = nameOf(stream).replace(/_/g, ' ')
+  const name = unglue(nameOf(stream))
+  // A tracker or extension row names a whole torrent, not a file. A series' release without an
+  // episode label is then its batch far more often than a film, and a film release says it is one.
+  if (stream.__origin?.kind === 'torrent-extension' && !NAMED_FILM.test(name)) return false
   return !stream.__batch && !EPISODE_MARKER.test(name) && !BATCH_MARKER.test(name) && !LOOSE_EPISODE_NUMBER.test(name)
+}
+
+/** A release named by nothing but one of the requested titles, past a [Group] tag and language or
+ *  quality tags: "Tetsunabe no Jan!", "[Group] Title RUS". Several add-ons label a season's whole
+ *  torrent that way. A film rip sharing the title always says more (a year, a sequel, its rip). */
+export function namesOnlyTheTitle(stream: Stream, wanted: string[]): boolean {
+  const tokens = lexicalTitleTokens(nameOf(stream).replace(/_/g, ' ').replace(/^\s*(?:\[[^\]]*\]\s*)+/, ''))
+  while (tokens.length && RELEASE_JUNK.test(tokens[tokens.length - 1])) tokens.pop()
+  const bare = tokens.join(' ')
+  return !!bare && wanted.some((alias) => norm(alias) === bare)
 }
 
 // Episode numbering the markers above cannot read, every form taken from files this rule used to
@@ -515,6 +599,7 @@ export function isStandaloneMovie(stream: Stream): boolean {
 // order: S01E01v2, Ep01 / Episode.01, E020, 第14话, "01. Title", a zero-padded 01 / 001 between
 // separators, [49], a 2-4 digit number before tags or the end of the name, and a lone digit before
 // a bracketed tag.
+const NAMED_FILM = /\b(?:movie|film|gekijou?ban)\b|劇場版|剧场版/i
 const NOT_YEAR = '(?!(?:19|20)\\d\\d(?!\\d))'
 const NOT_YEAR_TAG = String.raw`(?!\s*[[(](?:19|20)\d\d[\])])`
 const LOOSE_EPISODE_NUMBER = new RegExp([
@@ -527,6 +612,10 @@ const LOOSE_EPISODE_NUMBER = new RegExp([
   String.raw`\[\s*${NOT_YEAR}\d{1,4}(?:v\d)?\s*\]`,
   String.raw`\s${NOT_YEAR}\d{2,4}(?!\d)(?:v\d)?${NOT_YEAR_TAG}(?=\s*(?:[[(]|\d{3,4}p\b|\.[a-z0-9]{2,4}$|$))`,
   String.raw`\s\d(?:v\d)?${NOT_YEAR_TAG}(?=\s*[[(])`,
+  // "#01", how Japanese broadcast raws number an episode.
+  String.raw`#\d{1,4}(?:v\d)?\b`,
+  // A number right before a language tag: "Title 17 RUS.mkv", "Title 1 Ger-Eng".
+  String.raw`\s${NOT_YEAR}\d{1,4}(?:v\d)?(?=\s+(?:rus|ukr|eng|ger|jap|jpn|ita|fre|fra|spa|esp|por)\b)`,
 ].join('|'), 'i')
 
 // A SEQUEL-season marker used to DROP a file: a named final season, or a season numbered ≥ 2. Note
@@ -535,7 +624,8 @@ const LOOSE_EPISODE_NUMBER = new RegExp([
 // spanning S1) is intentionally NOT matched: the number right after "season" is 1. "Part N"/"Cour N"
 // are deliberately EXCLUDED here — a single entry's cours are routinely labeled "Part 2" (Vinland
 // Saga S1), so dropping on them would kill legit same-entry files.
-const SEQUEL_SEASON = /\b(?:the\s+)?final\s+season\b|\bseason\s*0*(?:[2-9]|[1-9]\d)\b|\b(?:[2-9]|[1-9]\d)(?:st|nd|rd|th)\s+season\b/i
+// "TV-2" / "TV 3" is how many release groups number a later season.
+const SEQUEL_SEASON = /\btv[\s-]?0*[2-9]\b|\b(?:the\s+)?final\s+season\b|\bseason\s*0*(?:[2-9]|[1-9]\d)\b|\b(?:[2-9]|[1-9]\d)(?:st|nd|rd|th)\s+season\b/i
 // ANY explicit season/part marker (INCLUDING season 1 / a final season). Used to tell whether the
 // REQUESTED title itself names a season — if so it isn't the base entry and this guard is skipped.
 const ANY_SEASON = /\b(?:the\s+)?final\s+season\b|\bseason\s*0*\d+\b|\b\d+(?:st|nd|rd|th)\s+season\b|\bpart\s*0*\d+\b|\bcour\s*0*\d+\b/i
@@ -548,5 +638,15 @@ const ANY_SEASON = /\b(?:the\s+)?final\s+season\b|\bseason\s*0*\d+\b|\b\d+(?:st|
 // batch, or plain absolute-numbered release is never touched. Keeps unknowns (never drop on doubt).
 export function wrongFranchiseSeason(stream: Stream, wanted: string[]): boolean {
   if (wanted.some((t) => ANY_SEASON.test(t))) return false // request itself names a season — not the base
-  return SEQUEL_SEASON.test(nameOf(stream))
+  const name = nameOf(stream)
+  if (!SEQUEL_SEASON.test(name)) return false
+  // A request titled with its sequel number ("Mob Psycho 100 III", "Goblin Slayer II") IS that
+  // season; its releases say "Season 3" / "2nd Season" and used to be filtered as another season.
+  const own = new Set(wanted.flatMap((t) => {
+    const closing = t.match(CLOSING_NUMBER)
+    return closing ? [ROMAN[closing[1].toLowerCase()] ?? Number(closing[1])] : []
+  }))
+  if (!own.size) return true
+  const named = [...name.matchAll(/\bseason\s*0*(\d{1,2})\b|\b(\d{1,2})(?:st|nd|rd|th)\s+season\b|\btv[\s-]?0*([2-9])\b/gi)].map((m) => Number(m[1] ?? m[2] ?? m[3]))
+  return !named.some((n) => own.has(n))
 }

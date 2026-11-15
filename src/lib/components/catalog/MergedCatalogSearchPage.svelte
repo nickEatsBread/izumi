@@ -8,9 +8,12 @@
   import {
     catalogLabel,
     catalogProviders,
+    mergedCatalogProviders,
     type CatalogSelection,
   } from '$lib/settings/catalog'
   import { rankQuickSearchResults } from '$lib/search/global-search'
+  import SearchTrending from '$lib/search/SearchTrending.svelte'
+  import { hasTrending } from '$lib/search/trending'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
   import { CARD_FAMILY } from '$lib/themes/presentation'
   import { searchGridKeyboard } from '$lib/themes/runtime'
@@ -63,7 +66,10 @@
     const abort = requestAbort
     loading = true
     try {
-      const result = await searchMergedCatalogs($catalogProviders, settled, pageNumber, abort?.signal)
+      // Page 1 shows each catalog's answer as it lands, so one slow catalog no longer holds the rest.
+      const result = await searchMergedCatalogs($catalogProviders, settled, pageNumber, abort?.signal, undefined, pageNumber === 1
+        ? (partial) => { if (activeGeneration === generation) media = rankQuickSearchResults(partial, settled) }
+        : undefined)
       if (activeGeneration !== generation) return
       const additions: Media[] = []
       for (const item of result.media) {
@@ -72,7 +78,8 @@
         seen.add(key)
         additions.push(item)
       }
-      const combined = [...media, ...additions]
+      // Page 1's partial answers are already on screen; the final answer replaces them.
+      const combined = pageNumber === 1 ? additions : [...media, ...additions]
       media = pageNumber === 1 ? rankQuickSearchResults(combined, settled) : combined
       failedProviders = result.failedProviders
       hasNext = result.hasNextPage && additions.length > 0
@@ -139,6 +146,9 @@
     </div>
   {:else if settled && !loading && !error}
     <div class="mt-6 rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results for “{settled}”.</div>
+  {:else if !settled && hasTrending(mergedCatalogProviders($catalogProviders))}
+    <!-- Before anything is typed: what is trending, to find something new. -->
+    {#if !query.trim()}<div class="mt-6"><SearchTrending selections={mergedCatalogProviders($catalogProviders)} /></div>{/if}
   {:else if !settled}
     <div class="mt-8 rounded-2xl border border-dashed border-border px-5 py-12 text-center">
       <p class="font-black">One search, every enabled catalog</p>

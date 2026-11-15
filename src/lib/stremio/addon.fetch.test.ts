@@ -111,6 +111,14 @@ describe('manifest is decoupled from the stream fetch', () => {
     expect(mocks.phttp.mock.calls[0][0]).toContain('/stream/series/tt123%3A1%3A1.json')
   })
 
+  it('keeps a configuration query after the stream path', async () => {
+    mocks.phttp.mockResolvedValue(streamResponse([{ url: 'u1', name: 'x' }]))
+    const p = fetchAddonStreams('https://h.test/addon?token=x', 'tt0000001:1:1')
+    await vi.advanceTimersByTimeAsync(50)
+    await p
+    expect(mocks.phttp.mock.calls[0][0]).toBe('https://h.test/addon/stream/series/tt0000001%3A1%3A1.json?token=x')
+  })
+
   it('still yields streams when the manifest fetch rejects', async () => {
     mocks.phttp.mockResolvedValue(streamResponse([{ url: 'u1', name: 'x' }]))
     mocks.fetchManifest.mockRejectedValue(new Error('boom'))

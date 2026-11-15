@@ -71,7 +71,7 @@
   import { isMobile, isWindows } from '$lib/platform'
   import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
-  import { oskDismissedAt, playerStage } from '$lib/player/session'
+  import { oskDismissedAt, playerStage, playerChromeVisible } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import DockEpisodes from './DockEpisodes.svelte'
@@ -326,6 +326,10 @@
   // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
   let gmVideoHidden = $state(false)
   const controlsMounted = $derived(controlsVisible || quietDpadScrub || gmVideoHidden)
+  // The windowed titlebar's buttons fade with the controls; never leave them hidden after playback.
+  // A docked player sits inside the page, where the bar serves the page rather than the video.
+  $effect(() => { playerChromeVisible.set(controlsVisible || docked) })
+  $effect(() => () => playerChromeVisible.set(true))
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
   // A preview sits after the ending, so auto-skipping it runs off the end of the episode. It opts in
   // separately; every other type follows the one auto-skip toggle.

@@ -2,6 +2,8 @@ import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
 import { CINEMETA_BASE, enabledAddonUrls, addonOriginId, normalizeBase } from '$lib/stremio/sources'
 import { fetchManifest, type AddonCatalog, type AddonManifest, type AddonResource } from '$lib/stremio/manifest'
+import { acceptsResourceId } from '$lib/stremio/manifest-capability'
+import { addonResourceUrl } from '$lib/stremio/resource-url'
 import { listProviderByAddonId } from '$lib/stremio/list-providers'
 import type { Media, MediaVideo } from '$lib/anilist/types'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
@@ -47,6 +49,7 @@ export interface StremioMeta {
   genre?: string[]
   trailers?: { source?: string; type?: string }[]
   videos?: StremioVideo[]
+  behaviorHints?: { defaultVideoId?: string }
 }
 
 const contentType = (type?: string): CatalogContentType => type === 'movie'
@@ -255,11 +258,11 @@ function extraPath(extra: Record<string, string | number | undefined>): string {
 }
 
 export function stremioCatalogUrl(base: string, entry: Pick<AddonCatalog, 'type' | 'id'>, extra: Record<string, string | number | undefined> = {}): string {
-  return `${normalizeBase(base)}/catalog/${encodeURIComponent(entry.type)}/${encodeURIComponent(entry.id)}${extraPath(extra)}.json`
+  return addonResourceUrl(base, `/catalog/${encodeURIComponent(entry.type)}/${encodeURIComponent(entry.id)}${extraPath(extra)}.json`)
 }
 
 export function stremioMetaUrl(base: string, type: string, id: string): string {
-  return `${normalizeBase(base)}/meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`
+  return addonResourceUrl(base, `/meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`)
 }
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -288,7 +291,12 @@ async function manifests(): Promise<{ base: string; manifest: AddonManifest }[]>
   return capable
 }
 
-const canSearch = (entry: AddonCatalog) => (entry.extra ?? []).some((extra) => extra.name === 'search')
+// As Stremio reads a catalog: `search` declared in `extra` or the legacy `extraSupported`, and no
+// other required extra the search could not fill.
+const canSearch = (entry: AddonCatalog) =>
+  ((entry.extra ?? []).some((extra) => extra.name === 'search') || (entry.extraSupported ?? []).includes('search'))
+  && !(entry.extra ?? []).some((extra) => extra.isRequired && extra.name !== 'search')
+  && !(entry.extraRequired ?? []).some((name) => name !== 'search')
 
 export interface StremioCatalogVariant {
   key: string
@@ -454,6 +462,14 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
   }
 }
 
+// One add-on must not hold every search: a dead one (a gateway answering 504 after 12 s) kept
+// Cinemeta's answer, and the search spinner, waiting for its whole timeout on every query. Once
+// any catalog answers, the rest get a short grace. A late one keeps running in the background and
+// sits out a while only if it then fails, so a merely slow catalog is never benched.
+const SEARCH_GRACE_MS = 2_000
+const SEARCH_BENCH_MS = 5 * 60_000
+const benchedSearches = new Map<string, number>()
+
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   const sources = await manifests()
   const entries = sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? [])
@@ -463,9 +479,38 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
     .map((entry) => ({ base, manifest, entry })))
   if (!entries.length) throw new CatalogConfigurationError('The enabled Stremio metadata add-ons do not declare searchable catalogs.')
   const skip = (Math.max(1, request.page ?? 1) - 1) * 100
-  const pages = await Promise.all(entries.map(({ base, entry }) => catalog(base, entry, {
-    search: request.query?.trim(), genre: request.genre, skip,
-  }, request.signal).catch(() => [])))
+  const keyOf = ({ base, entry }: { base: string; entry: AddonCatalog }) => stremioCatalogUrl(base, entry)
+  const ready = entries.filter((item) => (benchedSearches.get(keyOf(item)) ?? 0) <= Date.now())
+  // With every searchable catalog benched, asking them again is how a recovered one is found.
+  const asked = ready.length ? ready : entries
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  if (request.signal?.aborted) cancel()
+  request.signal?.addEventListener('abort', cancel, { once: true })
+  const bench = (index: number) => benchedSearches.set(keyOf(asked[index]), Date.now() + SEARCH_BENCH_MS)
+  const pages: Media[][] = []
+  let graceTimer: ReturnType<typeof setTimeout> | undefined
+  let startGrace = () => {}
+  const graceOver = new Promise<void>((resolve) => {
+    startGrace = () => { graceTimer ??= setTimeout(resolve, SEARCH_GRACE_MS) }
+  })
+  const all = Promise.all(asked.map(async ({ base, entry }, index) => {
+    try {
+      pages[index] = await catalog(base, entry, {
+        // Page 1 sends no skip, as Stremio does; strict routers misread `skip=0`.
+        search: request.query?.trim(), genre: request.genre, skip: skip || undefined,
+      }, controller.signal)
+      startGrace()
+    } catch {
+      if (!controller.signal.aborted) bench(index)
+    }
+  }))
+  try {
+    await Promise.race([all, graceOver])
+  } finally {
+    clearTimeout(graceTimer)
+    request.signal?.removeEventListener('abort', cancel)
+  }
   const seen = new Set<string>()
   const media = pages.flat().filter((item) => {
     const key = item.catalog?.id ?? String(item.id)
@@ -510,8 +555,19 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
   } : decoded
 
   const manifest = await fetchManifest(base).catch(() => null)
+  // As in Stremio, every enabled add-on whose manifest serves this meta may answer, in add-on order.
+  // A catalog-only owner, or one whose meta route fails, no longer leaves the card without episodes.
+  const others = await Promise.all(get(enabledAddonUrls).map(normalizeBase).filter((url) => url && url !== base)
+    .map(async (url) => ({ url, manifest: await fetchManifest(url).catch(() => null) })))
   const candidates = [
-    ...(manifest && hasResource(manifest, 'meta') ? [{ base, identity: expected }] : []),
+    // When Cinemeta owns the card, the deduped Cinemeta entry below never runs. Its search index can
+    // hold an older title than its meta route, so only the year guards against a stale record here.
+    ...(manifest && hasResource(manifest, 'meta')
+      ? [{ base, identity: base === CINEMETA_BASE ? { ...expected, expectedTitle: undefined } : expected }]
+      : []),
+    // Another add-on answers for the exact id it was asked about, as Stremio takes it.
+    ...others.filter((other) => !!other.manifest?.resources?.length
+      && acceptsResourceId(other.manifest, 'meta', decoded.type, decoded.id)).map((other) => ({ base: other.url, identity: decoded })),
     ...(/^tt\d+$/i.test(decoded.id) && (decoded.type === 'movie' || decoded.type === 'series')
       // Cinemeta's route is keyed by the exact IMDb id. Its localized title may legitimately
       // differ from the catalog card, so the id/type contract is the authoritative check here.
@@ -528,6 +584,12 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
       )
       if (!response.meta || !stremioMetaMatchesIdentity(response.meta, candidate.identity)) continue
       const media = mapStremioMeta(response.meta, base, decoded.type, ref.id)
+      // A meta with no videos is one video, of any type: Stremio streams it by its default video id,
+      // else by the meta id itself. Only movies got that before, so a series or a channel had no id.
+      if (media && !media.videos?.length) {
+        media.videos = [{ id: response.meta.behaviorHints?.defaultVideoId ?? response.meta.id, number: 1, title: response.meta.name }]
+        media.episodes ??= 1
+      }
       if (media) return includeExternalRatings ? enrichOmdbRatings(media, signal) : media
     } catch (error) {
       if (signal?.aborted) throw error
