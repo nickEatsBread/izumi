@@ -210,7 +210,8 @@
   .nav-busy::before {
     content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
     background: conic-gradient(from var(--nav-beam-angle), transparent 0deg, transparent 280deg, var(--nav-primary) 330deg, color-mix(in oklab, var(--nav-primary) 40%, white) 350deg, transparent 360deg);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
     animation: nav-beam 4s linear infinite;
   }
   .nav-busy::after {
