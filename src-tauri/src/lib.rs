@@ -737,6 +737,32 @@ fn engine_migration_done(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// The WebKitGTK side (`startEngineMigrationWriter`, a no-op on Chromium). Replaces the migration file atomically (temp file, fsync, rename), so a crash or power loss
+/// mid-write leaves the previous export intact. Async so the write stays off the main thread.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn engine_migration_write(app: AppHandle, json: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        // Startup, timer and close writes can overlap, and they share one temp file.
+        static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one_at_a_time = WRITE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(ENGINE_MIGRATION_FILE);
+        let temp = dir.join(format!("{ENGINE_MIGRATION_FILE}.tmp"));
+        let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
+        file.write_all(json.as_bytes()).and_then(|()| file.sync_all()).map_err(|e| e.to_string())?;
+        std::fs::rename(&temp, &path).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, json);
+        Ok(())
+    }
+}
+
 /// Game-mode input diagnostics from the webview, persisted through the same file+stderr channel
 /// as native logs — the Flatpak sandbox swallows webview console output and the Game-mode session
 /// has no devtools, so this is the only way frontend incident reports survive to be read.
@@ -6014,6 +6040,7 @@ pub fn run() {
             gm_log,
             engine_migration_take,
             engine_migration_done,
+            engine_migration_write,
             steam_show_osk,
             discussion_popup_complete,
             resolve_deck_login_popup,

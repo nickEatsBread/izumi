@@ -24,7 +24,7 @@ The owner approved the port after the Deck spike ([Tauri 3 CEF spike on the Stea
 | 4 | Manifest: zypak v2025.09, CEF files beside the binary in `/app/lib/izumi` (en-US locale only), `--socket=x11`, launcher `flatpak/izumi.sh`, `Exec=izumi %u`; the CEF download is kept in flatpak-builder's ccache directory so CI's `.flatpak-builder` cache carries it. The Nunito OSD font is no longer installed. | Install over the devel build, sandboxed cold start, size, VA-API: pending, needs the owner. |
 | 5 | Not started. | Owner decision. |
 
-**Data migration.** The CEF build reads `engine-migration.json` from app data on first launch, restores it as an app backup (secrets included) and deletes it. Writing that file is the job of the last WebKitGTK release, which is a separate change on `main`.
+**Data migration.** The CEF build reads `engine-migration.json` from app data on first launch, restores it (secrets and device keys included) and deletes it. The writer is #207, merged into `main` as 70ccf929: it keeps the file current on WebKitGTK and turns itself off on Chromium. It must ship in a WebKitGTK release before this branch reaches users; no such release has been cut yet.
 
 **Linux release job.** `release.yml`'s `ubuntu-24.04` entry still asks `tauri-action` for the default Linux bundles. Whether the Tauri 3 alpha CLI bundles CEF into a `.deb` or AppImage is unverified; the Flatpak is the shipped Linux target either way.
 
