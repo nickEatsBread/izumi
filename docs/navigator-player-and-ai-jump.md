@@ -18,7 +18,7 @@ Reference: Navigator's source (GPL-3.0, like izumi), read from `components/ui/me
 | Video framing | Fit (`keepaspect=yes`, `panscan=0`), Fill / crop (`panscan=1`), Stretch (`keepaspect=no`) | Best fit and Fill only; Stretch missing | all three, in the player menu and in Settings → Playback → Video framing |
 | Seek drag | the played range follows the pointer; one seek on release | only a faint preview bar followed (hidden under the fill when dragging back) | the played fill follows both ways; one seek on release |
 | Volume drag | pointer-captured slider (mouse and touch) | mouse drag worked; a finger jumped to the touch point and then ignored the drag | pointer-captured for every pointer type; stays open while focused |
-| Back | 36 px circle, 20 px arrow, no label, hover lighter on 120 ms ease-out | "← Back" pill | 36 px `#1a1a1a` circle, 20 px white arrow, no label |
+| Back | 36 px circle, 20 px arrow, no label, 16 px from the left, hover lighter on 120 ms ease-out | "← Back" pill, 64 px from the left on Windows and Linux (it always cleared the titlebar's GIF slot, which is empty unless a GIF records) | 36 px `#1a1a1a` circle, 20 px white arrow, no label, 16 px from the left (64 px only while a GIF records, and on macOS beside the traffic lights) |
 
 Tested in an isolated client with real anime (Iron Wok Jan! episode 11, a 1080p MKV with ASS subtitles),
 using trusted CDP mouse and touch input and PrintWindow captures:

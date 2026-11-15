@@ -169,10 +169,11 @@
   // readout, so while this bar is up the titlebar yields its pointer events and the bar carries
   // the window-drag strip instead.
   const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && ($shellNav !== 'top' || $playerCoversWindow))
-  // Keep Back clear of the titlebar's leading slot (macOS traffic lights, or the GIF indicator
-  // over the sidebar) when the player starts at the window's left edge.
+  // Keep Back clear of the titlebar's leading slot when the player starts at the window's left edge,
+  // but only while that slot holds something: macOS's traffic lights always, elsewhere the GIF
+  // indicator while recording. Otherwise Back keeps the bar's own 16px edge, as Navigator's does.
   const backInset = $derived.by(() => {
-    if (!underTitlebar) return undefined
+    if (!underTitlebar || (!$isMacOS && $gifRecordingStart == null)) return undefined
     const slot = $isMacOS ? 7 : 3.5
     const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0
     return `${Math.max(1, slot + 0.5 - playerLeft)}rem`
