@@ -154,22 +154,47 @@ enum Job {
     Close { id: u64 },
 }
 
-fn worker() -> &'static Mutex<mpsc::Sender<Job>> {
-    static WORKER: OnceLock<Mutex<mpsc::Sender<Job>>> = OnceLock::new();
-    WORKER.get_or_init(|| {
-        let (tx, rx) = mpsc::channel::<Job>();
-        std::thread::Builder::new()
-            .name("widevine".into())
-            .spawn(move || run(rx))
-            .expect("could not start the Widevine thread");
-        Mutex::new(tx)
-    })
+/// The module runs on dedicated threads ("lanes"). Lane 0 is the default (and the only one the Linux
+/// streaming player uses). A save opens its audio and video instances on separate lanes so their
+/// module work — the scarce, serial-per-instance resource — runs in parallel instead of back-to-back.
+/// Each lane is an independent CDM-host thread; the module (loaded once, process-wide) tolerates
+/// several concurrent instances the way a browser runs its audio and video decoders at once.
+///
+/// Lanes are created lazily on first use, so a one-instance playback still starts exactly one thread.
+/// The count is capped (so a small device is not thrashed) and overridable with IZUMI_WIDEVINE_LANES.
+pub fn max_lanes() -> usize {
+    std::env::var("IZUMI_WIDEVINE_LANES").ok().and_then(|v| v.parse().ok()).filter(|n| *n >= 1).unwrap_or(5).min(8)
 }
 
-fn send<T>(make: impl FnOnce(mpsc::Sender<T>) -> Job) -> Result<T> {
+fn lanes() -> &'static Mutex<Vec<mpsc::Sender<Job>>> {
+    static LANES: OnceLock<Mutex<Vec<mpsc::Sender<Job>>>> = OnceLock::new();
+    LANES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// The sender for `lane`, starting its thread the first time the lane is used.
+fn lane_sender(lane: usize) -> Result<mpsc::Sender<Job>> {
+    let mut all = lanes().lock().map_err(|_| anyhow!("Widevine lanes poisoned"))?;
+    while all.len() <= lane {
+        let n = all.len();
+        let (tx, rx) = mpsc::channel::<Job>();
+        std::thread::Builder::new()
+            .name(format!("widevine-{n}"))
+            .spawn(move || run(rx))
+            .map_err(|e| anyhow!("could not start the Widevine thread: {e}"))?;
+        all.push(tx);
+    }
+    Ok(all[lane].clone())
+}
+
+fn send_on<T>(lane: usize, make: impl FnOnce(mpsc::Sender<T>) -> Job) -> Result<T> {
     let (tx, rx) = mpsc::channel();
-    worker().lock().map_err(|_| anyhow!("Widevine thread poisoned"))?.send(make(tx)).map_err(|_| anyhow!("Widevine thread gone"))?;
+    lane_sender(lane)?.send(make(tx)).map_err(|_| anyhow!("Widevine thread gone"))?;
     rx.recv().map_err(|_| anyhow!("Widevine thread gone"))
+}
+
+/// Lane 0: the default lane, used for module load and single-instance playback.
+fn send<T>(make: impl FnOnce(mpsc::Sender<T>) -> Job) -> Result<T> {
+    send_on(0, make)
 }
 
 fn instance(map: &mut HashMap<u64, Instance>, id: u64) -> Result<&mut Instance> {
@@ -185,10 +210,11 @@ fn run(rx: mpsc::Receiver<Job>) {
     let mut next_id = 1u64;
     loop {
         // With no instance open there are no module timers to fire: sleep until the next job.
+        let tick_ms: u64 = std::env::var("IZUMI_WIDEVINE_TICK_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
         let next = if instances.is_empty() {
             rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
         } else {
-            rx.recv_timeout(Duration::from_millis(50))
+            rx.recv_timeout(Duration::from_millis(tick_ms))
         };
         let job = match next {
             Ok(job) => job,
@@ -277,6 +303,9 @@ fn run(rx: mpsc::Receiver<Job>) {
             }
             Job::Decrypt { id, mut data, kids, samples, reply } => {
                 let result = instance(&mut instances, id).and_then(|i| {
+                    // The KID that last worked, tried first so a multi-KID stream does not waste a kNoKey
+                    // Decrypt on every sample. Starts at the caller's first candidate (the tenc default).
+                    let mut best = 0usize;
                     for s in &samples {
                         // A sample whose subsamples are all clear (no cipher bytes) is already plaintext;
                         // sending it through Decrypt is unnecessary and some module builds mishandle it.
@@ -287,14 +316,18 @@ fn run(rx: mpsc::Receiver<Job>) {
                         let sample = data.get_mut(s.offset..s.offset + s.size).ok_or_else(|| anyhow!("sample outside its fragment"))?;
                         // A stream can carry several content KIDs (Crunchyroll keys one per rung), and a
                         // sample is not always encrypted with the tenc default. kNoKey leaves the bytes
-                        // untouched, so trying the next usable KID on the same buffer is safe.
+                        // untouched, so trying the next usable KID on the same buffer is safe. The KID that
+                        // worked last is tried first (most samples in a track share one key).
                         let mut last = STATUS_NO_KEY;
-                        for kid in &kids {
+                        for off in 0..kids.len() {
+                            let idx = (best + off) % kids.len();
+                            let kid = &kids[idx];
                             let rc = unsafe {
                                 wv_decrypt(i.host, kid.as_ptr(), 16, s.iv.as_ptr(), s.iv.len() as u32, pairs.as_ptr(), s.subsamples.len() as u32, sample.as_mut_ptr(), sample.len() as u32)
                             };
                             last = rc;
                             if rc == 0 {
+                                best = idx;
                                 break;
                             }
                             if rc != STATUS_NO_KEY {
@@ -359,34 +392,43 @@ pub fn load_module(library: &Path) -> Result<String> {
     send(|reply| Job::Load { library, reply })?
 }
 
-/// One CDM instance for one playback. Dropping it closes the licence session and the instance.
+/// One CDM instance for one playback. Dropping it closes the licence session and the instance. Each
+/// instance is pinned to one lane (module thread), so instances on different lanes decrypt in parallel.
 pub struct Cdm {
     id: u64,
+    lane: usize,
 }
 
 impl Cdm {
+    /// Opens an instance on the default lane (single-instance playback and the Linux path).
     pub fn open(interface: i32, renewals: Renewals) -> Result<Cdm> {
-        Ok(Cdm { id: send(|reply| Job::Open { interface, renewals, reply })?? })
+        Self::open_on(0, interface, renewals)
+    }
+
+    /// Opens an instance on `lane`, starting that module thread if needed. Instances on distinct
+    /// lanes run concurrently; a save puts audio and video (and several audio shards) on their own.
+    pub fn open_on(lane: usize, interface: i32, renewals: Renewals) -> Result<Cdm> {
+        Ok(Cdm { id: send_on(lane, |reply| Job::Open { interface, renewals, reply })??, lane })
     }
 
     pub fn set_server_certificate(&self, certificate: Vec<u8>) -> Result<()> {
-        send(|reply| Job::SetCertificate { id: self.id, certificate, reply })?
+        send_on(self.lane, |reply| Job::SetCertificate { id: self.id, certificate, reply })?
     }
 
     /// Starts the licence session and returns the licence request to send to the server.
     pub fn licence_request(&self, init_data: Vec<u8>) -> Result<Vec<u8>> {
-        send(|reply| Job::Request { id: self.id, init_data, reply })?
+        send_on(self.lane, |reply| Job::Request { id: self.id, init_data, reply })?
     }
 
     pub fn update(&self, response: Vec<u8>) -> Result<KeyReport> {
-        send(|reply| Job::Update { id: self.id, response, reply })?
+        send_on(self.lane, |reply| Job::Update { id: self.id, response, reply })?
     }
 
     /// Decrypts the samples of one fragment in place, trying `kids` in order per sample (a stream can
     /// key several KIDs). The buffer always comes back (to be zeroed).
     pub fn decrypt(&self, data: Vec<u8>, kids: Vec<[u8; 16]>, samples: Vec<Sample>) -> (Vec<u8>, Result<()>) {
         let id = self.id;
-        match send(|reply| Job::Decrypt { id, data, kids, samples, reply }) {
+        match send_on(self.lane, |reply| Job::Decrypt { id, data, kids, samples, reply }) {
             Ok(back) => back,
             Err(e) => (Vec::new(), Err(e)),
         }
@@ -406,14 +448,14 @@ impl Cdm {
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn video_init(&self, profile: u32, width: i32, height: i32, avcc: Vec<u8>) -> Result<()> {
-        send(|reply| Job::VideoInit { id: self.id, profile, width, height, avcc, reply })?
+        send_on(self.lane, |reply| Job::VideoInit { id: self.id, profile, width, height, avcc, reply })?
     }
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     #[allow(clippy::too_many_arguments)]
     pub fn video_decode(&self, kid: [u8; 16], iv: Vec<u8>, subsamples: Vec<(u32, u32)>, data: Option<Vec<u8>>, ts_us: i64, out: Vec<u8>) -> (Vec<u8>, Result<Option<Picture>>) {
         let id = self.id;
-        match send(|reply| Job::VideoDecode { id, kid, iv, subsamples, data, ts_us, out, reply }) {
+        match send_on(self.lane, |reply| Job::VideoDecode { id, kid, iv, subsamples, data, ts_us, out, reply }) {
             Ok(back) => back,
             Err(e) => (Vec::new(), Err(e)),
         }
@@ -421,13 +463,13 @@ impl Cdm {
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn video_reset(&self) -> Result<()> {
-        send(|reply| Job::VideoReset { id: self.id, reply })?
+        send_on(self.lane, |reply| Job::VideoReset { id: self.id, reply })?
     }
 }
 
 impl Drop for Cdm {
     fn drop(&mut self) {
-        if let Ok(tx) = worker().lock() {
+        if let Ok(tx) = lane_sender(self.lane) {
             let _ = tx.send(Job::Close { id: self.id });
         }
     }

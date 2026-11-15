@@ -21,6 +21,10 @@ use std::time::{Duration, Instant};
 // cdm::Status (content_decryption_module.h). 0 success, 2 no key, 4 decrypt error.
 const K_SUCCESS: u32 = 0;
 
+// Diagnostic accumulators for the module's Decrypt call cost (IZUMI_WIDEVINE_PROFILE).
+static DECRYPT_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static DECRYPT_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 // ---- The module's exported C functions ----------------------------------------------------------
 
 type InitFn = unsafe extern "C" fn();
@@ -1021,7 +1025,17 @@ pub unsafe extern "C" fn wv_decrypt(
         None => return -3,
     };
     let mut block = DecryptedBlock { vtable: &BLOCK_VTABLE, buffer: std::ptr::null_mut(), timestamp: 0 };
+    let prof = std::env::var_os("IZUMI_WIDEVINE_PROFILE").is_some();
+    let t0 = if prof { Some(std::time::Instant::now()) } else { None };
     let status = (cdm_vtable(host).decrypt)(host.cdm, &input, &mut block);
+    if let Some(t) = t0 {
+        let us = t.elapsed().as_micros() as u64;
+        DECRYPT_US.fetch_add(us, std::sync::atomic::Ordering::Relaxed);
+        let n = DECRYPT_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n % 10000 == 0 {
+            eprintln!("[host_win] module Decrypt: {n} calls, {:.0}us/call, timers={} deferred={} promises={}", DECRYPT_US.load(std::sync::atomic::Ordering::Relaxed) as f64 / n as f64, host.timers.len(), host.deferred.len(), host.promises.len());
+        }
+    }
     run_deferred(host);
     if status != K_SUCCESS {
         if !block.buffer.is_null() {

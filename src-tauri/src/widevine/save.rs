@@ -258,7 +258,7 @@ pub async fn save(id: &str, manifest_url: &str, dir: &Path, max_height: Option<u
     result
 }
 
-async fn save_inner(manifest_url: &str, dir: &Path, max_height: Option<u32>, licence: &Licence, data_dir: &Path, cancel: &AtomicBool, progress: impl Fn(u64, u64, f64)) -> Result<SaveResult> {
+async fn save_inner(manifest_url: &str, dir: &Path, max_height: Option<u32>, licence: &Licence, data_dir: &Path, cancel: &Arc<AtomicBool>, progress: impl Fn(u64, u64, f64)) -> Result<SaveResult> {
     let text = client()
         .get(manifest_url)
         .send()
@@ -298,6 +298,39 @@ async fn save_inner(manifest_url: &str, dir: &Path, max_height: Option<u32>, lic
     let (cdm, usable_kids) = license(installed.interface, licence, init_data).await?;
     let audio_kids = candidate_kids(audio_head.default_kid, &usable_kids);
     let video_kids = candidate_kids(video_head.default_kid, &usable_kids);
+
+    // Diagnostic: time N back-to-back Decrypt calls on one instance with the sample already in memory
+    // and nothing else running, to confirm whether the per-call cost is the module or our pump.
+    if let Ok(mode) = std::env::var("IZUMI_WIDEVINE_BENCH") {
+        // Fetch a few fragments up front so distinct samples (distinct IVs) are in memory.
+        let mut whole: Vec<u8> = Vec::new();
+        let mut planned: Vec<(usize, usize, fmp4::Sample)> = Vec::new(); // (base, len, sample)
+        for &(o, s) in audio_head.fragments.iter().take(8) {
+            let mut frag = range(&audio.url, o, o + s - 1).await?;
+            let samples = fmp4::plan_fragment(&mut frag, audio_head.iv_size)?;
+            let base = whole.len();
+            for sm in &samples {
+                planned.push((base + sm.offset, sm.size, sm.clone()));
+            }
+            whole.extend_from_slice(&frag);
+        }
+        // mode "same" repeats sample 0 (lets the module fast-path an identical decrypt); default
+        // walks distinct samples with distinct IVs, which is the real workload.
+        let same = mode == "same";
+        let n = planned.len().max(1);
+        let t = Instant::now();
+        for i in 0..n {
+            let (b, len, sm) = &planned[if same { 0 } else { i }];
+            let bytes = whole[*b..*b + *len].to_vec();
+            let one = vec![fmp4::Sample { offset: 0, ..sm.clone() }];
+            let (mut back, r) = cdm.decrypt(bytes, audio_kids.clone(), one);
+            back.fill(0);
+            r?;
+        }
+        let per = t.elapsed().as_secs_f64() * 1e6 / n as f64;
+        eprintln!("[widevine] BENCH ({}): {n} back-to-back Decrypt calls, {per:.0} us/call ({:.2}s total)", if same { "same sample" } else { "distinct samples" }, t.elapsed().as_secs_f64());
+        bail!("bench done");
+    }
 
     let started = Instant::now();
     let mut last_report = Instant::now() - Duration::from_secs(1);
@@ -359,56 +392,134 @@ async fn decrypt_to_file(
     cdm: &Arc<Cdm>,
     total: u64,
     done: u64,
-    cancel: &AtomicBool,
+    cancel: &Arc<AtomicBool>,
     report: &mut impl FnMut(u64),
 ) -> Result<u64> {
-    let mut file = tokio::fs::File::create(path).await.with_context(|| format!("{} could not be created", path.display()))?;
-    // The cleared head (ftyp + moov with encv→avc1/enca→mp4a, sidx) goes first, unchanged in size.
-    file.write_all(&head.header).await?;
-    let mut written = head.header.len() as u64;
-    report(done + written);
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
+    // Any leading gap before the first fragment (a nonzero sidx first_offset) is copied unchanged.
+    let header_end = head.header.len() as u64;
+    let first_offset = head.fragments.first().map(|(o, _)| *o).unwrap_or(header_end);
+    let gap = if first_offset > header_end { range(url, header_end, first_offset - 1).await? } else { Vec::new() };
+    // Any trailing bytes past the last fragment are copied unchanged.
+    let last_end = head.fragments.last().map(|(o, s)| o + s).unwrap_or(header_end);
+    let tail = if last_end < total { range(url, last_end, total - 1).await? } else { Vec::new() };
 
-    let iv_size = head.iv_size;
-    for (offset, size) in head.fragments.clone() {
-        if cancel.load(Ordering::SeqCst) {
-            file.flush().await?;
-            bail!("paused");
-        }
-        // A gap before this fragment (a nonzero sidx first_offset) is copied through unchanged.
-        if offset > written {
-            let gap = range(url, written, offset - 1).await?;
-            file.write_all(&gap).await?;
-            written += gap.len() as u64;
-        }
-        let mut frag = range(url, offset, offset + size - 1).await?;
-        anyhow::ensure!(frag.len() as u64 == size, "short fragment read ({} of {size})", frag.len());
-        let samples = match fmp4::plan_fragment(&mut frag, iv_size) {
-            Ok(s) => s,
-            Err(e) => {
-                frag.fill(0);
-                return Err(e);
+    // Fragments are prefetched (async) and decrypted on a dedicated thread. The decrypt loop makes its
+    // Decrypt calls back-to-back with no await between them: the per-call cost is only ~60us that way,
+    // versus milliseconds when the loop yields to the async runtime between calls. Fetch and write
+    // overlap the decrypt, and progress is reported from the blocking thread through a channel.
+    let rx = spawn_prefetch(url.to_string(), head.fragments.clone(), prefetch_depth(), cancel.clone());
+    let (prog_tx, mut prog_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
+    let cdm = cdm.clone();
+    let path_owned = path.to_path_buf();
+    let cancel = cancel.clone();
+    let worker = tauri::async_runtime::spawn_blocking(move || -> Result<u64> {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&path_owned).with_context(|| format!("{} could not be created", path_owned.display()))?;
+        let mut rx = rx;
+        let iv_size = head.iv_size;
+        file.write_all(&head.header)?; // cleared ftyp + moov (encv→avc1/enca→mp4a) + sidx
+        file.write_all(&gap)?;
+        let mut written = header_end + gap.len() as u64;
+        let _ = prog_tx.send(written);
+        let prof = std::env::var_os("IZUMI_WIDEVINE_PROFILE").is_some();
+        let (mut t_recv, mut t_dec, mut t_wr) = (Duration::ZERO, Duration::ZERO, Duration::ZERO);
+        let wall = Instant::now();
+        loop {
+            let t = Instant::now();
+            let next = rx.blocking_recv();
+            t_recv += t.elapsed();
+            let Some(item) = next else { break };
+            if cancel.load(Ordering::SeqCst) {
+                bail!("paused");
             }
-        };
-        let (mut clear, result) = cdm.decrypt(frag, kids.clone(), samples);
-        if let Err(e) = result {
-            clear.fill(0);
-            return Err(e).with_context(|| format!("{} could not be decrypted", path.file_name().and_then(|n| n.to_str()).unwrap_or("?")));
+            let (_idx, mut frag) = item.with_context(|| format!("{name} fragment could not be fetched"))?;
+            let size = frag.len() as u64;
+            let samples = match fmp4::plan_fragment(&mut frag, iv_size) {
+                Ok(s) => s,
+                Err(e) => {
+                    frag.fill(0);
+                    return Err(e);
+                }
+            };
+            let t = Instant::now();
+            let (mut clear, result) = cdm.decrypt(frag, kids.clone(), samples);
+            t_dec += t.elapsed();
+            if let Err(e) = result {
+                clear.fill(0);
+                return Err(e).with_context(|| format!("{name} could not be decrypted"));
+            }
+            let t = Instant::now();
+            file.write_all(&clear)?;
+            t_wr += t.elapsed();
+            clear.fill(0); // the clear fragment is on disk now; don't leave it in memory
+            written += size;
+            let _ = prog_tx.send(written);
         }
-        file.write_all(&clear).await?;
-        clear.fill(0); // the clear fragment is on disk now; don't leave it in memory
-        written += size;
-        report(done + written);
-    }
-    // Any trailing bytes past the last fragment (a tail index, say) are copied through unchanged.
-    if written < total {
-        let tail = range(url, written, total - 1).await?;
-        file.write_all(&tail).await?;
+        if prof {
+            eprintln!("[widevine] {name}: {:.1}s total | blocking_recv {:.1}s decrypt {:.1}s write {:.1}s", wall.elapsed().as_secs_f64(), t_recv.as_secs_f64(), t_dec.as_secs_f64(), t_wr.as_secs_f64());
+        }
+        file.write_all(&tail)?;
         written += tail.len() as u64;
-        report(done + written);
+        file.flush()?;
+        anyhow::ensure!(written == total, "wrote {written} of {total} bytes");
+        Ok(written)
+    });
+    // Relay progress while the blocking worker runs.
+    while let Some(w) = prog_rx.recv().await {
+        report(done + w);
     }
-    file.flush().await?;
-    anyhow::ensure!(written == total, "wrote {written} of {total} bytes");
-    Ok(written)
+    worker.await.map_err(|e| anyhow!("decrypt task failed: {e}"))?
+}
+
+/// How many fragments to fetch ahead of the module. The module decrypts/decodes far faster than one
+/// fragment downloads, and — crucially — it slows down badly if it is left idle between calls, so the
+/// next fragment must always be in hand when the current one finishes.
+fn prefetch_depth() -> usize {
+    std::env::var("IZUMI_WIDEVINE_PREFETCH").ok().and_then(|v| v.parse().ok()).filter(|d| *d > 0).unwrap_or(6)
+}
+
+/// Fetches a track's fragments ahead of the consumer and delivers them in order. Up to `depth`
+/// range requests are in flight at once, so fetch overlaps the module work and the consumer never
+/// waits on the network — keeping the module fed back-to-back. Each item is `(index, bytes)` or an
+/// error that ends the stream.
+fn spawn_prefetch(url: String, fragments: Vec<(u64, u64)>, depth: usize, cancel: Arc<AtomicBool>) -> tokio::sync::mpsc::Receiver<Result<(usize, Vec<u8>)>> {
+    // One extra slot so a fetch can complete while the consumer holds one.
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<(usize, Vec<u8>)>>(depth + 1);
+    tauri::async_runtime::spawn(async move {
+        use std::collections::VecDeque;
+        let mut inflight: VecDeque<(usize, _)> = VecDeque::new();
+        let mut next = 0usize;
+        loop {
+            // Keep the window full.
+            while inflight.len() < depth && next < fragments.len() {
+                let (offset, size) = fragments[next];
+                let u = url.clone();
+                inflight.push_back((next, tauri::async_runtime::spawn(async move {
+                    let frag = range(&u, offset, offset + size - 1).await?;
+                    anyhow::ensure!(frag.len() as u64 == size, "short fragment read ({} of {size})", frag.len());
+                    Ok::<Vec<u8>, anyhow::Error>(frag)
+                })));
+                next += 1;
+            }
+            let Some((idx, handle)) = inflight.pop_front() else { break };
+            if cancel.load(Ordering::SeqCst) {
+                handle.abort();
+                let _ = tx.send(Err(anyhow!("paused"))).await;
+                return;
+            }
+            let item = match handle.await {
+                Ok(Ok(bytes)) => Ok((idx, bytes)),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(anyhow!("fragment fetch task failed: {e}")),
+            };
+            let is_err = item.is_err();
+            if tx.send(item).await.is_err() || is_err {
+                return; // consumer gone, or the error ends the stream
+            }
+        }
+    });
+    rx
 }
 
 /// The ffmpeg the app ships or the user has, for the video re-encode. `IZUMI_FFMPEG_PATH` wins.
@@ -416,12 +527,48 @@ fn ffmpeg_path() -> std::path::PathBuf {
     std::env::var_os("IZUMI_FFMPEG_PATH").map(Into::into).unwrap_or_else(|| "ffmpeg".into())
 }
 
+/// The ffmpeg encoder arguments for the video re-encode. Defaults to libx264 at a fast preset and a
+/// near-lossless CRF; both are overridable, and a hardware encoder can be selected explicitly. A
+/// re-encode is unavoidable (the module only hands back decoded frames for the samples it refuses
+/// decrypt-only), so this biases to a quick encode at a quality the eye cannot tell from the source.
+fn encoder_args() -> Vec<String> {
+    // IZUMI_WIDEVINE_ENCODER lets a user force a hardware encoder (h264_nvenc, h264_qsv, h264_vaapi)
+    // or any ffmpeg -c:v value; the rate-control args differ between software and hardware encoders.
+    let codec = std::env::var("IZUMI_WIDEVINE_ENCODER").unwrap_or_else(|_| "libx264".into());
+    let crf = std::env::var("IZUMI_WIDEVINE_CRF").ok();
+    let preset = std::env::var("IZUMI_WIDEVINE_PRESET").ok();
+    let mut args = vec!["-c:v".to_string(), codec.clone()];
+    if codec.starts_with("libx26") {
+        // Software x264/x265: superfast is a large speed win over veryfast at a tiny size cost; CRF 16
+        // stays visually lossless for anime. CRF's perceptual meaning is preset-independent.
+        args.extend(["-preset".into(), preset.unwrap_or_else(|| "superfast".into())]);
+        args.extend(["-crf".into(), crf.unwrap_or_else(|| "16".into())]);
+    } else if codec.contains("nvenc") {
+        args.extend(["-preset".into(), preset.unwrap_or_else(|| "p4".into())]);
+        args.extend(["-rc".into(), "vbr".into(), "-cq".into(), crf.unwrap_or_else(|| "19".into())]);
+    } else if codec.contains("qsv") {
+        args.extend(["-preset".into(), preset.unwrap_or_else(|| "faster".into())]);
+        args.extend(["-global_quality".into(), crf.unwrap_or_else(|| "19".into())]);
+    } else if codec.contains("vaapi") {
+        args.extend(["-qp".into(), crf.unwrap_or_else(|| "19".into())]);
+    } else {
+        // Unknown encoder: pass preset/CRF through if given, else trust its defaults.
+        if let Some(p) = preset { args.extend(["-preset".into(), p]); }
+        if let Some(c) = crf { args.extend(["-crf".into(), c]); }
+    }
+    args
+}
+
 /// Decodes every video sample through the module and re-encodes the I420 pictures to clear H.264 at
 /// `path`, muxing nothing else. The module refuses decrypt-only output for some non-reference frames,
-/// so decoding (which always works) is the only way to a complete clear video. `done`/`report` keep
-/// progress on the original byte scale.
+/// so decoding (which always works) is the only way to a complete clear video.
+///
+/// The pipeline runs three stages concurrently so the module — the one scarce thread, which slows
+/// sharply if left idle between calls — is kept fed back-to-back: a prefetcher downloads fragments
+/// ahead, this loop decodes them on the module, and a writer task pipes the I420 pictures into ffmpeg
+/// (which runs its own threaded encoder) so a slow encode never stalls the decoder.
 #[allow(clippy::too_many_arguments)]
-async fn encode_video(url: &str, path: &Path, head: Head, kids: Vec<[u8; 16]>, cdm: &Arc<Cdm>, total: u64, done: u64, cancel: &AtomicBool, report: &mut impl FnMut(u64)) -> Result<u64> {
+async fn encode_video(url: &str, path: &Path, head: Head, kids: Vec<[u8; 16]>, cdm: &Arc<Cdm>, total: u64, done: u64, cancel: &Arc<AtomicBool>, report: &mut impl FnMut(u64)) -> Result<u64> {
     use tokio::process::Command;
     let avcc = head.avcc.clone().context("the video track has no avcC")?;
     let (profile, param_sets) = fmp4::param_sets(&avcc)?;
@@ -444,16 +591,14 @@ async fn encode_video(url: &str, path: &Path, head: Head, kids: Vec<[u8; 16]>, c
         blocking(move || c.video_init(profile, w, h, avcc2)).await.context("the module could not initialise its H.264 decoder")?;
     }
 
-    // ffmpeg reads tightly packed yuv420p frames from stdin and writes H.264. Quality over speed: a
-    // re-encode is unavoidable here, so keep it visually lossless (crf 12). stdin is fed from this task.
-    let crf = std::env::var("IZUMI_WIDEVINE_CRF").ok().unwrap_or_else(|| "12".into());
+    // ffmpeg reads tightly packed yuv420p frames from stdin and writes H.264.
     let mut command = Command::new(ffmpeg_path());
     command
         .arg("-hide_banner").arg("-loglevel").arg("error").arg("-y")
         .arg("-f").arg("rawvideo").arg("-pix_fmt").arg("yuv420p")
         .arg("-s").arg(format!("{width}x{height}")).arg("-r").arg(format!("{fps:.6}"))
         .arg("-i").arg("-")
-        .arg("-c:v").arg("libx264").arg("-preset").arg("veryfast").arg("-crf").arg(&crf)
+        .args(encoder_args())
         .arg("-pix_fmt").arg("yuv420p").arg("-movflags").arg("+faststart")
         .arg(path)
         .stdin(std::process::Stdio::piped())
@@ -465,22 +610,35 @@ async fn encode_video(url: &str, path: &Path, head: Head, kids: Vec<[u8; 16]>, c
     let mut stdin = child.stdin.take().context("ffmpeg has no stdin")?;
     let stderr = child.stderr.take();
 
+    // A writer task drains decoded frames into ffmpeg so the decode loop never blocks on the encoder.
+    let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(prefetch_depth().max(4));
+    let writer = tauri::async_runtime::spawn(async move {
+        while let Some(pixels) = frame_rx.recv().await {
+            if let Err(e) = stdin.write_all(&pixels).await {
+                return Err(anyhow!("writing a frame to ffmpeg failed: {e}"));
+            }
+        }
+        drop(stdin); // close ffmpeg's input so it finishes encoding
+        Ok::<(), anyhow::Error>(())
+    });
+
     let mut fresh = true; // after init the decoder needs SPS/PPS before the first IDR
     let mut consumed = done; // original bytes processed so far (for progress)
     let mut result: Result<()> = Ok(());
     let mut frame_no = 0usize;
-    'frags: for (frag_i, (offset, size)) in head.fragments.clone().into_iter().enumerate() {
-        if cancel.load(Ordering::SeqCst) {
-            result = Err(anyhow!("paused"));
-            break;
-        }
-        let mut frag = match range(url, offset, offset + size - 1).await {
-            Ok(f) => f,
+    let wall = Instant::now();
+    let max_frags: usize = std::env::var("IZUMI_WIDEVINE_MAX_FRAGS").ok().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
+    let want = head.fragments.iter().take(max_frags).copied().collect::<Vec<_>>();
+    let mut rx = spawn_prefetch(url.to_string(), want.clone(), prefetch_depth(), cancel.clone());
+    'frags: while let Some(item) = rx.recv().await {
+        let (frag_i, mut frag) = match item {
+            Ok(v) => v,
             Err(e) => {
                 result = Err(e);
                 break;
             }
         };
+        let size = frag.len() as u64;
         let samples = match fmp4::plan_fragment(&mut frag, head.iv_size) {
             Ok(s) => s,
             Err(e) => {
@@ -507,8 +665,8 @@ async fn encode_video(url: &str, path: &Path, head: Head, kids: Vec<[u8; 16]>, c
             }
             match decode_frame(cdm, &head, &kids, s, subs, data, frame_size).await {
                 Ok(Some(pixels)) => {
-                    if let Err(e) = stdin.write_all(&pixels).await {
-                        result = Err(anyhow!("writing a frame to ffmpeg failed: {e}"));
+                    if frame_tx.send(pixels).await.is_err() {
+                        result = Err(anyhow!("the video encoder stopped early"));
                         break 'frags;
                     }
                 }
@@ -529,8 +687,7 @@ async fn encode_video(url: &str, path: &Path, head: Head, kids: Vec<[u8; 16]>, c
         loop {
             match drain_frame(cdm, &head, frame_size).await {
                 Ok(Some(pixels)) => {
-                    if let Err(e) = stdin.write_all(&pixels).await {
-                        result = Err(anyhow!("writing a drained frame to ffmpeg failed: {e}"));
+                    if frame_tx.send(pixels).await.is_err() {
                         break;
                     }
                 }
@@ -542,9 +699,17 @@ async fn encode_video(url: &str, path: &Path, head: Head, kids: Vec<[u8; 16]>, c
             }
         }
     }
-    drop(stdin); // close ffmpeg's input so it finishes encoding
+    drop(frame_tx); // signal the writer to close ffmpeg's stdin
+    let write_result = writer.await.map_err(|e| anyhow!("video writer task failed: {e}"))?;
     let status = child.wait().await.context("waiting for ffmpeg failed")?;
+    let secs = frame_no as f64 / fps.max(0.001);
+    let wall_s = wall.elapsed().as_secs_f64().max(0.001);
+    eprintln!(
+        "[widevine] video: {frame_no} frames ({secs:.1}s media) in {wall_s:.1}s = {:.2}x realtime, {:.1} fps",
+        secs / wall_s, frame_no as f64 / wall_s
+    );
     result?;
+    write_result?;
     if !status.success() {
         let detail = match stderr {
             Some(mut e) => {
