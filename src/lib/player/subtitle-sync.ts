@@ -24,7 +24,8 @@ function seconds(hours: string | undefined, minutes: string, secs: string, milli
   return Number(hours ?? 0) * 3600 + Number(minutes) * 60 + Number(secs) + Number((millis + '000').slice(0, 3)) / 1000
 }
 
-function cleanText(text: string) {
+/** A cue's plain text: tags and ASS override blocks removed, ASS line breaks as newlines. */
+export function cleanText(text: string) {
   return text
     .replace(/<[^>]+>/g, '')
     .replace(/\{[^}]*\}/g, '')

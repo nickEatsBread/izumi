@@ -102,7 +102,8 @@ async function ask(query) {
     await stage('subtitles', 'error')
     const why = {
       'no-subtitles': 'Turn on a text subtitle track (or find one online in Audio and subtitles), then ask again.',
-      embedded: "This episode's subtitles are inside the video file, which plugins can't read yet. Pick an online subtitle in Audio and subtitles, then ask again.",
+      'remote-stream': "This episode streams from the internet, so the subtitles inside it can't be read yet. Pick an online subtitle in Audio and subtitles, then ask again.",
+      'not-text': 'This subtitle track is pictures, not text. Pick a text track or an online subtitle in Audio and subtitles, then ask again.',
     }
     return finish(started, why[subs.reason] ?? 'No subtitles to search.')
   }

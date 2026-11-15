@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { nowPlaying, nowPlayingUrl, playerNotice } from '$lib/player/session'
 import { playerTracks } from '$lib/player/native'
-import { parseSubtitle, subtitleText, type SyncableTrack } from '$lib/player/subtitle-sync'
+import { cleanText, parseSubtitle, subtitleText, type SubtitleCue, type SyncableTrack } from '$lib/player/subtitle-sync'
 import { checkPluginUrl } from './network'
 import type { PluginScope } from './manifest'
 import {
@@ -83,16 +83,29 @@ async function playerProperty(name: string): Promise<string> {
 }
 
 /** The selected text subtitle track as cues. Tracks izumi loaded from a file or URL (addon, online
- *  search, added by the viewer) can be read; tracks inside the video file cannot yet. */
+ *  search, added by the viewer) are parsed here. Tracks inside the video file are read from the
+ *  file in Rust when it is local or a torrent izumi streams; http streams are refused. */
 async function currentSubtitles() {
   let tracks: SyncableTrack[] = []
   try { tracks = JSON.parse(await playerTracks()) as SyncableTrack[] } catch { tracks = [] }
   const subs = tracks.filter((t) => t.type === 'sub')
-  const list = subs.map((t) => ({ id: t.id, title: t.title, lang: t.lang, selected: !!t.selected, readable: !!(t.external && t.externalFilename) }))
+  const list = subs.map((t) => ({ id: t.id, title: t.title, lang: t.lang, selected: !!t.selected }))
   const selected = subs.find((t) => t.selected)
   if (!selected) return { available: false, reason: 'no-subtitles', tracks: list }
-  if (!selected.external || !selected.externalFilename) return { available: false, reason: 'embedded', tracks: list }
-  const cues = parseSubtitle(await subtitleText(selected.externalFilename))
+  let cues: SubtitleCue[]
+  if (selected.external && selected.externalFilename) {
+    cues = parseSubtitle(await subtitleText(selected.externalFilename))
+  } else {
+    // mpv's src-id is the Matroska TrackNumber, with its own demuxer and with FFmpeg's.
+    const [source, number] = await Promise.all([playerProperty('path'), playerProperty(`track-list/${tracks.indexOf(selected)}/src-id`)])
+    try {
+      const raw = await invoke<SubtitleCue[]>('embedded_subtitle_cues', { source, track: Number(number) })
+      cues = raw.map((cue) => ({ ...cue, text: cleanText(cue.text) })).filter((cue) => cue.text)
+    } catch (error) {
+      // The command answers with a short code (remote-stream, not-text, …), never a path.
+      return { available: false, reason: typeof error === 'string' ? error : 'unreadable', tracks: list }
+    }
+  }
   const delay = Number(await playerProperty('sub-delay')) || 0
   return {
     available: true,

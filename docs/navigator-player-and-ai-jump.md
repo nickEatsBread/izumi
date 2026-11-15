@@ -195,7 +195,10 @@ Decision 3 is in only for the one endpoint the viewer types.
   - `network`: listed https domains, plus the host of a `url` setting (`fromSetting`). Local and private
     addresses are refused, except that endpoint, which may use http only when it is on this computer.
   - `player.events`: what is playing, position, duration and pause.
-  - `player.subtitles`: the selected text track as cues, shifted by the viewer's subtitle delay.
+  - `player.subtitles`: the selected text track as cues, shifted by the viewer's subtitle delay. Tracks
+    inside the video file (Matroska ASS, SSA, SRT and WebVTT) are read from the file in Rust
+    (`embedded_subtitle_cues`) when it is a local file or a torrent izumi streams. A torrent still
+    downloading gives the lines of the parts it has. http streams answer `remote-stream`.
   - `player.control`: seek.
   - `player.panel`: a prompt, a status line and up to 20 results, all drawn by izumi.
 
@@ -252,7 +255,7 @@ Decision 3 is in only for the one endpoint the viewer types.
   
   A real model's answer quality is not measured here.
 - **Not in v1:**
-  - reading subtitle tracks embedded in the video file (needs a Matroska text-track reader in Rust);
+  - reading subtitle tracks embedded in a video streamed over http (debrid and addon links);
   - store listings for plugins (the store branch lists sources, themes and packs);
   - automatic updates and pending-permission review on update;
   - DNS-level private-address checks (the guard reads the URL's host; Rust follows redirects);

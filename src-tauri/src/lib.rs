@@ -14,6 +14,8 @@ mod doh;
 #[cfg(not(target_os = "android"))]
 mod doh_socks;
 mod download;
+#[cfg(not(target_os = "android"))]
+mod embedded_subtitles;
 mod extension_package;
 mod store_trust;
 #[cfg(not(target_os = "android"))]
@@ -6534,6 +6536,7 @@ pub fn run() {
             http_get,
             opensubtitles_moviehash,
             subtitle_fonts::subtitle_fonts_save,
+            embedded_subtitles::embedded_subtitle_cues,
             http_post,
             ext_fetch,
             http_cancel,

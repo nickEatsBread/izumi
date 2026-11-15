@@ -10,7 +10,7 @@
   "description": "Describe a scene and the player jumps to it. Uses the episode's subtitles and a chat model you choose, on your computer or with your own key.",
   "main": {
     "path": "main.js",
-    "sha256": "941f98d9e2482f8143738dd256a44330c0ad13f42effb0dc55e891607100b4ae"
+    "sha256": "27c701ca1a5c20db92c00a75ef1822881de535a291506eab7bc75ab119b98007"
   },
   "permissions": {
     "scopes": [
