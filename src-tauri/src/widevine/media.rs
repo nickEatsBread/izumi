@@ -616,7 +616,8 @@ impl RawVideo {
         let frame_bytes = self.frame_size as usize;
         if f >= self.head.fragments.len() {
             ensure!(!st.drained, "end of video");
-            let (buf, pic) = self.cdm.video_decode(self.head.default_kid, vec![0; 8], Vec::new(), None, 0, self.pool.take(frame_bytes));
+            // End of stream: no data, so the module drains its decoder and reads no IV (host.cc).
+            let (buf, pic) = self.cdm.video_decode(self.head.default_kid, Vec::new(), Vec::new(), None, 0, self.pool.take(frame_bytes));
             match pic? {
                 Some(pic) => self.push(st, pic, buf)?,
                 None => {
