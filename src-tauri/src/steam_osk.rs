@@ -73,7 +73,7 @@ unsafe fn connect_client() -> Option<Steam> {
             }
         }
         if h.is_null() {
-            crate::player::linux_embed::elog("steam_osk: steamclient.so not found");
+            crate::player::linux_cef::elog("steam_osk: steamclient.so not found");
             return None;
         }
         let create: unsafe extern "C" fn(*const c_char, *mut c_int) -> *mut c_void =
@@ -81,7 +81,7 @@ unsafe fn connect_client() -> Option<Steam> {
         let version = CString::new("SteamClient021").ok()?;
         let client = create(version.as_ptr(), std::ptr::null_mut());
         if client.is_null() {
-            crate::player::linux_embed::elog("steam_osk: SteamClient021 unavailable");
+            crate::player::linux_cef::elog("steam_osk: SteamClient021 unavailable");
             return None;
         }
         let create_pipe: unsafe extern "C" fn(*mut c_void) -> i32 = std::mem::transmute(slot(client, CLIENT_CREATE_PIPE));
@@ -90,7 +90,7 @@ unsafe fn connect_client() -> Option<Steam> {
             std::mem::transmute(slot(client, CLIENT_GET_UTILS));
         let pipe = create_pipe(client);
         if pipe == 0 || connect(client, pipe) == 0 {
-            crate::player::linux_embed::elog("steam_osk: Steam refused the connection");
+            crate::player::linux_cef::elog("steam_osk: Steam refused the connection");
             return None;
         }
         let utils_version = CString::new("SteamUtils010").ok()?;
@@ -103,10 +103,10 @@ unsafe fn connect_client() -> Option<Steam> {
         let app_id: unsafe extern "C" fn(*mut c_void) -> u32 = std::mem::transmute(slot(utils, UTILS_GET_APP_ID));
         let on_deck: unsafe extern "C" fn(*mut c_void) -> bool = std::mem::transmute(slot(utils, UTILS_ON_DECK));
         if app_id(utils) != 0 || !on_deck(utils) {
-            crate::player::linux_embed::elog("steam_osk: ISteamUtils010 layout not recognised");
+            crate::player::linux_cef::elog("steam_osk: ISteamUtils010 layout not recognised");
             return None;
         }
-        crate::player::linux_embed::elog("steam_osk: floating keyboard through steamclient");
+        crate::player::linux_cef::elog("steam_osk: floating keyboard through steamclient");
         Some(Steam { utils, show: std::mem::transmute(slot(utils, UTILS_SHOW_FLOATING)) })
     }
 }

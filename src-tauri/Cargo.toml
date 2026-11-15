@@ -61,8 +61,6 @@ android-mpv = ["dep:tauri-plugin-mpv"]
 
 [dependencies]
 tauri = { version = "=3.0.0-alpha.6", features = [] }
-# Tauri 3 picks the webview runtime by crate; desktop and Android use wry.
-tauri-runtime-wry = { version = "=3.0.0-alpha.6" }
 tauri-plugin-opener = "=3.0.0-alpha.3"
 # Platform/OS detection (used to branch behavior on Android vs desktop). Registered
 # for all platforms.
@@ -119,8 +117,9 @@ ed25519-dalek = { version = "3.0.0-rc.0", features = ["pkcs8"] }
 encoding_rs = "0.8"
 # Subtitle downloads are normalized on desktop and Android before libmpv sees them.
 chardetng = "0.1"
-# Native file dialog — pick the external-player executable.
-tauri-plugin-dialog = "=3.0.0-alpha.4"
+# Native file dialog — pick the external-player executable. Linux uses the XDG portal: the
+# default GTK 3 dialog cannot load beside CEF's GTK 4.
+tauri-plugin-dialog = { version = "=3.0.0-alpha.4", default-features = false, features = ["xdg-portal"] }
 url = "2"
 # Embedded BitTorrent engine. Its read-only localhost HTTP endpoint supports
 # byte ranges, so mpv can seek while only the selected episode is downloaded.
@@ -136,7 +135,6 @@ librqbit = { version = "9.0.1", default-features = false, features = ["rust-tls"
 # Android's WebView cannot open an in-app inspector (it requires Chrome remote inspection), and
 # enabling it unconditionally would make every release APK remotely debuggable over ADB.
 tauri = { version = "=3.0.0-alpha.6", features = ["devtools"] }
-tauri-runtime-wry = { version = "=3.0.0-alpha.6", features = ["devtools"] }
 libmpv2 = "6.0.0"
 libmpv2-sys = "4.0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
@@ -220,40 +218,30 @@ objc2-app-kit = { version = "0.3.2", features = [
   "NSOpenGLView",
 ] }
 
-# Linux: embed mpv via its OpenGL render API into a wl_subsurface placed below the
-# transparent webview (see player/linux_embed.rs). gtk3/gdk/glib match Tauri 2.11's
-# webkitgtk stack (window/CSD geometry + main-thread dispatch); khronos-egl builds our
-# own EGL context on the subsurface; wayland-client/-egl create the subsurface tree;
-# raw-window-handle pulls the toplevel wl_surface/wl_display out of the Tauri window;
-# the `gl` crate is used for the clear/viewport around mpv's render.
+# Windows (WebView2), macOS (WKWebView) and Android (system WebView) keep the wry runtime.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tauri-runtime-wry = { version = "=3.0.0-alpha.6" }
+
+[target.'cfg(not(any(target_os = "android", target_os = "linux")))'.dependencies]
+tauri-runtime-wry = { version = "=3.0.0-alpha.6", features = ["devtools"] }
+
+# Linux runs the CEF runtime with the main webview offscreen. player/linux_cef.rs draws it, with
+# mpv's video under it (libmpv's render API), into one X11 child window from its own EGL render
+# thread. CEF brings GTK 4, so nothing GTK 3 (WebKitGTK, gtk 0.18, rfd's GTK dialog) may link.
 [target.'cfg(target_os = "linux")'.dependencies]
-# dlsym for XSetIOErrorExitHandler (libX11 >= 1.7) — resolved at runtime so older linkers still build.
+tauri-runtime-cef = { version = "=3.0.0-alpha.7", features = ["devtools"] }
+# The window-event types tauri-runtime-cef hands `on_window_event`.
+winit = { version = "0.31.0-beta.3", package = "tauri-winit", default-features = false }
+# GLib on CEF's UI thread: the focus keepalive and the idle-spin fix in linux_cef.rs.
+gtk4 = { version = "0.11", default-features = false }
+x11-dl = "2.21"
 libc = "0.2"
-gtk = { version = "0.18", features = ["v3_24"] }
-gdk = "0.18"
-glib = "0.18"
 gl = "0.14"
 khronos-egl = { version = "6", features = ["dynamic"] }
-wayland-client = "0.31"
-wayland-egl = "0.32"
-# zwp_idle_inhibit_manager_v1 keeps native-Wayland desktops awake during playback. Steam Deck
-# Game mode presents Izumi through XWayland, so wakelock.rs uses its X11 heartbeat there instead.
-# Pairs with wayland-client 0.31.
-wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
-# Steam Deck Game mode (gamescope): gamescope exposes NO wl_subcompositor (so the subsurface
-# path above can't run) but DOES expose zwlr_layer_shell_v1 + dmabuf. We render the video into
-# a layer-shell BACKGROUND surface and keep the transparent webview toplevel on top → gamescope
-# composites controls over fullscreen video, same UX as Desktop. (Measured on gamescope 3.16.)
-wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 raw-window-handle = "0.6"
-# Steam Deck L2/R2 seek: webkit2gtk's own Gamepad API (libmanette) doesn't reliably see the
-# Deck's (Steam-virtual) controller, so we read it directly via evdev in the Rust backend and
-# forward the trigger state to the webview. gilrs handles enumeration + Xbox trigger mapping.
+# Steam Deck controller: the Deck's (Steam-virtual) pad is read in Rust and forwarded to the page
+# as `gamepad-input` events (see gamepad_linux.rs). gilrs handles enumeration + Xbox mapping.
 gilrs = "0.11"
-# Pinned to the exact version wry/Tauri 2.11 links (must unify — one `web_kit2` links key).
-# Game mode uses HardwareAccelerationPolicy::Always; ghost trails are fixed by turning off
-# WebKitGTK 2.50 damage propagation, not by forcing the software rasterizer.
-webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 # Steam Deck Flatpak auto-update: prefer org.freedesktop.portal.Flatpak UpdateMonitor to detect +
 # install a pending OSTree update. Older SteamOS portals fall back to a host Flatpak command (the
 # manifest grants org.freedesktop.Flatpak for that path). `tokio` matches our async commands;

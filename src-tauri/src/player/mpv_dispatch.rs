@@ -247,7 +247,7 @@ fn worker(client: Mpv, shared: Arc<Shared>) {
         let Some(work) = work else { continue };
         let label = work.label().to_owned();
         if let Err(error) = execute(&client, work) {
-            super::linux_embed::elog(&format!("mpv-ui-dispatch: {label}: {error}"));
+            super::linux_cef::elog(&format!("mpv-ui-dispatch: {label}: {error}"));
         }
     }
 }

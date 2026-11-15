@@ -43,27 +43,10 @@ pub mod wakelock;
 // by vo=libmpv (cocoa-cb --wid opens a separate mpv window).
 #[cfg(target_os = "macos")]
 pub mod macos_embed;
-// Linux embedded player: a wl_subsurface placed below the (transparent) webview,
-// rendered by mpv's OpenGL render API. Never touches the webview's GTK tree.
+// Linux: the CEF runtime renders the page offscreen and this compositor draws it over mpv's
+// video (OpenGL render API) in one X11 child window.
 #[cfg(target_os = "linux")]
-pub mod linux_embed;
-// Linux playback: a SEPARATE mpv process driven over JSON IPC. Dormant fallback,
-// not wired into the UX — kept for headless/X11 situations the embed can't cover.
-#[cfg(target_os = "linux")]
-pub mod linux_proc;
-// Game mode (gamescope / XWayland X11): raw X11 container window for mpv `--wid` — no
-// wl_subsurface there, so the video is a fullscreen child window we show/hide for the swap.
-#[cfg(target_os = "linux")]
-pub mod linux_x11;
-// Game mode controls-over-video: gamescope won't blend a transparent app surface, so we
-// snapshot the webview's HTML controls and push them to mpv as a `overlay-add` layer that
-// mpv bakes over the video in its own opaque surface. See linux_overlay.rs.
-#[cfg(target_os = "linux")]
-pub mod linux_overlay;
-// Game mode dynamic overlay: loading + active scrub are rendered as mpv ASS OSD so those
-// fast-moving states do not require WebKit snapshots/readbacks.
-#[cfg(target_os = "linux")]
-pub mod gm_osd;
+pub mod linux_cef;
 #[cfg(target_os = "linux")]
 mod mpv_dispatch;
 // Steam Deck L2/R2 seek: read the (Steam-virtual) gamepad via evdev in the backend and forward
@@ -73,8 +56,6 @@ pub mod gamepad_linux;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "linux")]
-use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 
 use libmpv2::{
@@ -525,12 +506,12 @@ impl PlayerHandle {
             }
         }
 
+        // The Deck (Gamescope) imports VA-API surfaces straight into the compositor's EGL context.
         #[cfg(target_os = "linux")]
-        let game_mode_wayland = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
-            && linux_embed::is_wayland(window);
+        let direct_hwdec = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
         #[cfg(target_os = "macos")]
-        let game_mode_wayland = false;
-        let mpv = new_mpv_libmpv(game_mode_wayland).map_err(|e| e.to_string())?;
+        let direct_hwdec = false;
+        let mpv = new_mpv_libmpv(direct_hwdec).map_err(|e| e.to_string())?;
         enable_protected_streams(&mpv);
         spawn_event_loop(
             &mpv,
@@ -545,7 +526,7 @@ impl PlayerHandle {
         // Bind the render context to this core BEFORE it moves into the mutex.
         // `attach` borrows `&mpv` only for the (blocking) duration of the call.
         #[cfg(target_os = "linux")]
-        linux_embed::attach(&mpv, window)?;
+        linux_cef::attach(&mpv, window)?;
         #[cfg(target_os = "macos")]
         macos_embed::attach(&mpv, window)?;
         load_file(
@@ -563,48 +544,6 @@ impl PlayerHandle {
 
         *self.mpv.lock().map_err(|e| e.to_string())? = Some(Arc::new(mpv));
         Ok(())
-    }
-
-    /// Take mpv's video output down while the window it renders into still exists, and wait
-    /// (bounded) until it is gone. `stop` cannot promise that: `quit` finishes the core on mpv's
-    /// own threads after it returns. Game mode used to destroy the X11 container first, so the EGL
-    /// output died on a destroyed window, racing WebKit's GPU draws in this same process; the
-    /// Deck's UI process segfaulted on about every other player exit. Returns whether the output
-    /// is down (true when there is no core).
-    #[cfg(target_os = "linux")]
-    pub fn release_video_output(&self, timeout: std::time::Duration) -> bool {
-        {
-            let Ok(guard) = self.mpv.lock() else {
-                return false;
-            };
-            let Some(mpv) = guard.as_ref() else {
-                return true;
-            };
-            // force-window keeps an idle output alive, so it goes first.
-            if let Err(e) = mpv.set_property("force-window", "no") {
-                linux_embed::elog(&format!("release_video_output: force-window: {e:?}"));
-            }
-            let _ = mpv.command("stop", &[]);
-        }
-        // Poll without holding the core lock between samples: commands on the GTK thread take it.
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            let down = match self.mpv.lock() {
-                // `current-vo` is unavailable once the output is destroyed. (`vo-configured` is
-                // already false before the first frame, while force-window's EGL output is live.)
-                Ok(guard) => guard.as_ref().map_or(true, |mpv| {
-                    mpv.get_property::<String>("current-vo").map_or(true, |vo| vo.is_empty())
-                }),
-                Err(_) => return false,
-            };
-            if down {
-                return true;
-            }
-            if std::time::Instant::now() >= deadline {
-                return false;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
     }
 
     /// Stop playback and tear down the mpv core.
@@ -630,10 +569,10 @@ impl PlayerHandle {
 
         // Free the render context (which references the core) BEFORE the core is
         // quit/dropped — required for the `'static` lifetime extension in
-        // `linux_embed::attach` / `macos_embed::attach` to stay sound. No-op if
+        // `linux_cef::attach` / `macos_embed::attach` to stay sound. No-op if
         // nothing is embedded.
         #[cfg(target_os = "linux")]
-        linux_embed::detach();
+        linux_cef::detach();
         #[cfg(target_os = "macos")]
         macos_embed::detach();
 
@@ -644,8 +583,6 @@ impl PlayerHandle {
         *guard = None;
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
         crate::widevine::end_all();
-        #[cfg(target_os = "linux")]
-        UI_LITE_HOLDERS.store(0, AtomicOrdering::SeqCst);
         // Drop the current url and tear down the headless thumbnail decoder.
         *self.current_url.lock().map_err(|e| e.to_string())? = None;
         *self
@@ -1096,15 +1033,7 @@ impl PlayerHandle {
         let mut failed = Vec::new();
         if let Ok(guard) = self.mpv.lock() {
             if let Some(mpv) = guard.as_ref() {
-                #[cfg(target_os = "linux")]
-                let live = if UI_LITE_HOLDERS.load(AtomicOrdering::SeqCst) > 0 {
-                    crate::gm_perf::ui_lite_render_opts()
-                } else {
-                    opts.clone()
-                };
-                #[cfg(not(target_os = "linux"))]
-                let live = opts.clone();
-                for (k, v) in &live {
+                for (k, v) in &opts {
                     if mpv.set_property(k.as_str(), v.as_str()).is_err() {
                         failed.push(k.clone());
                     }
@@ -1112,57 +1041,6 @@ impl PlayerHandle {
             }
         }
         failed
-    }
-
-    /// While Game-mode chrome is on screen, swap in bilinear / no-deband / no-shaders so the iGPU
-    /// is not running the user quality chain AND compositing UI. Nested acquire/release is counted
-    /// so a still-visible overlay does not restore ewa the moment scrubbing ends.
-    #[cfg(target_os = "linux")]
-    pub fn set_ui_render_lite(&self, on: bool) {
-        let holders = if on {
-            UI_LITE_HOLDERS.fetch_add(1, AtomicOrdering::SeqCst) + 1
-        } else {
-            loop {
-                let cur = UI_LITE_HOLDERS.load(AtomicOrdering::SeqCst);
-                if cur == 0 {
-                    break 0;
-                }
-                if UI_LITE_HOLDERS
-                    .compare_exchange(cur, cur - 1, AtomicOrdering::SeqCst, AtomicOrdering::SeqCst)
-                    .is_ok()
-                {
-                    break cur - 1;
-                }
-            }
-        };
-        let apply_lite = on && holders == 1;
-        let apply_user = !on && holders == 0;
-        if !apply_lite && !apply_user {
-            return;
-        }
-        let opts = if apply_lite {
-            crate::gm_perf::ui_lite_render_opts()
-        } else if let Ok(stored) = RENDER_OPTS.lock() {
-            stored.clone()
-        } else {
-            return;
-        };
-        // The 60 Hz OSD timer calls this on scrub/loading edges from GTK's main thread. A scaler
-        // swap makes the VO rebuild its shader chain synchronously inside set_property, so hand
-        // the batch to the dispatcher thread; the direct path remains the fallback before it exists.
-        if self
-            .with_mpv_dispatch(|dispatch| dispatch.render_opts(opts.clone()))
-            .is_ok()
-        {
-            return;
-        }
-        if let Ok(guard) = self.mpv.lock() {
-            if let Some(mpv) = guard.as_ref() {
-                for (k, v) in &opts {
-                    let _ = mpv.set_property(k.as_str(), v.as_str());
-                }
-            }
-        }
     }
 
     /// Store the frontend's playback-enhancement options (`af`, `vf`, `sub-filter-*`) and, if a
@@ -1411,69 +1289,6 @@ impl PlayerHandle {
         .map_err(|e| e.to_string())?
     }
 
-    /// Add/replace a raw-memory OSD overlay on the video (Game-mode controls). `pixels` is an owned
-    /// premultiplied-BGRA buffer of `w`×`h` (bytes = `stride`×`h`). The dispatcher keeps it alive
-    /// while mpv copies the frame, without making GTK wait for `overlay-add`.
-    #[cfg(target_os = "linux")]
-    pub fn overlay_add(
-        &self,
-        id: i64,
-        x: i64,
-        y: i64,
-        pixels: Vec<u8>,
-        w: i64,
-        h: i64,
-        stride: i64,
-    ) -> Result<(), String> {
-        self.with_mpv_dispatch(|dispatch| dispatch.bitmap_add(id, x, y, pixels, w, h, stride))
-    }
-
-    /// Remove the OSD overlay with the given `id` (Game-mode controls hidden).
-    #[cfg(target_os = "linux")]
-    pub fn overlay_remove(&self, id: i64) -> Result<(), String> {
-        self.with_mpv_dispatch(|dispatch| dispatch.bitmap_remove(id))
-    }
-
-    /// Add/update/remove an ASS OSD overlay. This uses mpv's named-argument command API
-    /// because `osd-overlay` explicitly requires `mpv_command_node()`.
-    #[cfg(target_os = "linux")]
-    pub fn osd_overlay_ass(
-        &self,
-        id: i64,
-        data: &str,
-        res_x: i64,
-        res_y: i64,
-        z: i64,
-    ) -> Result<(), String> {
-        self.osd_overlay(id, "ass-events", data, res_x, res_y, z)
-    }
-
-    /// Remove an ASS OSD overlay added with [`osd_overlay_ass`].
-    #[cfg(target_os = "linux")]
-    pub fn osd_overlay_remove(&self, id: i64) -> Result<(), String> {
-        self.osd_overlay(id, "none", "", 0, 0, 0)
-    }
-
-    #[cfg(target_os = "linux")]
-    fn osd_overlay(
-        &self,
-        id: i64,
-        format: &str,
-        data: &str,
-        res_x: i64,
-        res_y: i64,
-        z: i64,
-    ) -> Result<(), String> {
-        let format = match format {
-            "ass-events" => "ass-events",
-            "none" => "none",
-            _ => return Err("unsupported OSD overlay format".into()),
-        };
-        self.with_mpv_dispatch(|dispatch| {
-            dispatch.ass(id, format, data.to_owned(), res_x, res_y, z)
-        })
-    }
-
     /// Save a screenshot of the current frame (with subtitles) into `dir`. The
     /// caller resolves + creates `dir` (the app Pictures folder). Used by
     /// `player_screenshot`.
@@ -1635,11 +1450,6 @@ pub(crate) static PLAYER_CACHE_BYTES: std::sync::atomic::AtomicU64 =
 /// is the single source of truth for the values (the preset table lives in TS), so Rust stays dumb.
 pub(crate) static RENDER_OPTS: std::sync::Mutex<Vec<(String, String)>> =
     std::sync::Mutex::new(Vec::new());
-
-/// How many Game-mode UI surfaces currently want the cheap scaler chain. Overlay snapshots and
-/// the native scrub bar each hold one; the user preset is restored when the last holder drops.
-#[cfg(target_os = "linux")]
-static UI_LITE_HOLDERS: AtomicU32 = AtomicU32::new(0);
 
 /// User-selected playback enhancements: audio normalisation (`af`), the driver-upscaling filter
 /// (`vf`) and the subtitle `sub-filter-*` options. Same contract as [`RENDER_OPTS`] — the FRONTEND
@@ -1991,9 +1801,6 @@ pub(crate) fn spawn_event_loop(
     // the overlay re-reads the track whenever mpv switches it — by the user, by `sid=auto` at load,
     // or by the full-dialogue preference below.
     client.observe_property("sid", Format::String, 0)?;
-    // Game mode's X11 container is mapped once mpv's output is up (linux_x11::show_container).
-    #[cfg(target_os = "linux")]
-    client.observe_property("current-vo", Format::String, 0)?;
 
     std::thread::spawn(move || {
         let mut duration = 0f64;
@@ -2004,17 +1811,7 @@ pub(crate) fn spawn_event_loop(
         // re-derive on the same box as mpv's render thread, so 80–90% of them were pure waste.
         let mut last_pos_bucket: i64 = i64::MIN;
         let mut last_buf = f64::MIN;
-        #[cfg(target_os = "linux")]
-        let started = std::time::Instant::now();
-        #[cfg(target_os = "linux")]
-        let mut container_shown = false;
         loop {
-            // An output that never reports itself must not leave the video unseen.
-            #[cfg(target_os = "linux")]
-            if !container_shown && started.elapsed() > std::time::Duration::from_millis(1500) {
-                linux_x11::show_container();
-                container_shown = true;
-            }
             // Block up to 1s waiting for the next event on this client's queue.
             match client.wait_event(1.0) {
                 Some(Ok(Event::FileLoaded)) => {
@@ -2138,15 +1935,6 @@ pub(crate) fn spawn_event_loop(
                     }
                     ("sid", PropertyData::Str(sid)) => {
                         let _ = app.emit("player-sub-track", sid.to_string());
-                    }
-                    #[cfg(target_os = "linux")]
-                    ("current-vo", PropertyData::Str(vo)) if !vo.is_empty() && !container_shown => {
-                        linux_embed::elog(&format!(
-                            "x11: mpv output {vo} up {} ms after its core",
-                            started.elapsed().as_millis()
-                        ));
-                        linux_x11::show_container();
-                        container_shown = true;
                     }
                     ("eof-reached", PropertyData::Flag(v)) => {
                         let _ = app.emit("player-eof", v);
