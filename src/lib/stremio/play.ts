@@ -4307,14 +4307,32 @@ export interface ResolvedShakaDownload extends ResolvedDownloadBase {
   preferredSubLang?: import('$lib/settings/ui').SubLang
   sourceOriginId?: string
 }
-export type ResolvedDownload = ResolvedHttpDownload | ResolvedTorrentDownload | ResolvedShakaDownload
+/** A protected source the native downloader decrypts into ONE clear, offline-watchable file. Unlike
+ *  the Shaka path there is no stored ciphertext and no persistent licence: playback needs no CDM and
+ *  no network. The source advertises a `planUrl` (segment URLs, byte ranges, Widevine pssh/kid). */
+export interface ResolvedDrmDownload extends ResolvedDownloadBase {
+  kind: 'drm'
+  planUrl: string
+  licenseUrl: string
+  releaseUrl: string
+  drm: NonNullable<Stream['__drm']>
+  subtitles?: Stream['__subtitles']
+  audioLang?: string
+  preferredHeight?: number
+  sourceOriginId?: string
+}
+export type ResolvedDownload =
+  | ResolvedHttpDownload
+  | ResolvedTorrentDownload
+  | ResolvedShakaDownload
+  | ResolvedDrmDownload
 
 // Resolve a single episode to something downloadable — no player, no mpv. Reuses the same
 // resolveStreams+pickBest path as playback, and honours the SAME torrent-source preference:
 // a torrent-only pick goes to the local P2P engine under Direct P2P (or with no debrid
 // credential at all), and through debrid otherwise. Uses the persisted Media snapshot first so a
 // restart or metadata outage cannot block source resolution; old queues fall back to fetch-by-id.
-export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences): Promise<ResolvedDownload> {
+export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences, forceShaka = false): Promise<ResolvedDownload> {
   // A download is queued from a page that already owns this Media object, and enqueue() persists a
   // source-complete snapshot before the pump starts. Prefer it: AniList being slow, rate-limited or
   // offline has no bearing on whether the configured source can provide a file. Older queue items
@@ -4407,13 +4425,38 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
         preferredAudio: downloadAudioLang(preferences?.audio, get(preferredAudioLang)),
         preferredSub: get(preferredSubLang),
       })
+      const height = Number.isFinite(wantedHeight) ? wantedHeight : undefined
+      // Prefer the decrypting downloader when the source advertises a plan and this is not Android:
+      // it produces one clear, offline file (no CDM, no persistent licence). The plan URL carries
+      // the same audio/height selection the manifest would, so it follows the resolved presentation.
+      // `forceShaka` is the licence-refused fallback (the device blob was rejected with a 403).
+      if (best.__drm.planUrl && !get(isAndroid) && !forceShaka) {
+        // Derive the plan URL from the resolved presentation so it inherits the same `?audio=`
+        // selection, then swap `manifest.mpd` for the plan route and add the height/offline hint.
+        const planBase = presentation.url.replace(/\/manifest\.[^/?]+/, '/offline-plan')
+        return {
+          kind: 'drm',
+          planUrl: offlineManifestUrl(planBase, height),
+          licenseUrl: best.__drm.licenseUrl ?? '',
+          releaseUrl: best.__drm.releaseUrl ?? '',
+          drm: best.__drm,
+          subtitles: presentation.subtitles,
+          audioLang: presentation.audioLang,
+          preferredHeight: height,
+          sourceOriginId: best.__origin?.id,
+          filename: named(best.url, 'mp4'),
+          provider: info.provider,
+          ...common,
+        }
+      }
+      // Fallback: store the encrypted manifest through Shaka (no plan, or on Android).
       return {
         kind: 'shaka',
-        url: offlineManifestUrl(presentation.url, Number.isFinite(wantedHeight) ? wantedHeight : undefined),
+        url: offlineManifestUrl(presentation.url, height),
         drm: best.__drm,
         subtitles: presentation.subtitles,
         audioLang: presentation.audioLang,
-        preferredHeight: Number.isFinite(wantedHeight) ? wantedHeight : undefined,
+        preferredHeight: height,
         preferredSubLang: get(preferredSubLang),
         sourceOriginId: best.__origin?.id,
         filename: named(best.url),

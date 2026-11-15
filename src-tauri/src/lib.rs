@@ -14,6 +14,14 @@ mod doh;
 #[cfg(not(target_os = "android"))]
 mod doh_socks;
 mod download;
+// Decrypting DRM downloads produce a clear local file (no CDM/licence at playback). Desktop-only:
+// Android keeps the Shaka offline path.
+#[cfg(not(target_os = "android"))]
+mod drm_download;
+// Where the decrypting downloader's Widevine device comes from: override, cached pool member,
+// fresh pool member, bundled seed. Desktop-only, like `drm_download`.
+#[cfg(not(target_os = "android"))]
+mod widevine_device;
 mod extension_package;
 mod store_trust;
 #[cfg(not(target_os = "android"))]
@@ -6008,6 +6016,7 @@ pub fn run() {
     let builder = builder
         .manage(PipWindowState::default())
         .manage(DrmGifCapture::default())
+        .manage(drm_download::DrmDownloads::default())
         .manage(desktop_cast::DesktopCastState::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder
@@ -6790,6 +6799,8 @@ pub fn run() {
             download::download_disk_space,
             startup_trace::startup_marks,
             download::reveal_in_folder,
+            drm_download::drm_download_start,
+            drm_download::drm_download_cancel,
             direct_torrent::torrent_engine_warmup,
             direct_torrent::torrent_metadata_prefetch,
             direct_torrent::torrent_playback_cancel_start,
@@ -7233,3 +7244,4 @@ mod deep_link_tests {
             .is_some_and(|s| s.iter().any(|s| s == "izumi"))));
     }
 }
+
