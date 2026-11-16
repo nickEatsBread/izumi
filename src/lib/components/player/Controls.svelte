@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
   import { playerCommand, playerGetProperty, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
-  import { nativeDrmSupported, usesNativeDrm } from '$lib/player/native-drm'
+  import { nativeDrmPlayback, usesNativeDrm } from '$lib/player/native-drm'
   import { listen } from '@tauri-apps/api/event'
   import { onMount, tick } from 'svelte'
   import type { Segment } from '$lib/stremio/aniskip'
@@ -1274,7 +1274,7 @@
                           </button>
                         {/each}
                       {:else if optionsPage === 'timing'}
-                        {#each ($nowPlayingStream.drm && !usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported) ? [['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
+                        {#each ($nowPlayingStream.drm && !usesNativeDrm($nowPlayingStream.drm, $nativeDrmPlayback) ? [['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
                           <div class="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5">
                             <span>{label}</span>
                             <span class="flex shrink-0 items-center gap-1">

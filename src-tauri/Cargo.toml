@@ -239,6 +239,9 @@ objc2-app-kit = { version = "0.3.2", features = [
   "NSOpenGL",
   "NSOpenGLView",
 ] }
+# Loads Google's Widevine module (libwidevinecdm.dylib) for the same pure-Rust CDM host Windows uses
+# (src/widevine/host_win.rs); see the Windows entry above.
+libloading = "0.8"
 
 # Linux: embed mpv via its OpenGL render API into a wl_subsurface placed below the
 # transparent webview (see player/linux_embed.rs). gtk3/gdk/glib match Tauri 2.11's

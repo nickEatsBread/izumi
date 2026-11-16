@@ -1,4 +1,4 @@
-# Hosting the Widevine module (Linux and Windows)
+# Hosting the Widevine module (Linux, Windows and macOS)
 
 izumi handles protected (Widevine) media by hosting Google's own module itself, the way Kodi does,
 rather than relying on a browser EME stack. This note records how the host works on each platform and
@@ -17,12 +17,34 @@ the findings that cost real time to discover.
   dlopen-style C++ shim, so the host vtable is built in pure Rust (`src-tauri/src/widevine/host_win.rs`,
   loaded with `libloading`). The two hosts expose the identical `wv_*` C ABI, so `cdm.rs` drives either
   one unchanged.
+- **macOS** (Apple silicon and Intel) is the same as Windows: the module only *saves* protected
+  episodes, playback stays in the webview, and the host is the same Rust one (`host_win.rs`, named for
+  where it started). See [macOS](#macos) below.
 - Other platforms do not build the module host at all. The whole feature is gated by the build-script
-  cfg `widevine_host` (x86-64 Linux and Windows); see `src-tauri/build.rs`.
+  cfg `widevine_host` (x86-64 Linux and Windows, arm64 and x86-64 macOS); see `src-tauri/build.rs`.
 
 The Rust `Host_10` vtable in `host_win.rs` is laid out to match `content_decryption_module.h` exactly
-(interface 10, which is what the Windows module ships). `Buffer`, `DecryptedBlock`, `VideoFrame` and
-`FileIO`/`FileIOClient` are the same hand-rolled C++ objects.
+(interface 10, which is what the Windows and Mac modules ship). `Buffer`, `DecryptedBlock`, `VideoFrame`
+and `FileIO`/`FileIOClient` are the same hand-rolled C++ objects. The Mac module uses the Itanium C++
+ABI rather than MSVC's; vtables still list methods in declaration order, and the one difference (two
+destructor slots instead of one) does not move anything because every class declares its destructor
+last.
+
+### Two capabilities, two fields
+
+`widevine_status` reports `supported` (the host is built, so protected episodes can be **saved** through
+it) and `playback` (protected streams also **play** through izumi's own player, Linux only) separately,
+plus `available` (a browser's module version found on the device). The frontend routes downloads on
+`supported` and playback on `playback` (`src/lib/player/native-drm.ts`). They were one flag once, which
+sent Windows playback to the native surface its backend refuses; keep them apart.
+
+### Setting it up
+
+The user accepts Google's licence once; `consent.json` gates every path. It is offered on the first
+protected stream (Linux), from Settings › Playback › Protected video ("Set up", every platform with the
+host), or accepted when a pack asks for the module. When a browser on the device already ships the
+module (WebView2/Edge/Chrome on Windows, Chrome on macOS), setup uses that copy and its own `LICENSE`
+and downloads nothing (`fetch::stage` / `fetch::accept`); consent is still asked for and recorded.
 
 ## Module resolution on Windows
 
@@ -34,6 +56,106 @@ The Rust `Host_10` vtable in `host_win.rs` is laid out to match `content_decrypt
 
 The user still accepts Google's licence once (the same consent flow); `consent.json` gates every path.
 `IZUMI_WIDEVINE_NO_SYSTEM=1` forces a downloaded module instead of a system copy (diagnosis / tests).
+
+## macOS
+
+### Module resolution
+
+Google ships the Mac module as two **thin** dylibs, one per architecture, so each slice of a build loads
+its own: `_platform_specific/mac_arm64/libwidevinecdm.dylib` on Apple silicon, `mac_x64` on Intel and for
+the x86-64 slice under Rosetta (chosen at compile time by `target_arch`). `fetch::installed` looks, newest
+module version first:
+
+1. In an installed **Google Chrome** (`/Applications` or `~/Applications`):
+   `Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/<chrome>/Libraries/WidevineCdm/_platform_specific/<dir>/`,
+   every `Versions/*` entry including `Current`, with `manifest.json` and `LICENSE` in `WidevineCdm/`.
+2. In Chrome's component folder: `~/Library/Application Support/Google/Chrome/WidevineCdm/<version>/_platform_specific/<dir>/`.
+3. Otherwise it downloads the module from Google's component-update service (appid
+   `oimompecagnajdejgnnjijobebaeigek`, platform `Mac OS X`, arch `arm64` or `x64`); the CRX holds only
+   that architecture's dylib. Measured: the service serves the same bytes Chrome bundles, without
+   authentication.
+
+The binary is validated as a 64-bit Mach-O (`MH_MAGIC_64`) for the running architecture's CPU type, or a
+universal file containing that slice. `IZUMI_WIDEVINE_NO_SYSTEM=1` skips Chrome's copies, as on Windows.
+
+### Build and signing rules
+
+- **Universal is the target, arm64 is what ships today.** The app should ship as a universal binary so
+  Intel Macs get the `mac_x64` path. The release workflow currently builds **arm64 only** (`macos-15`,
+  Homebrew libmpv bundled with dylibbundler). Going universal is a known follow-up: it needs an x86-64
+  libmpv/ffmpeg dependency tree (Intel Homebrew under `/usr/local`, run under Rosetta), each bundled
+  dylib `lipo`-merged with its arm64 twin, and every merged file re-signed.
+- **After any `lipo`, `strip` or `install_name_tool`, finish with `codesign --force --sign -`** on what
+  was changed. Those tools invalidate the existing signature, and Apple silicon's kernel kills a binary
+  whose signature is invalid. Hosted runners have SIP off, so a broken seal still runs there; verify the
+  seal with `codesign --verify --strict` instead. The release already does this for its bundled ffmpeg
+  and checks the app bundle's seal.
+- **Entitlements.** `src-tauri/Entitlements.plist` (wired through `bundle.macOS.entitlements` in
+  `tauri.conf.json`) carries `com.apple.security.cs.disable-library-validation`. Library validation
+  comes with the **hardened runtime**, and under it only Apple-signed or same-team code may load.
+  Google's dylib is signed by Google's team (`EQHXZ8M8AV`). So:
+  - **ad-hoc / Actions builds** (today's release: ad-hoc, `hardenedRuntime: false`) do **not** need the
+    entitlement. Validation is not in play, so it is harmless there.
+  - a **Developer-ID-signed, notarized** build (hardened runtime) **needs** it to load Google's copy.
+    This is Apple's documented rule. It is not shown on CI, which has no Apple credentials and SIP off.
+    A copy re-signed with izumi's own identity should load without it.
+
+### Verified on CI (`.github/workflows/macos-widevine.yml`)
+
+The workflow is manual (`workflow_dispatch`), on a `macos-15` Apple-silicon runner with Chrome
+157.0.8103.39 preinstalled (module 4.10.3112.0). Every cargo command runs from `src-tauri`. Two jobs:
+
+- **arm64 (native)**: `cargo check --lib` and `cargo test --lib widevine` pass. The module is then set up
+  through the app (`fetch::stage` + `fetch::accept`), and the ignored `live_licence_keys_arrive` test
+  licenses through `save.rs`'s own `license()`. It then decrypts one encrypted audio fragment through
+  `cdm.rs`, and runs one encrypted video fragment through the module's H.264 decoder, as a save does.
+  Run 43887774908:
+
+  ```
+  [live] set up module 4.10.3112.0 at …/Versions/Current/Libraries/WidevineCdm/_platform_specific/mac_arm64/libwidevinecdm.dylib (a browser's copy, nothing downloaded)
+  [probe] arch=aarch64 proc_translated=0
+  [probe] licence: 5 usable key(s): 26470f42…, 4d4b0ca2…, 51745386…, 902a051a…, f0937e9a…
+  [probe] audio: fragment 3 decrypted, 187 of 187 samples changed
+  [probe] video 1024x436: fragment 3, 96 samples -> 96 pictures (96 not black)
+  ```
+
+  The same probe also passes in two other setups. One uses the test binary re-signed ad-hoc with the
+  hardened runtime and `Entitlements.plist` (`flags=0x10002(adhoc,runtime)`, entitlement
+  `com.apple.security.cs.disable-library-validation`). The other uses a module downloaded from Google
+  (`IZUMI_WIDEVINE_NO_SYSTEM=1`), whose dylib is byte-identical to Chrome's (sha256
+  `e1e9f6b0…6e5f` for both).
+- **x86_64 (Rosetta)**: `cargo check --lib --target x86_64-apple-darwin` and `cargo test --lib widevine`
+  pass for the Intel slice, which runs under Rosetta. Its test binary links a libmpv stub, since it
+  never calls into mpv. The same probe picks `mac_x64` (run 43887774908):
+
+  ```
+  [live] set up module 4.10.3112.0 at …/_platform_specific/mac_x64/libwidevinecdm.dylib (a browser's copy, nothing downloaded)
+  [probe] arch=x86_64 proc_translated=1
+  [probe] RESULT ok … keys=5 audio_samples=187 audio_changed=187 video=1024x436 video_samples=96 video_pictures=96
+  ```
+
+The licence server is Google's public Shaka test proxy (`cwip-shaka-proxy.appspot.com/no_auth`) with
+its `sintel-widevine` asset. It needs no account. The same probe passes on Windows (Chrome's
+`win_x64` copy, same counts).
+
+## Known limitation — the save parser reads plain CENC fragments only
+
+`fmp4::plan_fragment` handles fragments whose encryption is described by `senc` (with `saiz`/`saio`)
+and one key per track. Two layouts it refuses, on every platform, are common in public test assets:
+
+- **Sample groups (`sbgp`/`sgpd` `seig`)**, used for key rotation or to mark clear samples: refused with
+  "sample-group key rotation is not supported". A source that uses them **plays** (in the webview, or
+  Linux's player where it applies) but **cannot be saved**. Google's `angel-one-widevine` asset carries
+  them in every fragment.
+- **A clear lead**: unencrypted fragments (no `senc`) before the encrypted ones fail with "senc covers 0
+  samples, trun has N". A save would stop at the first one. Both `angel-one-widevine` and
+  `sintel-widevine` open with a clear lead (sintel: fragments 0–2), which is why CI probes single
+  encrypted fragments rather than a whole save.
+
+The source the measurements in this document come from uses neither. Its episodes saved end to end on
+Windows and Linux with this parser, every fragment plain CENC with subsamples. So this is a limitation of
+what the saver reads, not a sign that saving is broken. The audio choice also skips non-MP4 rungs (e.g.
+a WebM/Opus rung next to MP4 ones), since only ISO-BMFF is read.
 
 ## Finding 1 — the Windows module needs persistent state + FileIO, or every Decrypt is kNoKey
 
@@ -187,7 +309,16 @@ Run it with `IZUMI_LIVE_SAVE_MANIFEST`, `IZUMI_LIVE_SAVE_LICENSE`, `IZUMI_LIVE_S
 
 ## What is untested
 
-- **macOS** keeps the webview path for both playback and saving; the module host is not built there.
+- **macOS against a real stream source.** CI licensed only against Google's public test proxy, which
+  needs no account. Saving from **Crunchyroll** on macOS is **unproven**: its licence server, its
+  per-rung KIDs and whether it treats the Mac module differently have not been exercised.
+- **macOS with a real Developer-ID-signed, notarized build** is unproven: no Apple credentials on CI.
+  The entitlement above follows Apple's documented rule; it has not been observed doing its job.
+- **macOS with SIP on** is unproven: hosted runners ship with SIP disabled, so library validation and
+  kernel signature checks were never enforced there. Run the workflow's steps on a SIP-enabled Mac to
+  close it.
+- **An Intel Mac** (as opposed to the x86-64 slice under Rosetta) and **a universal release build** are
+  unproven; see the build rules above.
 - **Android** delegates playback to an external player and is unaffected.
 - Linux was measured once, under WSL2 on the same machine (Ubuntu 24.04, `libwidevinecdm.so`
   4.10.3112.0 through the C++ shim, distro ffmpeg): one lane 194.9 s (audio 129.3 s, video 65.5 s),

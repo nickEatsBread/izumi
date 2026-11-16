@@ -671,7 +671,21 @@ fn spawn_prefetch(url: String, fragments: Vec<(u64, u64)>, depth: usize, cancel:
 
 /// The ffmpeg the app ships or the user has, for the video re-encode. `IZUMI_FFMPEG_PATH` wins.
 fn ffmpeg_path() -> std::path::PathBuf {
-    std::env::var_os("IZUMI_FFMPEG_PATH").map(Into::into).unwrap_or_else(|| "ffmpeg".into())
+    if let Some(configured) = std::env::var_os("IZUMI_FFMPEG_PATH") {
+        return configured.into();
+    }
+    // The macOS release ships a relocatable ffmpeg in Contents/Resources (beside Contents/MacOS, where
+    // the executable runs), as GIF capture uses. A Finder-launched app has no Homebrew PATH, so a bare
+    // `ffmpeg` would not be found there.
+    #[cfg(target_os = "macos")]
+    if let Some(bundled) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent()?.parent().map(|contents| contents.join("Resources").join("ffmpeg")))
+        .filter(|p| p.is_file())
+    {
+        return bundled;
+    }
+    "ffmpeg".into()
 }
 
 /// The ffmpeg output arguments for the video re-encode with `codec`. libx264 (the default) runs at a
@@ -1595,15 +1609,176 @@ mod tests {
         Ok(())
     }
 
-    // Installs the current module into IZUMI_LIVE_SAVE_DATA for the live tests on a machine that has
-    // none (a fresh Linux box), recording consent as the player's prompt would.
+    // The app's own licence path against a live server, without the video re-encode: the module is
+    // resolved exactly as a save resolves it (`fetch::installed`, so a browser's copy first), loaded,
+    // licensed through `license()` and handed one encrypted audio fragment to decrypt. It prints one
+    // `[probe] RESULT …` line. Env: IZUMI_LIVE_SAVE_MANIFEST, IZUMI_LIVE_SAVE_LICENSE and
+    // IZUMI_LIVE_SAVE_DATA (a data dir with consent recorded). The macOS CI job runs it against a public
+    // test asset and licence proxy that need no account.
     #[test]
-    #[ignore = "live: downloads the module from Google's component service"]
+    #[ignore = "live: needs the module, a licence server and the network"]
+    fn live_licence_keys_arrive() {
+        let outcome = tauri::async_runtime::block_on(licence_probe());
+        match &outcome {
+            Ok(line) => eprintln!("[probe] RESULT ok {line}"),
+            Err(e) => eprintln!("[probe] RESULT failed: {e:#}"),
+        }
+        outcome.expect("licence probe failed");
+    }
+
+    async fn licence_probe() -> Result<String> {
+        let manifest_url = std::env::var("IZUMI_LIVE_SAVE_MANIFEST").context("IZUMI_LIVE_SAVE_MANIFEST")?;
+        let licence = Licence {
+            key_system: Some("com.widevine.alpha".into()),
+            license_url: std::env::var("IZUMI_LIVE_SAVE_LICENSE").context("IZUMI_LIVE_SAVE_LICENSE")?,
+            license_headers: None,
+            server_certificate_url: None,
+        };
+        let data = PathBuf::from(std::env::var("IZUMI_LIVE_SAVE_DATA").context("IZUMI_LIVE_SAVE_DATA")?);
+        let text = client().get(&manifest_url).send().await?.error_for_status()?.text().await?;
+        let manifest = mpd::parse(&text, &manifest_url)?;
+        let audio = manifest.audio(None).context("no audio")?.clone();
+        let (audio_head, _) = head(&audio.url).await.context("audio head")?;
+        let init = manifest.pssh.clone().or_else(|| Some(audio_head.pssh.clone()).filter(|p| !p.is_empty())).context("no pssh")?;
+
+        // Which slice is running, and on macOS whether Rosetta is translating it.
+        let translated = std::process::Command::new("sysctl")
+            .args(["-n", "sysctl.proc_translated"])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "n/a".into());
+        eprintln!("[probe] arch={} proc_translated={translated}", std::env::consts::ARCH);
+        let installed = fetch::installed(&data).context(super::super::NOT_INSTALLED)?;
+        eprintln!("[probe] module {} at {} (interface {})", installed.version, installed.library.display(), installed.interface);
+        let lib = installed.library.clone();
+        let version = blocking(move || cdm::load_module(&lib)).await?;
+        eprintln!("[probe] loaded, GetCdmVersion = {version}");
+
+        let (cdm, usable) = license(0, installed.interface, &licence, init).await?;
+        let hex = |k: &[u8; 16]| k.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        eprintln!("[probe] licence: {} usable key(s): {}", usable.len(), usable.iter().map(hex).collect::<Vec<_>>().join(", "));
+        let kids = candidate_kids(audio_head.default_kid, &usable);
+
+        // The asset may open with clear fragments (a public test asset marks its clear lead with sample
+        // groups, which the save path does not read); decrypt the first one it can plan that carries
+        // encrypted samples, and say which were passed over.
+        let mut rx = spawn_prefetch(audio.url.clone(), audio_head.fragments.clone(), 4, Arc::new(AtomicBool::new(false)));
+        while let Some(item) = rx.recv().await {
+            let (index, mut frag) = item?;
+            let samples = match fmp4::plan_fragment(&mut frag, audio_head.iv_size) {
+                Ok(samples) => samples,
+                Err(e) => {
+                    eprintln!("[probe] fragment {index} passed over: {e:#}");
+                    continue;
+                }
+            };
+            if samples.is_empty() {
+                continue;
+            }
+            let before = frag.clone();
+            let (count, ranges) = (samples.len(), samples.iter().map(|s| s.offset..s.offset + s.size).collect::<Vec<_>>());
+            let c = cdm.clone();
+            let kids = kids.clone();
+            let (after, result) = blocking(move || Ok(c.decrypt(frag, kids, samples))).await?;
+            result.context("Decrypt")?;
+            let changed = ranges.iter().filter(|r| before[(*r).clone()] != after[(*r).clone()]).count();
+            anyhow::ensure!(changed > 0, "Decrypt returned success but no sample changed");
+            eprintln!("[probe] audio: fragment {index} decrypted, {changed} of {count} samples changed");
+            let video = video_probe(&manifest, &cdm, &usable).await.context("video decode")?;
+            return Ok(format!(
+                "arch={} proc_translated={translated} module={version} keys={} audio_fragment={index} audio_samples={count} audio_changed={changed} {video} library={}",
+                std::env::consts::ARCH,
+                usable.len(),
+                installed.library.display()
+            ));
+        }
+        bail!("no encrypted audio fragment in {}", audio.url)
+    }
+
+    /// The save's video path on one encrypted fragment: the module's H.264 decoder
+    /// (`DecryptAndDecodeFrame`) through the same host, one picture expected per sample.
+    async fn video_probe(manifest: &mpd::Manifest, cdm: &Arc<Cdm>, usable: &[[u8; 16]]) -> Result<String> {
+        let video = manifest.video(Some(480), Some("avc1")).context("no H.264 video")?.clone();
+        let (vh, _) = head(&video.url).await.context("video head")?;
+        let avcc = vh.avcc.clone().context("no avcC")?;
+        let (profile, param_sets) = fmp4::param_sets(&avcc)?;
+        let (w, h) = (vh.width as usize, vh.height as usize);
+        let frame_size = w * h + 2 * w.div_ceil(2) * h.div_ceil(2);
+        let kid = *candidate_kids(vh.default_kid, usable).first().context("no KID")?;
+        let mut rx = spawn_prefetch(video.url.clone(), vh.fragments.clone(), 4, Arc::new(AtomicBool::new(false)));
+        while let Some(item) = rx.recv().await {
+            let (index, mut frag) = item?;
+            let Ok(samples) = fmp4::plan_fragment(&mut frag, vh.iv_size) else { continue };
+            if samples.is_empty() {
+                continue;
+            }
+            let count = samples.len();
+            let mut units = Vec::with_capacity(count);
+            for s in &samples {
+                let mut d = frag[s.offset..s.offset + s.size].to_vec();
+                fmp4::to_annex_b(&mut d, &s.subsamples)?;
+                units.push((d, s.subsamples.clone(), s.iv.clone()));
+            }
+            let c = cdm.clone();
+            let (pictures, nonblack) = blocking(move || {
+                c.video_init(profile, w as i32, h as i32, avcc)?;
+                let (mut pictures, mut nonblack) = (0usize, 0usize);
+                let mut take = |r: (Vec<u8>, Result<Option<cdm::Picture>>)| -> Result<bool> {
+                    let (out, r) = r;
+                    Ok(match r? {
+                        Some(_) => {
+                            pictures += 1;
+                            if out[..w * h].iter().any(|&y| y > 16) {
+                                nonblack += 1;
+                            }
+                            true
+                        }
+                        None => false,
+                    })
+                };
+                for (n, (mut d, mut subs, iv)) in units.into_iter().enumerate() {
+                    if n == 0 {
+                        d.splice(0..0, param_sets.iter().copied());
+                        if let Some(first) = subs.first_mut() {
+                            first.0 += param_sets.len() as u32;
+                        }
+                    }
+                    take(c.video_decode(kid, iv, subs, Some(d), n as i64 * 40_000, vec![0u8; frame_size]))?;
+                }
+                // Drain the decoder's reorder queue.
+                while take(c.video_decode(kid, Vec::new(), Vec::new(), None, 0, vec![0u8; frame_size]))? {}
+                c.video_reset()?;
+                Ok((pictures, nonblack))
+            })
+            .await?;
+            eprintln!("[probe] video {w}x{h}: fragment {index}, {count} samples -> {pictures} pictures ({nonblack} not black)");
+            anyhow::ensure!(pictures == count, "decoded {pictures} pictures from {count} samples");
+            anyhow::ensure!(nonblack > 0, "every decoded picture is black");
+            return Ok(format!("video={w}x{h} video_fragment={index} video_samples={count} video_pictures={pictures}"));
+        }
+        bail!("no encrypted video fragment in {}", video.url)
+    }
+
+    // Sets the module up in IZUMI_LIVE_SAVE_DATA for the live tests, recording consent as the in-app
+    // prompt would: through `fetch::stage` + `fetch::accept`, so on Windows and macOS a browser's own
+    // copy is taken without a download (IZUMI_WIDEVINE_NO_SYSTEM=1 forces the download instead).
+    #[test]
+    #[ignore = "live: may download the module from Google's component service"]
     fn live_install_module() {
         let data = PathBuf::from(std::env::var("IZUMI_LIVE_SAVE_DATA").expect("IZUMI_LIVE_SAVE_DATA"));
+        assert!(fetch::installed(&data).is_none() || fetch::consented(&data), "nothing is usable before consent");
         let staged = tauri::async_runtime::block_on(fetch::stage(&reqwest::Client::new(), &data, &|_, _| {})).expect("stage");
+        let downloaded = data.join("widevine").join(format!(".staged-{}", staged.version)).is_dir();
         let installed = fetch::accept(&data, &staged.version, "test").expect("accept");
-        eprintln!("[live] installed module {} at {}", staged.version, installed.library.display());
+        eprintln!(
+            "[live] set up module {} at {} ({})",
+            staged.version,
+            installed.library.display(),
+            if downloaded { "downloaded from Google's component service" } else { "a browser's copy, nothing downloaded" }
+        );
+        assert_eq!(fetch::installed(&data).map(|i| i.version), Some(staged.version));
     }
 
     // A real end-to-end save against a live licence server, driven by env vars so it only runs when

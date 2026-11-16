@@ -5,9 +5,11 @@
 //! in `native/widevine/`). On Windows the webview has EME and streams protected media itself, so the
 //! module is used only to *save* a protected episode as a clear file (`save.rs`): there the host
 //! vtable is built in Rust (`host_win.rs`) because a COM-less `.dll` cannot be loaded the dlopen way.
+//! macOS is the same as Windows: save-only, through the same Rust host.
 //!
-//! The module is downloaded from Google only after the user has accepted its licence (`fetch.rs`),
-//! except on Windows where the WebView2 runtime already ships a copy the host prefers.
+//! The module is used only after the user has accepted its licence (`fetch.rs`). It is downloaded from
+//! Google unless a browser on the machine already ships a copy, which the host prefers: the WebView2
+//! runtime, Edge or Chrome on Windows, Chrome on macOS.
 mod cdm;
 pub(crate) mod fetch;
 mod fmp4;
@@ -23,7 +25,8 @@ mod seccomp;
 #[cfg(target_os = "linux")]
 pub(crate) mod session;
 // The Rust CDM host vtable. Linux links the C++ shim instead (build.rs).
-#[cfg(target_os = "windows")]
+// Named for Windows, where it started; macOS uses the same host unchanged.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 mod host_win;
 
 #[cfg(target_os = "linux")]
@@ -117,13 +120,26 @@ pub(crate) fn lang_matches(a: &str, b: &str) -> bool {
     !a.is_empty() && base(a) == base(b)
 }
 
+/// What this build can do with the module. The two capabilities differ and must stay two fields:
+/// every platform that builds the host can *save* through it, but only Linux *plays* through it
+/// (Windows and macOS keep live playback in their webview). The frontend routes saves on `supported`
+/// and playback on `playback`; one flag for both sent Windows playback to a surface it does not have.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    /// Protected handling through izumi's own module host is available on this build.
+    /// The module host is built here, so protected episodes can be saved through it.
     pub supported: bool,
+    /// Protected streams also *play* through izumi's own player (Linux only).
+    pub playback: bool,
+    /// The accepted module version izumi will load (none until the licence has been accepted).
     pub installed: Option<String>,
+    /// A browser's own module version found on this device (Windows, macOS). Setting it up still
+    /// asks the user to accept the licence but downloads nothing.
+    pub available: Option<String>,
 }
+
+/// Whether protected playback goes through izumi's own player on this build (see [`Status`]).
+pub const NATIVE_PLAYBACK: bool = cfg!(target_os = "linux");
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -140,7 +156,12 @@ struct Progress {
 
 pub fn widevine_status(app: AppHandle) -> Result<Status, String> {
     let data = data_dir(&app)?;
-    Ok(Status { supported: true, installed: fetch::installed(&data).map(|i| i.version) })
+    Ok(Status {
+        supported: true,
+        playback: NATIVE_PLAYBACK,
+        installed: fetch::installed(&data).map(|i| i.version),
+        available: fetch::system_copy().map(|i| i.version),
+    })
 }
 
 /// One module download at a time, shared by the player's prompt and the background module worker.
@@ -189,5 +210,17 @@ mod tests {
         assert!(super::lang_matches("en-US", "eng"));
         assert!(!super::lang_matches("en-US", "jpn"));
         assert!(!super::lang_matches("", ""));
+    }
+
+    /// Saving is available wherever the host is built; playback through it only on Linux. A build
+    /// that reports native playback without the Linux player would route protected streams away from
+    /// the webview that actually plays them.
+    #[test]
+    fn playback_is_native_only_on_linux() {
+        assert_eq!(super::NATIVE_PLAYBACK, cfg!(target_os = "linux"));
+        let status = super::Status { supported: true, playback: super::NATIVE_PLAYBACK, installed: None, available: None };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["supported"], true);
+        assert_eq!(json["playback"], cfg!(target_os = "linux"));
     }
 }

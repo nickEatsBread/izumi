@@ -13,7 +13,7 @@
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
   import NativeDrmSurface from './NativeDrmSurface.svelte'
-  import { nativeDrmSupported, usesNativeDrm } from '$lib/player/native-drm'
+  import { nativeDrmPlayback, usesNativeDrm } from '$lib/player/native-drm'
   import { playerCommand, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
@@ -454,7 +454,7 @@
   const drmActive = $derived(!!$nowPlayingStream.drm)
   // Linux plays protected streams in izumi's own mpv player: the mpv-side features (subtitle
   // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
-  const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported))
+  const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmPlayback))
   const drmWebview = $derived(drmActive && !drmNative)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell

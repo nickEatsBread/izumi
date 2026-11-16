@@ -76,9 +76,9 @@ mod subsync;
 #[cfg(target_os = "linux")]
 mod steam_osk;
 // Protected (Widevine) handling by hosting Google's module directly. Linux also plays protected
-// streams through izumi's own player; Windows uses it only to save protected episodes as clear
-// files (its webview still streams them live). macOS keeps the webview path for both.
-// `widevine_host` is set by build.rs for x86-64 Linux and Windows.
+// streams through izumi's own player; Windows and macOS use it only to save protected episodes as
+// clear files (their webview still streams them live).
+// `widevine_host` is set by build.rs for x86-64 Linux and Windows, and macOS (arm64 and x86-64).
 #[cfg(widevine_host)]
 mod widevine;
 // Optional native modules (packs ask for them by id), downloaded in the background.
@@ -553,7 +553,9 @@ fn module_release(id: String, by: Option<String>) -> Result<(), String> {
     modules::module_release(id, by)
 }
 
-/// Whether izumi's own player can play protected streams here, and which module version is ready.
+/// Whether this build can save protected episodes through izumi's module host (`supported`), whether
+/// it also plays them through izumi's own player (`playback`, Linux only), and which module version
+/// is ready. See `widevine::Status`.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
@@ -562,7 +564,7 @@ fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
     #[cfg(not(widevine_host))]
     {
         let _ = app;
-        Ok(serde_json::json!({ "supported": false, "installed": null }))
+        Ok(serde_json::json!({ "supported": false, "playback": false, "installed": null, "available": null }))
     }
 }
 
