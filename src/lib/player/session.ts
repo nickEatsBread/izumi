@@ -317,6 +317,11 @@ export const torrentSubtitleState = writable<{
   revision: number
 }>({ playbackId: null, status: 'idle', loaded: 0, total: 0, revision: 0 })
 
+// Bumped each time a subtitle track reaches the playing file after it opened (add-on results,
+// debrid and torrent sidecars). mpv never selects such a track itself, so the overlay re-runs its
+// subtitle choice on every bump.
+export const lateSubtitleRevision = writable(0)
+
 // Cache key (infoHash, else `<mediaId>-<episode>`) of the stream now playing, used
 // by the seekbar to request/poll its scrub-preview sprite sheet. null = no sprite.
 export const spriteKey = writable<string | null>(null)

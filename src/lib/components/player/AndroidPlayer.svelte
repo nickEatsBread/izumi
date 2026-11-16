@@ -98,7 +98,7 @@
   import { serverSiblings, variantLabel, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
-  import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
+  import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, downloadArgs } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { castSourceDecision, castSubtitleFormat, castSubtitleTitle, castTrackPreferences, tvCastSource } from '$lib/player/android-cast'
   import { castSkipSegments, companionMedia } from '$lib/companion/protocol'
@@ -1708,15 +1708,7 @@
     const key = candidateKey(candidate)
     downloadingSubtitle = key
     try {
-      const path = await invoke<string>('player_add_subtitle', {
-        provider: candidate.provider,
-        url: candidateDownloadUrl(candidate),
-        fileId: candidate.download?.fileId,
-        lang: candidate.lang ?? 'und',
-        title: candidateTitle(candidate),
-        apiKey: candidateApiKey(candidate.provider),
-        token: $openSubtitlesToken,
-      })
+      const path = await invoke<string>('player_add_subtitle', downloadArgs(candidate, $openSubtitlesToken))
       await mpvCommand([
         'sub-add',
         path,

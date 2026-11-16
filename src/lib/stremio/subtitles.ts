@@ -107,14 +107,20 @@ async function buildSubQuery(media: Media, episode: number | undefined, filename
   // Same ids as play.ts's stream request: primaryStreamIds + the aligned-imdb wave (mediaExtensionIds).
   const v = episode == null ? media.videos?.[0] : media.videos?.find((x) => x.number === episode) ?? media.videos?.[episode - 1]
   const native = media.catalog?.provider === 'stremio' ? media.catalog.resourceType?.trim() : ''
+  // A TMDB/Stremio catalog title has no AniList mapping; its own ids are the only ones there are.
+  const catalogIds = externalIdsOf(media)
+  const imdbId = ids.imdbId ?? catalogIds.imdb
+  const season = v?.season ?? ids.season
   return {
     type,
-    imdbId: ids.imdbId,
-    parentImdbId: ids.imdbId,
-    tmdbId: ids.tmdbId,
+    imdbId,
+    parentImdbId: imdbId,
+    tmdbId: ids.tmdbId ?? (catalogIds.tmdb ? String(catalogIds.tmdb) : undefined),
     kitsuId: kitsu != null ? String(kitsu) : undefined,
-    anilistId: media.id,
-    season: ids.season,
+    anilistId,
+    season,
+    // IMDb-keyed services count within the season: a split cour's AniList episode 1 is their E13.
+    seasonEpisode: season != null ? v?.episode ?? ids.episodeNumber : undefined,
     episode,
     filename,
     moviehash,
@@ -122,10 +128,7 @@ async function buildSubQuery(media: Media, episode: number | undefined, filename
     languages: queryLanguages(),
     metaType: native && /^[A-Za-z0-9._-]{1,80}$/.test(native) ? native : type,
     directVid: media.catalog?.provider === 'stremio' ? v?.id : undefined,
-    imdbVid: buildStreamIds({
-      type, imdb: ids.imdbId ?? externalIdsOf(media).imdb,
-      season: v?.season ?? ids.season, imdbEpisode: v?.episode ?? ids.episodeNumber,
-    })[0],
+    imdbVid: buildStreamIds({ type, imdb: imdbId, season, imdbEpisode: v?.episode ?? ids.episodeNumber })[0],
     kitsuVid: buildStreamIds({ type, kitsu, episode })[0],
     videoSize: Number.isSafeInteger(video?.size) && video!.size! > 0 ? video!.size : undefined,
   }

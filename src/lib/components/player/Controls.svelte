@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
+  import { open } from '@tauri-apps/plugin-dialog'
   import { playerCommand, playerGetProperty, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import { nativeDrmPlayback, usesNativeDrm } from '$lib/player/native-drm'
   import { listen } from '@tauri-apps/api/event'
@@ -38,6 +39,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Check from '@lucide/svelte/icons/check'
   import Languages from '@lucide/svelte/icons/languages'
+  import FileUp from '@lucide/svelte/icons/file-up'
   import Search from '@lucide/svelte/icons/search'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import ServerIcon from '@lucide/svelte/icons/server'
@@ -52,7 +54,7 @@
   import Cast from '@lucide/svelte/icons/cast'
   import { displayBinding, effectiveBinding, type HotkeyId } from '$lib/hotkeys'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, lateSubtitleRevision, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
@@ -71,7 +73,7 @@
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
-  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
+  import { providerBadge, candidateKey, isCandidateLoaded, subtitleErrorNotice, downloadArgs } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
@@ -785,11 +787,11 @@
     menuLevel = 'root'
     if (showTracks) await refreshTracks()
   }
-  // A sidecar can finish while this menu is already open. Refresh its live mpv snapshot after
-  // every successful sub-add so "Loading subtitles…" turns into selectable tracks in place. The
-  // settings sheet and the bar's Audio and Subtitles words read the same list.
+  // A sidecar or add-on subtitle can finish while this menu is already open. Refresh its live mpv
+  // snapshot after every successful sub-add so "Loading subtitles…" turns into selectable tracks in
+  // place. The settings sheet and the bar's Audio and Subtitles words read the same list.
   $effect(() => {
-    const revision = $torrentSubtitleState.revision
+    const revision = $torrentSubtitleState.revision + $lateSubtitleRevision
     if ((showTracks || showOptions || trackWords) && revision > 0) void refreshTracks()
   })
   // The words show only for a page that exists, so the bar needs the list as soon as it mounts.
@@ -933,15 +935,7 @@
   async function addOnlineSub(c: SubtitleCandidate) {
     downloadingKey = candidateKey(c)
     try {
-      await invoke('player_add_subtitle', {
-        provider: c.provider,
-        url: candidateDownloadUrl(c),
-        fileId: c.download?.fileId,
-        lang: c.lang ?? 'und',
-        title: candidateTitle(c),
-        apiKey: candidateApiKey(c.provider),
-        token: get(openSubtitlesToken),
-      })
+      await invoke('player_add_subtitle', downloadArgs(c, get(openSubtitlesToken)))
       tracks = JSON.parse(await playerTracks()) as Track[]
       subtitleNotice.set('')
       if ($subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
@@ -951,6 +945,20 @@
       subtitleNotice.set(subtitleErrorNotice(c.provider, e))
     }
     finally { downloadingKey = null }
+  }
+
+  // A subtitle file from disk: mpv reads the path itself and shows it at once.
+  async function addSubtitleFile() {
+    const path = await open({ filters: [{ name: 'Subtitles', extensions: ['srt', 'ass', 'ssa', 'vtt'] }] }).catch(() => null)
+    if (typeof path !== 'string') return
+    try {
+      await playerCommand('sub-add', [path, 'select'])
+      tracks = JSON.parse(await playerTracks()) as Track[]
+    }
+    catch (e) {
+      console.warn('add subtitle file failed', e)
+      playerNotice.set('That subtitle file could not be loaded')
+    }
   }
 
   // Episode switcher (Player buttons › Episodes, or the right-click menu).
@@ -1421,6 +1429,10 @@
                           <span class="block truncate text-white/80">Online subtitles</span>
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
+                      </button>
+                      <button data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={addSubtitleFile}>
+                        <FileUp size={15} class="shrink-0 text-white/45" />
+                        <span class="block truncate text-white/80">Subtitle file…</span>
                       </button>
                       <!-- Saved fonting presets: capture this release's look / override this session. -->
                       <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openStyleDetail}>

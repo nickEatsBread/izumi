@@ -1,11 +1,12 @@
-//! Runtime sidecars wait until a direct-P2P video has finished opening.
+//! Runtime sidecars wait until the video they belong to has finished opening.
 //!
-//! mpv applies `network-timeout` to every stream it opens while the option is set. A direct-P2P
-//! video opens with the timeout disabled (see `load_file`), and the event loop restores the normal
-//! value at FileLoaded. A sidecar (`sub-add` of a URL) opened before then would inherit the
-//! unbounded read. Runtime `sub-add` also holds the player lock until its read ends, so a single
-//! stalled subtitle could block every player command, stop included, until pieces or a server
-//! reply arrive.
+//! A `sub-add` issued while mpv is still swapping files lands on the outgoing file, which drops it,
+//! or ahead of the new file's own tracks. mpv also applies `network-timeout` to every stream it
+//! opens while the option is set. A direct-P2P video opens with the timeout disabled (see
+//! `load_file`), and the event loop restores the normal value at FileLoaded. A sidecar (`sub-add`
+//! of a URL) opened before then would inherit the unbounded read. Runtime `sub-add` also holds the
+//! player lock until its read ends, so a single stalled subtitle could block every player command,
+//! stop included, until pieces or a server reply arrive.
 
 use std::{future::Future, sync::Arc};
 
@@ -15,7 +16,7 @@ use tokio::sync::watch;
 struct GateState {
     /// Bumped whenever a new file replaces the current one, or the player closes.
     file: u64,
-    /// False while a direct-P2P video is opening without a read timeout.
+    /// False while a video is opening.
     open: bool,
 }
 
@@ -31,12 +32,12 @@ impl SidecarGate {
         Self(Arc::new(sender))
     }
 
-    /// A new file replaces the current one. A stall-tolerant file holds sidecars until it loads.
+    /// A new file replaces the current one and, with `hold`, holds sidecars until it loads.
     /// Closing the player passes `false`, which refuses anything still waiting for the old file.
-    pub(crate) fn begin_file(&self, stall_tolerant: bool) {
+    pub(crate) fn begin_file(&self, hold: bool) {
         self.0.send_modify(|state| {
             state.file += 1;
-            state.open = !stall_tolerant;
+            state.open = !hold;
         });
     }
 

@@ -23,6 +23,11 @@ describe('osSearchParams', () => {
     expect(p.get('episode_number')).toBe('5')
     expect(p.get('imdb_id')).toBeNull()
   })
+  it('asks with the episode as numbered within its season when the mapping names it', () => {
+    const p = new URLSearchParams(osSearchParams({ ...SERIES, season: 1, episode: 2, seasonEpisode: 14 }))
+    expect(p.get('season_number')).toBe('1')
+    expect(p.get('episode_number')).toBe('14')
+  })
   it('uses imdb_id (no season/episode) for a movie', () => {
     const p = new URLSearchParams(osSearchParams(MOVIE))
     expect(p.get('imdb_id')).toBe('245429')

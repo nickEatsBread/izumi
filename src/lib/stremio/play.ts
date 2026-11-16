@@ -91,6 +91,7 @@ import { annotateCache } from './cache-state'
 import { resolveOnlineStreams } from './onlinestream'
 import { knownBestHashes } from './seadex'
 import { fetchExternalSubtitles } from './subtitles'
+import { attachLateSubtitle } from '$lib/player/late-subtitle'
 import type { SubtitleCandidate } from './subtitles/types'
 import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
@@ -110,7 +111,7 @@ import { rememberRelease } from '$lib/release-search/recent'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { incognito } from '$lib/stores/incognito'
 import { episodeSourceOrigins, rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, upNextPrompt, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery, type StreamPickerState } from '$lib/player/session'
+import { connecting, nextEpisodeReady, upNextPrompt, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, lateSubtitleRevision, playerSleep, playbackRecovery, type StreamPickerState } from '$lib/player/session'
 import type { Writable } from 'svelte/store'
 import {
   DIRECT_TORRENT_START_TIMEOUT_MS,
@@ -372,6 +373,7 @@ async function attachDirectTorrentSubtitles(playbackId: number, subtitles: Direc
         lang: subtitle.lang,
         title: subtitle.title,
       })
+      lateSubtitleRevision.update((n) => n + 1)
       loaded++
       torrentSubtitleState.update((state) =>
         state.playbackId === playbackId
@@ -411,11 +413,7 @@ async function attachDirectOnlineSubtitles(
     if (!candidate.url) continue
     if (currentDirectTorrentPlaybackId() !== playbackId) return
     try {
-      await invoke('player_attach_subtitle_url', {
-        url: candidate.url,
-        lang: candidate.lang,
-        title: candidate.release,
-      })
+      await attachLateSubtitle(candidate.url, candidate.lang, candidate.release)
     } catch (error) {
       if (currentDirectTorrentPlaybackId() !== playbackId) return
       console.warn('direct torrent online subtitle failed', error)
@@ -447,7 +445,7 @@ async function attachDebridSidecars(provider: string, key: string, torrent: stri
   const sidecars = await resolveSidecars(provider, key, torrent, want ? { want } : undefined)
   for (const s of sidecars) {
     try {
-      await invoke('player_attach_subtitle_url', { url: s.url, lang: s.lang, title: s.title })
+      await attachLateSubtitle(s.url, s.lang, s.title)
     } catch (error) {
       console.warn('debrid sidecar subtitle failed', error)
     }
@@ -3942,7 +3940,7 @@ export async function playStream(
         for (const s of cands) {
           if (!s.url) continue
           if (subGen !== playGen) return
-          try { await invoke('player_attach_subtitle_url', { url: s.url, lang: s.lang, title: s.release ?? s.lang ?? 'Online subtitles' }) }
+          try { await attachLateSubtitle(s.url, s.lang, s.release) }
           catch { /* a missing subtitle must never disturb playback */ }
         }
       })

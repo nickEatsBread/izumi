@@ -12,7 +12,8 @@ export interface SubQuery {
   anilistId?: number       // Jimaku path only — its entries are keyed on AniList/TMDB ids
   type: 'movie' | 'series'
   season?: number
-  episode?: number
+  episode?: number         // AniList / catalog episode number (Jimaku numbers its files this way)
+  seasonEpisode?: number   // the episode within `season`, as IMDb-keyed services number it
   filename?: string        // release filename hint — the primary hashless matching signal
   moviehash?: string       // 16-char OpenSubtitles hash of the exact video bytes
   moviebytesize?: number   // exact byte length paired with moviehash
@@ -31,6 +32,7 @@ export interface SubtitleCandidate {
     fileId?: number        // OpenSubtitles files[].file_id
     zipUrl?: string        // SubDL absolute dl.subdl.com/…zip
     fileUrl?: string       // Jimaku absolute file url — a plain sub OR an archive (Rust sniffs)
+    episode?: number       // the episode searched for, so an archive yields that episode's file
   }
 }
 

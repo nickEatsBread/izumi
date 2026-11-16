@@ -37,8 +37,18 @@ describe('createSubDL().search', () => {
     })
     const out = await createSubDL().search(SERIES)
     expect(out).toEqual([
-      { provider: 'subdl', lang: 'EN', release: '…SECTOR7', download: { needsFetch: true, zipUrl: 'https://dl.subdl.com/subtitle/3197651-3213944.zip' } },
+      { provider: 'subdl', lang: 'EN', release: '…SECTOR7', download: { needsFetch: true, zipUrl: 'https://dl.subdl.com/subtitle/3197651-3213944.zip', episode: 5 } },
     ])
+  })
+
+  it('asks for, and later unpacks, the episode as numbered within its season', async () => {
+    mocks.phttp.mockResolvedValue({
+      ok: true, status: 200, text: async () => '',
+      json: async () => ({ status: true, subtitles: [{ release_name: 'Show.S01.WEB', language: 'EN', url: '/subtitle/1-2.zip' }] }),
+    })
+    const out = await createSubDL().search({ ...SERIES, season: 1, episode: 2, seasonEpisode: 14 })
+    expect(new URL(mocks.phttp.mock.calls[0][0]).searchParams.get('episode_number')).toBe('14')
+    expect(out[0].download?.episode).toBe(14)
   })
 
   it('returns [] on an error envelope ({status:false})', async () => {

@@ -77,7 +77,7 @@
   import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { protectedSurface } from '$lib/themes/safe-mode'
-  import { oskDismissedAt, playerStage, playerChromeVisible } from '$lib/player/session'
+  import { oskDismissedAt, playerStage, playerChromeVisible, lateSubtitleRevision } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import DockEpisodes from './DockEpisodes.svelte'
@@ -1008,19 +1008,28 @@
   })
 
   // Re-select once the file is actually loaded. A per-series semantic preference (language,
-  // title, codec) wins; global language policy remains the fallback for unseen shows.
+  // title, codec) wins; global language policy remains the fallback for unseen shows. A subtitle
+  // that arrives later runs the choice again, but may only switch subtitles on: never away from a
+  // track already showing, which may be the viewer's own pick.
   let subtitlePolicyKey = ''
+  let subtitlePolicyRevision = 0
   $effect(() => {
     const key = loadedKey
-    if (drmWebview || !firstFrame || !key || subtitlePolicyKey === key) return
+    const revision = $lateSubtitleRevision
+    if (drmWebview || !firstFrame || !key || (subtitlePolicyKey === key && subtitlePolicyRevision === revision)) return
+    const late = subtitlePolicyKey === key
     subtitlePolicyKey = key
+    subtitlePolicyRevision = revision
     void playerTracks()
       .then((raw) => {
         if (key !== loadedKey) return
         const tracks = JSON.parse(raw) as Track[]
-        const audioPref = rememberedSeriesTrack(np.id, 'audio')
-        const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
-        if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        if (late && tracks.some((track) => (track.type === 'sub' || track.type === 'caption') && track.selected)) return
+        if (!late) {
+          const audioPref = rememberedSeriesTrack(np.id, 'audio')
+          const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
+          if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        }
 
         const subPref = rememberedSeriesTrack(np.id, 'subtitle')
         const rememberedSub = matchRememberedTrack(
