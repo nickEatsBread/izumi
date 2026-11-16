@@ -189,8 +189,8 @@ Decision 3 is in only for the one endpoint the viewer types.
 
 - **Package.** `plugin.json` (app, kind `plugin`, schemaVersion 1, pluginApi 1, id, name, version, author,
   description, `main` path and SHA-256, permissions, settings, optional `panel`) plus one `main.js` ES
-  module: `export default { activate(izumi) { … } }`. `node scripts/plugins/pin-main.mjs <folder>` writes
-  the hash. Files under `plugins/` are kept LF so the hash survives a Windows checkout.
+  module: `export default { activate(izumi) { … } }`. The plugin marketplace's `scripts/pin-main.mjs <folder>`
+  writes the hash ([izumi-plugins](https://github.com/nickEatsBread/izumi-plugins)).
 - **Scopes.**
   - `network`: listed https domains, plus the host of a `url` setting (`fromSetting`). Local and private
     addresses are refused, except that endpoint, which may use http only when it is on this computer.
@@ -238,7 +238,7 @@ Decision 3 is in only for the one endpoint the viewer types.
   title's cover, filled in by izumi, so a plugin cannot load a URL to track the viewer. The beam is drawn
   in CSS, because Navigator's BorderBeam is a React package. Navigator's Ship icon is its own logo;
   plugins get Sparkles.
-- **Jump to a moment** (`plugins/jump-to-moment`). It needs four settings: the model address, the model,
+- **Jump to a moment** (now `official/jump-to-moment` in izumi-plugins, listed in its store). It needs four settings: the model address, the model,
   an optional key, and "Only search what I've watched". To answer a question it:
   1. keeps the lines around keyword hits (±5 lines, top 12 hits), or all lines when nothing matches;
   2. asks for up to three line numbers as JSON;
@@ -256,7 +256,7 @@ Decision 3 is in only for the one endpoint the viewer types.
   A real model's answer quality is not measured here.
 - **Not in v1:**
   - reading subtitle tracks embedded in a video streamed over http (debrid and addon links);
-  - store listings for plugins (the store branch lists sources, themes and packs);
+  - store listings for plugins (added 2026-11-16: see [PLUGINS.md](PLUGINS.md));
   - automatic updates and pending-permission review on update;
   - DNS-level private-address checks (the guard reads the URL's host; Rust follows redirects);
   - the other spec slots and scopes.
