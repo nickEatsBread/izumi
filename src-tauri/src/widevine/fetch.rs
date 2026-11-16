@@ -514,9 +514,9 @@ pub fn accept(data_dir: &Path, version: &str, via: &str) -> Result<Installed> {
     } else {
         let _ = fs::remove_dir_all(&staged);
     }
-    fs::create_dir_all(root(data_dir))?;
+    fs::create_dir_all(root(data_dir)).with_context(|| format!("could not create {}", root(data_dir).display()))?;
     let consent = json!({ "acceptedVersion": version, "acceptedAt": unix_now(), "acceptedVia": via });
-    fs::write(root(data_dir).join(CONSENT_FILE), serde_json::to_vec_pretty(&consent)?)?;
+    fs::write(root(data_dir).join(CONSENT_FILE), serde_json::to_vec_pretty(&consent)?).context("could not record the licence acceptance")?;
     if let Some(system) = system {
         return Ok(system);
     }

@@ -1661,11 +1661,19 @@ mod tests {
         eprintln!("[probe] licence: {} usable key(s): {}", usable.len(), usable.iter().map(hex).collect::<Vec<_>>().join(", "));
         let kids = candidate_kids(audio_head.default_kid, &usable);
 
-        // The asset may open with clear fragments; decrypt the first one that carries encrypted samples.
+        // The asset may open with clear fragments (a public test asset marks its clear lead with sample
+        // groups, which the save path does not read); decrypt the first one it can plan that carries
+        // encrypted samples, and say which were passed over.
         let mut rx = spawn_prefetch(audio.url.clone(), audio_head.fragments.clone(), 4, Arc::new(AtomicBool::new(false)));
         while let Some(item) = rx.recv().await {
             let (index, mut frag) = item?;
-            let samples = fmp4::plan_fragment(&mut frag, audio_head.iv_size)?;
+            let samples = match fmp4::plan_fragment(&mut frag, audio_head.iv_size) {
+                Ok(samples) => samples,
+                Err(e) => {
+                    eprintln!("[probe] fragment {index} passed over: {e:#}");
+                    continue;
+                }
+            };
             if samples.is_empty() {
                 continue;
             }
@@ -1677,14 +1685,80 @@ mod tests {
             result.context("Decrypt")?;
             let changed = ranges.iter().filter(|r| before[(*r).clone()] != after[(*r).clone()]).count();
             anyhow::ensure!(changed > 0, "Decrypt returned success but no sample changed");
+            eprintln!("[probe] audio: fragment {index} decrypted, {changed} of {count} samples changed");
+            let video = video_probe(&manifest, &cdm, &usable).await.context("video decode")?;
             return Ok(format!(
-                "arch={} proc_translated={translated} module={version} keys={} fragment={index} samples={count} decrypted_changed={changed} library={}",
+                "arch={} proc_translated={translated} module={version} keys={} audio_fragment={index} audio_samples={count} audio_changed={changed} {video} library={}",
                 std::env::consts::ARCH,
                 usable.len(),
                 installed.library.display()
             ));
         }
         bail!("no encrypted audio fragment in {}", audio.url)
+    }
+
+    /// The save's video path on one encrypted fragment: the module's H.264 decoder
+    /// (`DecryptAndDecodeFrame`) through the same host, one picture expected per sample.
+    async fn video_probe(manifest: &mpd::Manifest, cdm: &Arc<Cdm>, usable: &[[u8; 16]]) -> Result<String> {
+        let video = manifest.video(Some(480), Some("avc1")).context("no H.264 video")?.clone();
+        let (vh, _) = head(&video.url).await.context("video head")?;
+        let avcc = vh.avcc.clone().context("no avcC")?;
+        let (profile, param_sets) = fmp4::param_sets(&avcc)?;
+        let (w, h) = (vh.width as usize, vh.height as usize);
+        let frame_size = w * h + 2 * w.div_ceil(2) * h.div_ceil(2);
+        let kid = *candidate_kids(vh.default_kid, usable).first().context("no KID")?;
+        let mut rx = spawn_prefetch(video.url.clone(), vh.fragments.clone(), 4, Arc::new(AtomicBool::new(false)));
+        while let Some(item) = rx.recv().await {
+            let (index, mut frag) = item?;
+            let Ok(samples) = fmp4::plan_fragment(&mut frag, vh.iv_size) else { continue };
+            if samples.is_empty() {
+                continue;
+            }
+            let count = samples.len();
+            let mut units = Vec::with_capacity(count);
+            for s in &samples {
+                let mut d = frag[s.offset..s.offset + s.size].to_vec();
+                fmp4::to_annex_b(&mut d, &s.subsamples)?;
+                units.push((d, s.subsamples.clone(), s.iv.clone()));
+            }
+            let c = cdm.clone();
+            let (pictures, nonblack) = blocking(move || {
+                c.video_init(profile, w as i32, h as i32, avcc)?;
+                let (mut pictures, mut nonblack) = (0usize, 0usize);
+                let mut take = |r: (Vec<u8>, Result<Option<cdm::Picture>>)| -> Result<bool> {
+                    let (out, r) = r;
+                    Ok(match r? {
+                        Some(_) => {
+                            pictures += 1;
+                            if out[..w * h].iter().any(|&y| y > 16) {
+                                nonblack += 1;
+                            }
+                            true
+                        }
+                        None => false,
+                    })
+                };
+                for (n, (mut d, mut subs, iv)) in units.into_iter().enumerate() {
+                    if n == 0 {
+                        d.splice(0..0, param_sets.iter().copied());
+                        if let Some(first) = subs.first_mut() {
+                            first.0 += param_sets.len() as u32;
+                        }
+                    }
+                    take(c.video_decode(kid, iv, subs, Some(d), n as i64 * 40_000, vec![0u8; frame_size]))?;
+                }
+                // Drain the decoder's reorder queue.
+                while take(c.video_decode(kid, Vec::new(), Vec::new(), None, 0, vec![0u8; frame_size]))? {}
+                c.video_reset()?;
+                Ok((pictures, nonblack))
+            })
+            .await?;
+            eprintln!("[probe] video {w}x{h}: fragment {index}, {count} samples -> {pictures} pictures ({nonblack} not black)");
+            anyhow::ensure!(pictures == count, "decoded {pictures} pictures from {count} samples");
+            anyhow::ensure!(nonblack > 0, "every decoded picture is black");
+            return Ok(format!("video={w}x{h} video_fragment={index} video_samples={count} video_pictures={pictures}"));
+        }
+        bail!("no encrypted video fragment in {}", video.url)
     }
 
     // Sets the module up in IZUMI_LIVE_SAVE_DATA for the live tests, recording consent as the in-app
