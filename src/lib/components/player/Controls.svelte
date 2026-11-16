@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
+  import { open } from '@tauri-apps/plugin-dialog'
   import { playerCommand, playerGetProperty, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import { nativeDrmPlayback, usesNativeDrm } from '$lib/player/native-drm'
   import { listen } from '@tauri-apps/api/event'
@@ -34,6 +35,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Check from '@lucide/svelte/icons/check'
   import Languages from '@lucide/svelte/icons/languages'
+  import FileUp from '@lucide/svelte/icons/file-up'
   import Search from '@lucide/svelte/icons/search'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import ServerIcon from '@lucide/svelte/icons/server'
@@ -941,6 +943,20 @@
     finally { downloadingKey = null }
   }
 
+  // A subtitle file from disk: mpv reads the path itself and shows it at once.
+  async function addSubtitleFile() {
+    const path = await open({ filters: [{ name: 'Subtitles', extensions: ['srt', 'ass', 'ssa', 'vtt'] }] }).catch(() => null)
+    if (typeof path !== 'string') return
+    try {
+      await playerCommand('sub-add', [path, 'select'])
+      tracks = JSON.parse(await playerTracks()) as Track[]
+    }
+    catch (e) {
+      console.warn('add subtitle file failed', e)
+      playerNotice.set('That subtitle file could not be loaded')
+    }
+  }
+
   // Episode switcher (Player buttons › Episodes, or the right-click menu).
   let showEpisodes = $state(false)
   function toggleEpisodes() {
@@ -1399,6 +1415,10 @@
                           <span class="block truncate text-white/80">Online subtitles</span>
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
+                      </button>
+                      <button data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={addSubtitleFile}>
+                        <FileUp size={15} class="shrink-0 text-white/45" />
+                        <span class="block truncate text-white/80">Subtitle file…</span>
                       </button>
                       <!-- Saved fonting presets: capture this release's look / override this session. -->
                       <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openStyleDetail}>
