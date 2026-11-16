@@ -202,6 +202,13 @@ export function episodeDisplayModel(
   })
 }
 
+/** API 8 `loading.episode`: the title and the episode being opened. Without a record (an external or
+ *  a direct link) the screen knows the name and art the opener passed. */
+export function episodeLoadingModel(media: Media | undefined, episode: number | undefined, name = '', art = ''): DisplayModel {
+  if (media) return episode != null ? episodeDisplayModel(media, episode) : mediaDisplayModel(media)
+  return { ...(name ? { title: name } : {}), ...(art ? { backdrop: art } : {}) }
+}
+
 /** "21m left" for an episode that has been started; nothing before it starts, without a duration,
  *  or once its position was cleared. */
 export function timeLeftLabel(position?: Pos): string | undefined {

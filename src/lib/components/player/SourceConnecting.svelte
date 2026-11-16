@@ -13,8 +13,13 @@
   import { isAndroid } from '$lib/platform'
   import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
   import { motion } from '$lib/motion/gm-motion'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { episodeLoadingModel } from '$lib/themes/host-model'
 
   const c = $derived($connecting)
+  // API 8 `loading.episode`: the theme's screen under the ring until the player's cover takes over.
+  const episodeScreen = $derived($themePresentation?.loading?.episode)
   // Past two seconds the loader names what it is waiting on.
   let slow = $state(false)
   $effect(() => {
@@ -62,6 +67,7 @@
     transition:fade={{ duration: $gameMode ? 0 : 160 }}
   >
     <span class="sr-only" role="status">Opening {c.title}</span>
+    {#if episodeScreen}<LoadingScreen screen={episodeScreen} episode loading variant="opening" model={episodeLoadingModel(c.media, c.episode, c.title, c.art)} class="absolute inset-0" />{/if}
     <button data-focusable data-part="play.connecting.back" onclick={(e) => { e.stopPropagation(); c?.cancel() }} class="absolute left-6 top-6 z-10 grid size-11 place-items-center rounded-full bg-black/40 text-xl text-white/85 transition-colors hover:bg-white/20 hover:text-white" aria-label="Back">‹</button>
     <div data-part="play.loader" class="grid place-items-center" aria-hidden="true"><Spinner size="player" /></div>
     <!-- A long wait (add-on searches, a slow source) says what it is waiting on, under the ring. -->

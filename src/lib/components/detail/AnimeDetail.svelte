@@ -87,6 +87,7 @@
   import { episodesBelow, episodesOnSide, resolveDetail, type DetailButton, type DetailSection } from '$lib/themes/presentation'
   import { desktopSynopsis, episodesOnPage, resolveSections, type ResolvedSections } from '$lib/detail/sections'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { ambientFromHex } from '$lib/themes/ambient'
   import { artNeeds, loadTitleExtras, metaNeeds, peekTitleArt, templateNeeds, titleExtrasKey, type TitleExtras } from '$lib/themes/title-extras'
@@ -200,6 +201,9 @@
   const shown = $derived(media ?? (pending ? (hintFits(detailHint) ? detailHint : ({ id, title: {}, coverImage: {} } as Media)) : undefined))
   // A title known by name: a placeholder has none, and `title()` would print "TBA".
   const named = (m: Media) => !!(m.title.romaji || m.title.english || m.title.userPreferred)
+  // API 8 `loading.title`: the theme's loading screen over the pending page, bound to the tapped card.
+  const titleScreen = $derived($themePresentation?.loading?.title)
+  const titleScreenModel = $derived(shown && named(shown) ? mediaDisplayModel(shown) : {})
   // A loading page without a name holds placeholder lines; a loaded record without one is not still
   // loading (an offline title rebuilt from its downloads), so it keeps the text it always had.
   const unnamed = (m: Media) => pending && !named(m)
@@ -862,6 +866,8 @@
     query.reexecute?.({ requestPolicy: 'network-only' })
   }
 </script>
+
+{#if titleScreen}<LoadingScreen screen={titleScreen} loading={pending} variant="series" model={titleScreenModel} class="fixed inset-0 z-[25] bg-background" />{/if}
 
 <svelte:window onscroll={$isMobile ? onHeroScroll : undefined} onkeydown={(e) => { if (e.key === 'Escape' && (showMore || actionsOpen)) closeMenu() }} />
 

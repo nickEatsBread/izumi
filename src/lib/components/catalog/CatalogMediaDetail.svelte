@@ -48,6 +48,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { episodeDisplayModel, mediaDisplayModel } from '$lib/themes/host-model'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
   import OptionsSheet, { type SheetGroup } from '$lib/components/detail/OptionsSheet.svelte'
   import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
@@ -388,7 +389,12 @@
   function titleLogoFailed(event: Event) {
     failedLogo = (event.currentTarget as HTMLImageElement).src
   }
+  // API 8 `loading.title`: the theme's loading screen over the skeleton, bound to the card that opened the page.
+  const titleScreen = $derived($themePresentation?.loading?.title)
+  const titleScreenHint = $derived($detailHints[compatibilityMediaId(ref)])
 </script>
+
+{#if titleScreen}<LoadingScreen screen={titleScreen} {loading} variant="catalog" model={titleScreenHint ? mediaDisplayModel(titleScreenHint) : {}} class="fixed inset-0 z-[25] bg-background" />{/if}
 
 {#if loading}
   <!-- The page's shape while it loads: the artwork with the title, synopsis and Play over it, then the

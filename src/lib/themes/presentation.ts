@@ -436,6 +436,16 @@ export interface PlayerPresentation {
   rating?: 'none' | 'intro'
 }
 export type PlayerButton = 'restart' | 'next' | 'fit'
+/** API 8: a loading screen drawn from a display-only template while a title page or an episode loads. */
+export interface LoadingScreen {
+  template?: ThemeNode
+  /** How long (0–1000 ms) the screen stays with `data-state="done"` once the wait is over, so a stylesheet
+   *  can fade it out. 0 removes it at once. */
+  exit?: number
+}
+/** API 8: `title` while a series or catalog title page loads its record, `episode` from the press to the
+ *  first frame. */
+export interface LoadingPresentation { title?: LoadingScreen; episode?: LoadingScreen }
 /** API 6, TV block only: how the Search page takes text. */
 export interface SearchPresentation {
   /** `grid` docks an A–Z / 0–9 keyboard beside the results. */
@@ -530,16 +540,18 @@ export interface ThemePresentation {
   tv?: TvPresentation
   /** API 6, only accepted inside `tv`; the resolved TV presentation carries it here. */
   search?: SearchPresentation
+  /** API 8: the loading screens. */
+  loading?: LoadingPresentation
   /** API 4, phones only: the root font size in px (14–18; izumi's own is 14.5) that every rem of the
    *  app's phone UI follows, times the design's font scale. The izumi mark keeps its own size. Only
    *  accepted inside `mobile`; the resolved phone presentation carries it here. */
   rootSize?: number
 }
 /** What a phone variant can change. Navigation is always the bottom bar there, so `shell` stays shared. */
-export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'rootSize'>
+export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'rootSize' | 'loading'>
 /** What the TV variant can change: the phone set without the phone root size, plus the shell and the
  *  hover preview choice. */
-export type TvPresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'shell' | 'cardPreview' | 'search'>
+export type TvPresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'shell' | 'cardPreview' | 'search' | 'loading'>
 /** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
 export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
@@ -1016,6 +1028,19 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   return result
 }
 /** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */
+function parseLoading(value: unknown, api: ThemeApi): LoadingPresentation {
+  const raw = record(value); only(raw, ['title', 'episode'])
+  const result: LoadingPresentation = {}
+  for (const moment of ['title', 'episode'] as const) {
+    if (raw[moment] === undefined) continue
+    const screen = record(raw[moment]); only(screen, ['template', 'exit'])
+    result[moment] = {}
+    // Display-only, like card templates: the screen holds no controls of its own.
+    if (screen.template !== undefined) result[moment].template = parseNode(screen.template, undefined, 0, false, api)
+    if (screen.exit !== undefined) result[moment].exit = whole(screen.exit, 0, 1000)
+  }
+  return result
+}
 function uniqueChoices<const T extends string>(value: unknown, values: readonly T[], name: string, min = 1): T[] {
   if (!Array.isArray(value) || value.length < min || value.length > values.length) throw new Error(`Invalid theme ${name} list.`)
   const seen = new Set<T>()
@@ -1090,7 +1115,7 @@ function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout
 }
 const MOBILE_KEYS = ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'player', 'cards', 'layout']
 function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
-  const raw = record(value); only(raw, [...MOBILE_KEYS, ...api4(api, ['rootSize'])])
+  const raw = record(value); only(raw, [...MOBILE_KEYS, ...api4(api, ['rootSize']), ...api8(api, ['loading'])])
   // The root size is phone-only, so the shared parser (which also reads the top level) never accepts it.
   const { rootSize, ...shared } = raw
   const result: MobilePresentation = parsePresentation(shared, api, true)
@@ -1099,7 +1124,7 @@ function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
 }
 const TV_KEYS = [...MOBILE_KEYS, 'shell', 'cardPreview', 'search']
 function parseTv(value: unknown, api: ThemeApi): TvPresentation {
-  const raw = record(value); only(raw, TV_KEYS)
+  const raw = record(value); only(raw, [...TV_KEYS, ...api8(api, ['loading'])])
   // `search` is TV-only, so the shared parser (which also reads the top level) never accepts it.
   const { search, ...shared } = raw
   const result: TvPresentation = parsePresentation(shared, api)
@@ -1116,7 +1141,7 @@ function parseTv(value: unknown, api: ThemeApi): TvPresentation {
  *  parsed, so its layout cannot carry navigation (phones always use the bottom bar). */
 export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API, phone = false): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout', 'cardPreview']), ...api6(api, ['tv'])])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout', 'cardPreview']), ...api6(api, ['tv']), ...api8(api, ['loading'])])
   const result: ThemePresentation = {}
   if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile, api)
   if (raw.tv !== undefined) result.tv = parseTv(raw.tv, api)
@@ -1158,6 +1183,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards, api)
   if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone, api)
   if (raw.cardPreview !== undefined) result.cardPreview = choice(raw.cardPreview, api >= 6 ? ['popup', 'none', 'expand'] : ['popup', 'none'])
+  if (raw.loading !== undefined) result.loading = parseLoading(raw.loading, api)
   return result
 }
 /** The presentation for one surface: on a phone the `mobile` block is layered over the shared one, on a
@@ -1187,6 +1213,8 @@ function layerBlock(shared: ThemePresentation, block: MobilePresentation & TvPre
     if (block.detail.bar) resolved.detail.bar = { ...shared.detail?.bar, ...block.detail.bar }
   }
   if (block.player) resolved.player = { ...shared.player, ...block.player }
+  // Each loading screen is replaced whole: its template and its exit belong together.
+  if (block.loading) resolved.loading = { ...shared.loading, ...block.loading }
   if (block.cards) resolved.cards = { ...shared.cards, ...block.cards }
   // The phone block can only carry `home` and the side-column keys (`parseLayout` rejects `nav` there), so
   // its navigation always comes from the shared layout; the TV block may carry its own.
@@ -1204,8 +1232,11 @@ function layerBlock(shared: ThemePresentation, block: MobilePresentation & TvPre
  *  from a palette, so izumi's own player); everything else stays the app's, so the page under the player
  *  never re-lays itself out. */
 export function withPlayerTheme(app: ThemePresentation | undefined, player: ThemePresentation | undefined): ThemePresentation | undefined {
-  const { player: _appPlayer, ...rest } = app ?? {}
+  const { player: _appPlayer, loading, ...rest } = app ?? {}
   const result: ThemePresentation = { ...rest, ...(player?.player ? { player: player.player } : {}) }
+  // The episode's loading screen is the player's; the title page's stays with the app theme.
+  const screens: LoadingPresentation = { ...(loading?.title ? { title: loading.title } : {}), ...(player?.loading?.episode ? { episode: player.loading.episode } : {}) }
+  if (Object.keys(screens).length) result.loading = screens
   return Object.keys(result).length ? result : undefined
 }
 /** Where the navigation chrome sits: phones always use the bottom bar; a television (`tv`: any
@@ -1446,8 +1477,8 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   if (layout.hero || layout.rows || layout.cards || layout.cardPreview || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home || tv.hero || tv.rows || tv.cards || tv.cardPreview || tv.layout?.home) surfaces.push('Home')
   // Search has no chip of its own; its TV keyboard counts as Shell, the chip for what sits outside Home, Details and the player.
   if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined || tv.shell || tv.density || tv.hideCardLabels || tv.trueBlack || tv.layout?.nav || tv.search) surfaces.push('Shell')
-  if (layout.detail || phone.detail || tv.detail) surfaces.push('Details')
-  if (layout.player || phone.player || tv.player) surfaces.push('Player')
+  if (layout.detail || phone.detail || tv.detail || layout.loading?.title || phone.loading?.title || tv.loading?.title) surfaces.push('Details')
+  if (layout.player || phone.player || tv.player || layout.loading?.episode || phone.loading?.episode || tv.loading?.episode) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces
 }
 export interface TemplateOutline { type: ThemeNode['type']; label?: string; children?: TemplateOutline[] }

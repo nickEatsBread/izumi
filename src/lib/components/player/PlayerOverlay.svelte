@@ -75,6 +75,8 @@
   import PlayPauseIcon from './PlayPauseIcon.svelte'
   import { isMobile, isWindows } from '$lib/platform'
   import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
+  import { episodeLoadingModel } from '$lib/themes/host-model'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { protectedSurface } from '$lib/themes/safe-mode'
   import { oskDismissedAt, playerStage, playerChromeVisible } from '$lib/player/session'
@@ -799,6 +801,9 @@
   // show theirs. Game mode draws it natively (gm_osd.rs rating card); elsewhere the page does.
   const RATING_CARD_MS = 4_300
   const ratingIntro = $derived($themePresentation?.player?.rating === 'intro')
+  // API 8 `loading.episode`: the theme's screen over the black cover until the first frame (the opening
+  // screen hands over to it). Not over Game mode's frozen frame, where a source switch keeps the picture.
+  const episodeScreen = $derived($themePresentation?.loading?.episode)
   const ratingLabel = $derived(ratingIntro ? ($nowPlayingStream.rating?.label ?? $nowPlayingMedia?.media?.sourceFacts?.rating ?? '') : '')
   const ratingDetail = $derived(ratingIntro ? ($nowPlayingStream.rating?.descriptors ?? []).join(' · ') : '')
   let ratingShownAt = $state(0)
@@ -2224,6 +2229,11 @@
       <span class="size-2.5 animate-pulse rounded-full bg-red-500"></span>
       GIF recording
     </button>
+  {/if}
+
+  {#if episodeScreen && $nowPlayingMedia && !(gmBitmapMode && $gmFrozenFrame != null)}
+    <LoadingScreen screen={episodeScreen} episode loading={!firstFrame} variant="player" class="izumi-hud pointer-events-none absolute inset-0 bg-black"
+      model={episodeLoadingModel($nowPlayingMedia.media, $nowPlayingMedia.episode)} />
   {/if}
 
   <!-- Loading/buffering. Black backdrop ONLY before the first frame (covers the

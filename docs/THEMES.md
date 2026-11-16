@@ -162,6 +162,43 @@ The hooks added with them (`page-step`, `block.grid`, `hero.edge`, `nav.action`,
 A package declares `themeApi: 8` to use the keys below; the validator refuses them in an older package, and a client older than API 8 refuses the package whole with its "needs a newer izumi" message.
 
 - **A separate player theme (a client setting, not a package key).** Settings → Appearance → Theme → Player theme picks the theme for the player: Same as app (the default), a shipped palette, or any installed or Theme Studio theme. It is per device and not synced. While an episode opens and plays (the opening screen, the player and its loading cover, on every platform; the Android mini-player docked over the browse screens counts as browsing) that theme's palette, fonts and stylesheet paint the window, and its `player` keys (and `loading.episode`) replace the app theme's. Everything else stays the app theme's: the navigation placement, the Home layout, theme screens and every other presentation key, so the page under the player never re-lays itself out. `<html>` carries `data-theme-role="player"` while a theme paints as the player theme, so its stylesheet can leave the navigation alone (`:scope:not([data-theme-role="player"]) [data-slot="nav.side"]`); with the windowed player beside the side rail, the rail takes the player theme's colours while a video plays. Safe mode and a Studio or install preview win over it; it wins over a catalog screen's own theme while it is in force. A player theme set to a palette gives izumi's own player in those colours.
+- **Loading screens (`loading`).** Two display-only templates (the node types, fields and artwork of card templates; no actions) for the two waits a viewer sees most:
+  - `loading.title` covers a series page or a catalog title page (film or series) while it loads its record (the `loading.title` slot, fixed over the window under the navigation, `bg-background`). It is bound to the title the user picked, so it knows what that card knew: `title`, `poster`, `posterHd`, `backdrop`, `logo` (when the card had one), `format`, `year`, `startYear`, `genres`, `kind`, `score` and the other title fields. A page already in memory opens without it. The pending page keeps drawing under it (`detail` with `data-pending`, `detail.skeleton`), so the screen can be partly transparent.
+  - `loading.episode` shows from the press to the first frame (the `loading.episode` slot): on the opening screen (`play.connecting`, `data-variant="opening"`) and then on the player's black cover (`data-variant="player"`), which takes over mid-load. It is bound to the title and the episode being opened: the title fields plus `episodeNumber`, `episodeNo` and `episodeCode` (a link with no record knows only `title` and `backdrop`). The ring (`play.loader`), Back (`play.connecting.back`) and the slow-source line (`play.loader.detail`) stay on top of it, where a stylesheet moves and sizes them; the ring's size is `--theme-player-spinner-size` and `--theme-player-spinner-stroke` (see "Player"). The Android phone app keeps its own watch page while an episode opens, so it draws none. In Game mode it shows until mpv's window is up, which then draws its own ring in the theme's colour and size until the picture. A source switch in Game mode keeps the frozen frame and its card, without the screen.
+  - `exit` (whole ms, 0–1000, default 0): once the page or the first frame is in, the screen stays that long with `data-state="done"` and no pointer events, so a stylesheet fades it out with a plain transition (`[data-slot="loading.title"][data-state="done"] { opacity: 0; transition: opacity 300ms ease-out }`). 0 removes it at once.
+  - `--loading-elapsed` on the slot is minus the time since the wait began (`-1840ms`). Because the episode screen changes element at the hand-over, a stylesheet that writes `animation-delay: var(--loading-elapsed)` (with `animation-fill-mode: both`) keeps a loop in step and an entrance from replaying. The client never animates a loading screen itself.
+  - Appearing only after a moment, so a fast load never flashes it, is plain CSS too: `[data-slot="loading.title"] { animation: wait 180ms step-end }` with `@keyframes wait { from { visibility: hidden } }`.
+  - `loading` may sit in the `mobile` and `tv` blocks; each screen there replaces the shared one whole. Coverage counts `loading.title` as Details and `loading.episode` as Player. With a separate player theme (above), the episode screen is the player theme's and the title screen stays the app theme's.
+  - The ring follows the screen in the markup on both the opening screen and the player's cover, so `[data-slot="loading.episode"][data-state="loading"] ~ * [data-part="spinner"][data-variant="player"]` reaches it only while the screen is up (mid-playback buffering keeps its own place).
+  - Example, the dimmed artwork, the title's logo breathing in the middle, the title bottom left and a small ring under it:
+
+    ```json
+    "loading": {
+      "episode": {
+        "template": { "type": "overlay", "part": "lo-root", "children": [
+          { "type": "artwork", "artwork": "backdrop", "part": "lo-art" },
+          { "type": "artwork", "artwork": "logo", "part": "lo-logo", "when": { "field": "logo" } },
+          { "type": "stack", "part": "lo-copy", "children": [
+            { "type": "text", "field": "title", "part": "lo-title" },
+            { "type": "text", "field": "episodeCode", "part": "lo-episode", "when": { "field": "episodeCode" } }
+          ] }
+        ] }
+      }
+    }
+    ```
+
+    ```css
+    [data-part="lo-art"] img { filter: brightness(.75); object-fit: cover }
+    [data-part="lo-root"]::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .2) 50%, transparent) }
+    [data-part="lo-logo"] { place-self: center; width: min(52vw, 48rem); height: 22vh; animation: lo-in 240ms cubic-bezier(.23,1,.32,1) both, lo-breathe 2880ms cubic-bezier(.65,0,.35,1) infinite; animation-delay: var(--loading-elapsed) }
+    [data-part="lo-logo"] img { object-fit: contain }
+    [data-part="lo-copy"] { align-self: end; padding: 0 1.5rem 1.75rem 4.5rem; color: #fff }
+    [data-part="lo-title"] { font-size: 1.875rem; font-weight: 600 }
+    [data-slot="loading.episode"][data-state="loading"] ~ * [data-part="spinner"][data-variant="player"] { position: absolute; left: 1.5rem; bottom: 2rem }
+    :scope { --theme-player-spinner-size: 16px; --theme-player-spinner-stroke: 2px }
+    @keyframes lo-in { from { opacity: 0; scale: .97 } }
+    @keyframes lo-breathe { 0%, 100% { opacity: .72; scale: .985 } 50% { opacity: .95; scale: 1.015 } }
+    ```
 
 ### Theme API 7
 
@@ -483,6 +520,7 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
+| `loading.title` | slot | API 8 `loading.title`: the theme's loading screen over a series page (`data-variant="series"`) or a catalog title page (`data-variant="catalog"`) while it loads its record, drawn from the template bound to the card the user picked. Fixed over the window, under the navigation. `data-state` is `loading`, then `done` for the `exit` time once the page is in (no pointer events then). `--loading-elapsed` is minus the time since the wait began. | `data-variant`, `data-state` |
 | `detail` | slot | The series page. `data-pending` while its record loads: the page is drawn from the card the user tapped, with placeholders (`.skeloader`) inside the parts it cannot fill yet. | `data-layout`, `data-variant`, `data-pending` |
 | `detail.banner` | slot | The artwork area at the top of the series page; `data-art` names the artwork it shows. | `data-art` |
 | `detail.poster` | part | The cover image. |  |
@@ -575,6 +613,7 @@ State values:
 | `sources.empty` | part | Shown when there is nothing to pick; data-state is setup (no sources set up) or none (nothing matches). |  |
 | `sources.error` | part | The alert shown when playback failed. |  |
 | `sources.problems` | part | The sources that failed, each with its reason. |  |
+| `loading.episode` | slot | API 8 `loading.episode`: the theme's loading screen from the press to the first frame, under the ring (`play.loader`), Back and the slow-source line. `data-variant` is `opening` on the opening screen (`play.connecting`), then `player` on the player's black cover, which takes over mid-load. `data-state` is `loading`, then `done` for the `exit` time after the first frame. `--loading-elapsed` is minus the time since the press. | `data-variant`, `data-state` |
 | `play.connecting` | slot | The full-screen connecting screen, also shown while the player loads; data-variant switch is the Game mode card when changing source mid-playback. |  |
 | `play.connecting.back` | part | Back on the loader while an episode opens (top left): cancels the open, as B does. |  |
 | `play.backdrop` | part | The blurred artwork behind the connecting screen. |  |

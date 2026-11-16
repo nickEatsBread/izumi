@@ -149,6 +149,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'preview.anchor', kind: 'part', description: "A name for a node of a card template (`part: \"preview.anchor\"`); izumi renders none itself. It marks the box the hover preview (the classic popup or `cardPreview: \"expand\"`) is placed against, in place of the card's first artwork or image: for a template whose artwork is narrower than the card, such as a numeral beside a poster." },
   ],
   detail: [
+    { name: 'loading.title', kind: 'slot', description: 'API 8 `loading.title`: the loading screen a theme draws over a series page (`data-variant="series"`) or a catalog title page (`data-variant="catalog"`) while it loads its record, drawn from the template bound to the card the user picked. Fixed over the window under the navigation. `data-state` is `loading`, then `done` for the `exit` time once the page is in (no pointer events). `--loading-elapsed` is minus the time since the wait began, for `animation-delay`.', states: ['data-variant', 'data-state'] },
     { name: 'detail', kind: 'slot', description: 'The series page. `data-pending` while its record loads: the page is drawn from the card the user tapped, with placeholders (`.skeloader`) inside the parts it cannot fill yet.', states: ['data-layout', 'data-variant', 'data-pending'] },
     { name: 'detail.banner', kind: 'slot', description: 'The artwork area at the top of the series page; `data-art` names the artwork it shows.', states: ['data-art'] },
     { name: 'detail.poster', kind: 'part', description: 'The cover image.' },
@@ -241,6 +242,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'sources.empty', kind: 'part', description: 'Shown when there is nothing to pick; data-state is setup (no sources set up) or none (nothing matches).' },
     { name: 'sources.error', kind: 'part', description: 'The alert shown when playback failed.' },
     { name: 'sources.problems', kind: 'part', description: 'The sources that failed, each with its reason.' },
+    { name: 'loading.episode', kind: 'slot', description: 'API 8 `loading.episode`: the loading screen a theme draws from the press to the first frame, under the ring (`play.loader`), Back and the slow-source line. `data-variant` is `opening` on the opening screen (`play.connecting`), then `player` on the black cover of the player, which takes over mid-load; `--loading-elapsed` (minus the time since the press) keeps the animations of a stylesheet in step across that hand-over. `data-state` is `loading`, then `done` for the `exit` time after the first frame.', states: ['data-variant', 'data-state'] },
     { name: 'play.connecting', kind: 'slot', description: 'The full-screen connecting screen, also shown while the player loads; data-variant switch is the Game mode card when changing source mid-playback.' },
     { name: 'play.connecting.back', kind: 'part', description: 'Back on the loader while an episode opens (top left): cancels the open, as B does.' },
     { name: 'play.backdrop', kind: 'part', description: 'The blurred artwork behind the connecting screen.' },
