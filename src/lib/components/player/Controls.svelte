@@ -25,6 +25,9 @@
   import Scan from '@lucide/svelte/icons/scan'
   import Crop from '@lucide/svelte/icons/crop'
   import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal'
+  import Sparkles from '@lucide/svelte/icons/sparkles'
+  import PluginPanel from './PluginPanel.svelte'
+  import { openPluginPanel, pluginRuns } from '$lib/plugins/host'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
@@ -977,9 +980,11 @@
   // Keep Controls mounted (and the overlay full-viewport) while a popover is open. Reset on
   // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
-    playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt)
+    playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt || !!$openPluginPanel)
     playerSideSheetOpen.set(native && (showOptions || showTracks))
   })
+  // A closed player never reopens with a plugin panel up.
+  $effect(() => () => openPluginPanel.set(null))
 </script>
 
 <!-- Now-playing title, reused above the seek bar (default) or at the top (Game-mode option). -->
@@ -1154,6 +1159,15 @@
             aria-label="Volume"
           />
         </div>
+        {/if}
+
+        <!-- Plugin panels (permission player.panel): one button per running plugin that has one. -->
+        {#if !gm}
+          {#each $pluginRuns.filter((run) => run.panel) as run (run.id)}
+            <button data-part="player.control" data-control="plugin" data-plugin={run.id} data-focusable class={iconBtn}
+                    onclick={() => openPluginPanel.update((open) => (open === run.id ? null : run.id))}
+                    title={run.panel?.label} aria-label={run.panel?.label} aria-expanded={$openPluginPanel === run.id}><Sparkles size={icSize} /></button>
+          {/each}
         {/if}
 
         {#if controls.buttons.includes('fit') && !gm}
@@ -1693,5 +1707,12 @@
 
   {#if menuAt && root && !gm}
     <PlayerContextMenu at={menuAt} {root} items={contextItems} onclose={() => (menuAt = null)} />
+  {/if}
+
+  <!-- An open plugin panel floats centred over the bottom of the video, as Navigator's Ask panel does. -->
+  {#if !gm}
+    {#each $pluginRuns as run (run.id)}
+      {#if $openPluginPanel === run.id}<PluginPanel {run} />{/if}
+    {/each}
   {/if}
 </div>

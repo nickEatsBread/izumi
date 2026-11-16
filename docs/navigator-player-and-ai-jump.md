@@ -1,7 +1,7 @@
 # Navigator-style player, the player-look hook and AI "jump to a moment"
 
-Status: player changes built and tested; player-look hook (Theme API 7) and the Navigator look theme
-built; the AI plugin is designed below and waits on the decisions at the end.
+Status: player changes, the player-look hook (Theme API 7), the Navigator look theme, the plugin runtime
+(beta) and the jump-to-a-moment plugin are built; see "Plugin runtime as built" at the end.
 
 Reference: Navigator's source (GPL-3.0, like izumi), read from `components/ui/media-player.tsx`,
 `components/global-media-player.tsx`, `components/player-mobile.css`, `components/arc/foundation.css`,
@@ -181,3 +181,79 @@ git) has the needed pieces: a sandboxed iframe and Worker runtime, `player.contr
 2. **Endpoint grant.** Allow a plugin's network grant to come from an endpoint the viewer types?
 3. **Local models.** Allow loopback for that one endpoint?
 4. **New scope.** Add the `player.subtitles` scope?
+
+## Plugin runtime as built (2026-11-15)
+
+The owner chose to build the runtime. The plugin cannot work without decisions 2 and 4, so both are in.
+Decision 3 is in only for the one endpoint the viewer types.
+
+- **Package.** `plugin.json` (app, kind `plugin`, schemaVersion 1, pluginApi 1, id, name, version, author,
+  description, `main` path and SHA-256, permissions, settings, optional `panel`) plus one `main.js` ES
+  module: `export default { activate(izumi) { … } }`. `node scripts/plugins/pin-main.mjs <folder>` writes
+  the hash. Files under `plugins/` are kept LF so the hash survives a Windows checkout.
+- **Scopes.**
+  - `network`: listed https domains, plus the host of a `url` setting (`fromSetting`). Local and private
+    addresses are refused, except that endpoint, which may use http only when it is on this computer.
+  - `player.events`: what is playing, position, duration and pause.
+  - `player.subtitles`: the selected text track as cues, shifted by the viewer's subtitle delay.
+  - `player.control`: seek.
+  - `player.panel`: a prompt, a status line and up to 20 results, all drawn by izumi.
+
+  Always available: settings (secrets in `plugin-secret-<id>`, which key-policy classes as a secret),
+  5 MB of storage, and a log.
+- **Sandbox.** Each plugin runs in a hidden `<iframe sandbox="allow-scripts">` srcdoc. Its CSP is
+  `default-src 'none'; script-src 'sha256-<bootstrap>' blob:; worker-src blob:`, so it can make no
+  connections. The bootstrap starts a classic Worker, which imports the plugin module from a blob. A
+  module Worker cannot start from a blob in an opaque origin on WebView2. izumi is reached only through a
+  MessagePort. A heartbeat stops a plugin that stops answering.
+- **Conformance probe.** It runs before any plugin starts, and all checks must be blocked:
+  - frame: parent, localStorage, indexedDB, cookie, fetch, the IPC fetch, an IPC invoke, `chrome.webview`;
+  - worker: fetch, XHR, WebSocket, remote import, indexedDB, caches, IPC globals, the IPC fetch.
+- **WebView2 finding.** Tauri's `__TAURI_INTERNALS__` and `ipc` are present (and non-configurable) inside the
+  sandboxed frame, contrary to the spec's main-frame-only assumption. Tauri ignores them there: an invoke
+  gets no answer, and a `set volume` from the frame changed nothing. Plugin code never runs in the frame;
+  the Worker has neither global.
+- **Settings → Sources and store → Plugins (beta).** It has:
+  - the beta switch, off by default;
+  - install from an https `plugin.json` URL, or from files;
+  - a permission review before install;
+  - per-plugin settings, a log and removal.
+- **The player panel copies Navigator's Ask panel** (`components/navigator/focus.tsx`, `focus-results.tsx`,
+  `result-card.tsx`, `activity-status.tsx`), with Navigator's dark tokens and motion:
+  - it sits centred at the bottom of the video, up to 36 rem wide;
+  - above it are the activity pill (a 3×3 pixel loader on a 650 ms cycle, plus text with a 1.4 s shimmer) and
+    a New pill;
+  - while the plugin works, a beam travels around the panel's border every 4 s;
+  - the viewer's question is a teal bubble;
+  - steps read "Found the title", "Loaded subtitles", "Finding the scene in the dialogue" and "Found the scene";
+  - result cards rise 10 px over 180 ms, 50 ms apart: cover, subtitle track with its line count, and "At 0:16"
+    with the quote;
+  - each answer ends with "Done in Ns";
+  - the composer grows with its text, and its send arrow becomes a stop square while busy.
+
+  Plugins send only data (turns, steps and cards); izumi draws them. An image is only ever the playing
+  title's cover, filled in by izumi, so a plugin cannot load a URL to track the viewer. The beam is drawn
+  in CSS, because Navigator's BorderBeam is a React package. Navigator's Ship icon is its own logo;
+  plugins get Sparkles.
+- **Jump to a moment** (`plugins/jump-to-moment`). It needs four settings: the model address, the model,
+  an optional key, and "Only search what I've watched". To answer a question it:
+  1. keeps the lines around keyword hits (±5 lines, top 12 hits), or all lines when nothing matches;
+  2. asks for up to three line numbers as JSON;
+  3. drops numbers it did not send;
+  4. seeks 2 s before the best line, and lists the others;
+  5. caches answers per episode, track and question.
+- **Tested in the real client** with a local stand-in for a chat API (no real model fits in this laptop's
+  free memory):
+  - the probe passed every check;
+  - the plugin started in its sandbox, read 98 pre-filtered lines of an external SRT, and sent only the
+    title, episode, question and lines;
+  - it sought to the returned line in 620 ms;
+  - with the embedded track selected, it explained it cannot read it.
+  
+  A real model's answer quality is not measured here.
+- **Not in v1:**
+  - reading subtitle tracks embedded in the video file (needs a Matroska text-track reader in Rust);
+  - store listings for plugins (the store branch lists sources, themes and packs);
+  - automatic updates and pending-permission review on update;
+  - DNS-level private-address checks (the guard reads the URL's host; Rust follows redirects);
+  - the other spec slots and scopes.
