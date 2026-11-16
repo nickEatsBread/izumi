@@ -265,10 +265,23 @@ export function playerCacheBytes(cacheMb: number, videoSize?: number, durationSe
   }
   return base
 }
-/** How video fits the player area. 'best' = keep aspect (letterbox, default); 'fill' =
- *  crop to fill the frame (mpv panscan). */
-export type VideoFit = 'best' | 'fill'
+/** How video fits the player area: 'best' keeps the aspect ratio inside the frame (letterbox, the
+ *  default), 'fill' crops to cover the frame (mpv panscan), 'stretch' fills it by dropping the aspect
+ *  ratio (mpv keepaspect=no). The same three framings as Navigator's Fit, Fill / crop and Stretch. */
+export type VideoFit = 'best' | 'fill' | 'stretch'
 export const videoFit = persisted<VideoFit>('video-fit', 'best')
+export const VIDEO_FITS: readonly { id: VideoFit; label: string }[] = [
+  { id: 'best', label: 'Best fit' },
+  { id: 'fill', label: 'Fill' },
+  { id: 'stretch', label: 'Stretch' },
+]
+/** The mpv `keepaspect` and `panscan` values for each framing. Both are always set, so switching away
+ *  from Stretch or Fill undoes it. */
+export const VIDEO_FIT_MPV: Record<VideoFit, readonly [keepaspect: string, panscan: string]> = {
+  best: ['yes', '0.0'],
+  fill: ['yes', '1.0'],
+  stretch: ['no', '0.0'],
+}
 
 /** Video-quality preset: a bundle of mpv render options (scalers, debanding, dithering, …)
  *  applied together. 'custom' hands control to the raw-options textarea below. See

@@ -15,7 +15,7 @@ describe('player startup', () => {
 
   it('shows them for a pointer that moved, not for the page changing under a parked cursor', () => {
     // WebKit sends a mousemove when the player appears under the Deck's hidden cursor.
-    expect(overlay).toContain('<svelte:window onmousemove={onPointerMove}')
+    expect(overlay).toContain('<svelte:window onmousemove={onWindowMouseMove}')
     expect(overlay).toContain('const moved = !!lastPointer && at !== lastPointer')
   })
 
