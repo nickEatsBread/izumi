@@ -59,9 +59,10 @@ Confirmed on this machine:
    `/widevine/4.10.3112.0-<hash>.wvd`, together with the version the client should expect.
 
 Client side later: on start, when online, fetch the entry for the CDM version the host reports,
-verify the hash, store it beside the bundled device and prefer it; keep the bundled file as the
-offline fallback. Identity is tied to a CDM version, so a refresh only needs to happen when the
-component version changes.
+verify the hash, store it in the device cache and prefer it. No device identity ships by default and
+none is required — a device is only an optional accelerator for the module path, and with none
+available the client uses the normal path (the module, else Shaka). Identity is tied to a CDM
+version, so a refresh only needs to happen when the component version changes.
 
 ## Caveats
 
@@ -94,8 +95,9 @@ Possible in principle, but not the easy path:
 
 So: in-client extraction would be a platform-specific job (fine on Linux/macOS: read the two files
 after a hidden EME run; awkward on Windows: parse an undocumented store), and it needs a licence
-server reachable during provisioning, i.e. network plus a signed-in session on first use. It should
-always degrade to the bundled device.
+server reachable during provisioning, i.e. network plus a signed-in session on first use. When it
+yields nothing, there is no device, which is fine: the client just uses the normal path (the module,
+else Shaka). A device only ever accelerates the module path; it is never required.
 
 Licence-wise there is no obstacle: an L3 identity is a software identity, proved by a plain RSA key,
 and exporting it is exactly what every downloader already does. What stays Google's is the CDM
