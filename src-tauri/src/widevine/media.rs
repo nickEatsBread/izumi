@@ -236,7 +236,7 @@ impl Track {
                 return Err(e);
             }
         };
-        let (data, result) = self.cdm.decrypt(frag, self.head.default_kid, samples);
+        let (data, result) = self.cdm.decrypt(frag, vec![self.head.default_kid], samples);
         let clear = Arc::new(Clear(data));
         if let Err(e) = result {
             if e.downcast_ref::<Refused>().is_some() && !self.refused.swap(true, Ordering::SeqCst) {
@@ -294,59 +294,11 @@ impl Track {
 }
 
 /// SPS/PPS from an AVCDecoderConfigurationRecord as Annex B, plus the cdm::VideoCodecProfile.
-pub fn param_sets(avcc: &[u8]) -> Result<(u32, Vec<u8>)> {
-    ensure!(avcc.len() >= 7 && avcc[0] == 1, "bad avcC");
-    ensure!(avcc[4] & 3 == 3, "only 4-byte NAL lengths are supported");
-    let profile = match avcc[1] {
-        66 => 2,
-        77 => 3,
-        88 => 4,
-        100 => 5,
-        110 => 6,
-        122 => 7,
-        244 => 8,
-        other => bail!("unsupported H.264 profile_idc {other}"),
-    };
-    let mut out = Vec::new();
-    let mut p = 5;
-    for mask in [0x1f, 0xff] {
-        let count = (avcc.get(p).copied().context("truncated avcC")? & mask) as usize;
-        p += 1;
-        for _ in 0..count {
-            let len = u16::from_be_bytes([*avcc.get(p).context("truncated avcC")?, *avcc.get(p + 1).context("truncated avcC")?]) as usize;
-            p += 2;
-            ensure!(p + len <= avcc.len(), "truncated avcC");
-            out.extend([0, 0, 0, 1]);
-            out.extend(&avcc[p..p + len]);
-            p += len;
-        }
-    }
-    Ok((profile, out))
-}
+pub use super::fmp4::param_sets;
 
 /// Rewrites 4-byte NAL lengths to Annex B start codes in place (same size), refusing any length
 /// field that is not in a clear subsample range.
-pub fn to_annex_b(data: &mut [u8], subsamples: &[(u32, u32)]) -> Result<()> {
-    let mut clear = Vec::new();
-    let mut at = 0usize;
-    for (c, e) in subsamples {
-        clear.push((at, at + *c as usize));
-        at += (*c + *e) as usize;
-    }
-    if subsamples.is_empty() {
-        bail!("fully encrypted video samples cannot be rewritten for the module's decoder");
-    }
-    let mut off = 0usize;
-    while off < data.len() {
-        ensure!(off + 4 <= data.len(), "truncated NAL length at {off}");
-        ensure!(clear.iter().any(|(a, b)| off >= *a && off + 4 <= *b), "NAL length at {off} is inside encrypted data");
-        let len = u32::from_be_bytes(data[off..off + 4].try_into().unwrap()) as usize;
-        data[off..off + 4].copy_from_slice(&[0, 0, 0, 1]);
-        off = off.checked_add(4 + len).context("NAL length overflow")?;
-    }
-    ensure!(off == data.len(), "NAL lengths overrun the sample");
-    Ok(())
-}
+pub use super::fmp4::to_annex_b;
 
 type Fetched = Arc<(Clear, Vec<Sample>)>;
 
