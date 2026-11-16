@@ -7,7 +7,10 @@ import { kitsuIdFromLinks } from './kitsu'
 import { anilistIdOf, externalIdsOf, kitsuIdOf as catalogKitsuId } from '$lib/catalog/identity'
 import { buildStreamIds } from './stream-ids'
 import { addonResourceUrl } from './resource-url'
-import { preferredSubLang, enabledSubtitleProviders } from '$lib/settings/ui'
+import { enabledSubtitleProviders } from '$lib/settings/ui'
+import { languagesForMedia } from '$lib/settings/catalog-languages'
+import { LANGUAGE_DATA } from '$lib/shared/languages'
+import { normalizeLang } from './sublang'
 import { createOpenSubtitles } from './subtitles/opensubtitles'
 import { createSubDL } from './subtitles/subdl'
 import { createJimaku } from './subtitles/jimaku'
@@ -55,13 +58,12 @@ async function kitsuIdOf(media: Media): Promise<number | undefined> {
   } catch { return undefined }
 }
 
-/** preferredSubLang is an ISO-639-2 audio/sub code ('eng'/'jpn'/'none'); the subtitle REST APIs want
- *  ISO-639-1. Map it and always include English as a fallback so a match still surfaces when the
- *  preferred language has none (external candidates are manually picked, so extra rows are harmless). */
-const ISO1: Record<string, string> = { eng: 'en', jpn: 'ja' }
-function queryLanguages(): string[] {
-  const code = ISO1[get(preferredSubLang)]
-  return !code || code === 'en' ? ['en'] : [code, 'en']
+/** The catalog's subtitle order holds ISO-639-2 codes or BCP-47 tags; the subtitle REST APIs want
+ *  ISO-639-1. Map them and always include English as a fallback so a match still surfaces when the
+ *  preferred languages have none (external candidates are manually picked, so extra rows are harmless). */
+export function queryLanguages(order: readonly string[]): string[] {
+  const codes = order.map((tag) => LANGUAGE_DATA.find((row) => row.code === normalizeLang(tag))?.iso1)
+  return [...new Set([...codes.filter((code): code is string => !!code), 'en'])]
 }
 
 /** Resolve the ids for one episode into the shared SubQuery each provider consumes. */
@@ -125,7 +127,7 @@ async function buildSubQuery(media: Media, episode: number | undefined, filename
     filename,
     moviehash,
     moviebytesize: moviehash ? video?.size : undefined,
-    languages: queryLanguages(),
+    languages: queryLanguages(languagesForMedia(media).subtitle),
     metaType: native && /^[A-Za-z0-9._-]{1,80}$/.test(native) ? native : type,
     directVid: media.catalog?.provider === 'stremio' ? v?.id : undefined,
     imdbVid: buildStreamIds({ type, imdb: imdbId, season, imdbEpisode: v?.episode ?? ids.episodeNumber })[0],

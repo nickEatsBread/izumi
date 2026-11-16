@@ -76,6 +76,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     subcategories: [
       { id: 'app', title: 'App and titles' },
       { id: 'playback', title: 'Audio and subtitles' },
+      { id: 'catalogs', title: 'Per catalog' },
       { id: 'sources', title: 'Sources and sub/dub' },
       { id: 'downloads', title: 'Downloads' },
     ],

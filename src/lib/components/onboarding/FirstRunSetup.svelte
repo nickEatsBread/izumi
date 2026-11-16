@@ -22,7 +22,6 @@
   import { m } from '$lib/paraglide/messages.js'
   import { idleConnectStates, type ConnectStates } from '$lib/onboarding/connect-state'
   import type { SetupReadiness } from '$lib/onboarding/readiness'
-  import { defaultPlaybackLanguages } from '$lib/onboarding/playback-languages'
   import {
     catalogDefaultProvider,
     catalogLastScreen,
@@ -42,7 +41,7 @@
     type OnboardingPath,
     type StepId,
   } from '$lib/settings/onboarding'
-  import { debridKey, extensionUrls, preferredAudioLang, preferredSubLang, torrentPlaybackMode, type AudioLang, type SubLang } from '$lib/settings/ui'
+  import { debridKey, extensionUrls, torrentPlaybackMode } from '$lib/settings/ui'
   import { addonUrls, CINEMETA_BASE, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
 
   const initialProvider = get(catalogDefaultProvider)
@@ -178,11 +177,7 @@
   }
 
   function applyProfile() {
-    // Derived rather than asked: an anime library implies Japanese audio with English subtitles,
-    // anything else follows the system language.
-    const languages = defaultPlaybackLanguages(intent, navigator.language)
-    preferredAudioLang.set(languages.audio as AudioLang)
-    preferredSubLang.set(languages.subtitle as SubLang)
+    // Languages are not set here: each catalog has its own default (catalog-languages.ts).
     const plan = onboardingCatalogPlan(intent, movieMetadata, startupLibrary)
     catalogProviders.set(plan.providers)
     catalogDefaultProvider.set(plan.defaultProvider)

@@ -67,7 +67,8 @@
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerLoadId, streamPicker, connecting, debridCaching, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
-  import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import { pickSubtitleTrackId, selectedAudioLang } from '$lib/player/track-policy'
+  import { languagesForMedia } from '$lib/settings/catalog-languages'
   import { audioFilter } from '$lib/player/enhancements'
   import { activeChapterIndex, chapterRowLabel, sortChapters } from '$lib/player/chapters'
   import type { Chapter } from '$lib/player/chapter-skip'
@@ -77,7 +78,7 @@
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
-    preferredAudioLang, preferredSubLang, audioProcessing, sceneBookmarksEnabled,
+    audioProcessing, sceneBookmarksEnabled,
     autoSelectSource, autoSelectCountdown, hideSpoilers,
   } from '$lib/settings/ui'
   import { banner, cover } from '$lib/anilist/media'
@@ -425,7 +426,8 @@
       const rememberedSub = matchRememberedTrack(list.filter((track) => track.type === 'sub'), subPref)
       if (rememberedSub === null) return setSubTrack('no')
       if (rememberedSub) return setSubTrack(rememberedSub.id)
-      const id = pickSubtitleTrackId(list, get(preferredAudioLang), get(preferredSubLang))
+      const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+      const id = pickSubtitleTrackId(list, selectedAudioLang(list) ?? languages.audio[0], languages.subtitle)
       if (id !== undefined) return setSubTrack(id)
     }).catch(() => {})
     const af = audioFilter(get(audioProcessing))

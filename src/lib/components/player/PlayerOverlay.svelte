@@ -40,7 +40,7 @@
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
-    preferredAudioLang, preferredSubLang, scrubThumbnails,
+    scrubThumbnails,
   } from '$lib/settings/ui'
   import { registerThumbTiles } from '$lib/player/thumb-tiles'
   import { get } from 'svelte/store'
@@ -54,7 +54,8 @@
   import { reportWatchPlayback, watchParty } from '$lib/watch-together/client'
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, reportDirectTorrentFirstFrame, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
-  import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import { pickSubtitleTrackId, selectedAudioLang } from '$lib/player/track-policy'
+  import { languagesForMedia } from '$lib/settings/catalog-languages'
   import type { Track } from '$lib/player/track-label'
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { sessionSubtitleStyle, sessionSubtitleAdjustments, effectiveSubtitleStyle, resetSubtitleSession } from '$lib/settings/subtitle-presets'
@@ -1038,7 +1039,8 @@
         )
         if (rememberedSub === null) { cmd('set', ['sid', 'no']); return }
         if (rememberedSub) { cmd('set', [rememberedSub.type === 'caption' ? 'ccid' : 'sid', String(rememberedSub.id)]); return }
-        const id = pickSubtitleTrackId(tracks, get(preferredAudioLang), get(preferredSubLang))
+        const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+        const id = pickSubtitleTrackId(tracks, selectedAudioLang(tracks) ?? languages.audio[0], languages.subtitle)
         if (id !== undefined) cmd('set', ['sid', String(id)])
       })
       .catch(() => {})
