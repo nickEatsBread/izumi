@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import {
@@ -18,6 +21,8 @@ import {
   resolveLinkTarget,
   sourceFiles,
   untar,
+  removedPathPackages,
+  vendorCrateDirs,
 } from './librqbit-vendor.mjs'
 
 // scripts/ci/librqbit-vendor.mjs decides what src-tauri/vendor holds by packaging upstream crates and
@@ -329,5 +334,38 @@ describe('renderReport', () => {
     expect(text).toMatch(/Notes:\n- Cargo\.toml is not what this Cargo generates/)
     // No bare #N or @name outside code spans.
     expect(text.replace(/``[^`]*``|`[^`]*`/g, '')).not.toMatch(/#\d|@\w/)
+  })
+})
+
+describe('vendorCrateDirs', () => {
+  it('lists only librqbit crates, so a sync never removes another vendored crate', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'izumi-vendor-'))
+    try {
+      for (const name of ['librqbit', 'librqbit-utp', 'widevine', 'patches']) {
+        mkdirSync(join(dir, name))
+        if (name !== 'patches') writeFileSync(join(dir, name, 'Cargo.toml'), '')
+      }
+      expect(vendorCrateDirs(dir).sort()).toEqual(['librqbit', 'librqbit-utp'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('removedPathPackages', () => {
+  it('names librqbit crates locked from a vendor path that no longer exists', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'izumi-vendor-'))
+    try {
+      mkdirSync(join(dir, 'librqbit'))
+      const lock = [
+        '[[package]]\nname = "librqbit"\nversion = "9.1.0"\n',
+        '[[package]]\nname = "librqbit-bencode"\nversion = "9.0.1"\n',
+        '[[package]]\nname = "librqbit-core"\nversion = "9.1.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n',
+        '[[package]]\nname = "izumi"\nversion = "0.1.0"\n',
+      ].join('\n')
+      expect([...removedPathPackages(lock, dir)]).toEqual(['librqbit-bencode'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

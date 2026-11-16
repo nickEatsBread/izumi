@@ -78,6 +78,8 @@ const FORMAT_PATCH_CONFIG = Object.freeze([
 ])
 
 const CRATE_NAME = /^[A-Za-z0-9_-]+$/
+// Every crate the upstream repositories publish is named librqbit or librqbit-<part>.
+const LIBRQBIT_CRATE = /^librqbit(-[A-Za-z0-9_-]+)?$/
 const FULL_SHA = /^[0-9a-f]{40}$/
 
 export function paths(root, work) {
@@ -698,9 +700,11 @@ async function buildVendor(p, pins) {
   return { crates, vendored, reachable, patchSubjects }
 }
 
-function vendorCrateDirs(vendorDir) {
+/** The librqbit crates in src-tauri/vendor. Other crates vendored there (widevine) are not this
+ *  script's to rebuild or remove. */
+export function vendorCrateDirs(vendorDir) {
   if (!existsSync(vendorDir)) return []
-  return readdirSync(vendorDir).filter((name) => CRATE_NAME.test(name) && existsSync(join(vendorDir, name, 'Cargo.toml')))
+  return readdirSync(vendorDir).filter((name) => LIBRQBIT_CRATE.test(name) && existsSync(join(vendorDir, name, 'Cargo.toml')))
 }
 
 function readTree(dir) {
@@ -737,6 +741,16 @@ function writeVendor(p, pins, vendored) {
   writePins(p, { ...pins, cargo: cargoVersion(), vendored: [...keep].sort() })
 }
 
+/** Crates Cargo.lock holds from a path (no `source`) whose src-tauri/vendor directory is gone. */
+export function removedPathPackages(lock, vendorDir) {
+  const gone = new Set()
+  for (const block of lock.replace(/\r\n/g, '\n').split('[[package]]').slice(1)) {
+    const name = block.match(/^name = "([^"]+)"$/m)?.[1]
+    if (name && !/^source = /m.test(block) && LIBRQBIT_CRATE.test(name) && !existsSync(join(vendorDir, name))) gone.add(name)
+  }
+  return gone
+}
+
 /**
  * Moves only the given crates in Cargo.lock. A whole-graph resolve would also move unrelated
  * dependency edges to other versions already in the lockfile.
@@ -746,7 +760,10 @@ function refreshLock(p, names) {
     run('cargo', ['generate-lockfile', '--manifest-path', p.cargoToml], { cwd: p.root })
   } else {
     const counts = lockedPackageCounts(lockText(p))
-    const specs = [...new Set(names)].filter((name) => counts.get(name) === 1)
+    const gone = removedPathPackages(lockText(p), p.vendor)
+    // A crate that left src-tauri/vendor is still locked at its old path, which `cargo update -p`
+    // cannot name; the patch change already makes Cargo resolve it again.
+    const specs = [...new Set(names)].filter((name) => counts.get(name) === 1 && !gone.has(name))
     if (specs.length) {
       run('cargo', ['update', '--manifest-path', p.cargoToml, ...specs.flatMap((name) => ['-p', name])], { cwd: p.root })
     }
