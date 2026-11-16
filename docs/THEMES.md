@@ -940,6 +940,9 @@ The client retains the existing limit of 24 saved designs. Install writes attemp
 | Declarative renderer and layout editor | `src/lib/components/themes/` |
 | Gallery and installed library | `src/routes/app/settings/themes/+page.svelte` |
 | Host integration | `Hero.svelte` (its `list` action opens `MediaListSheet.svelte`), `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte` (with `PreviewCard.svelte` and `expand-pos.ts`), `BackdropTrailer.svelte`, `ContinueCard.svelte`, `SearchResults.svelte`, `AnimeDetail.svelte`, `Tabs.svelte`, `EpisodeCard.svelte`, `Sidebar.svelte`, `BottomNav.svelte`, `Seekbar.svelte`, `EpisodeList.svelte`, `EpisodeToolbar.svelte`, `SeasonPicker.svelte`, `FactList.svelte`, `RichMetadata.svelte` |
+| API 8 loading screens | `src/lib/components/themes/LoadingScreen.svelte` (hosts: `AnimeDetail.svelte`, `CatalogMediaDetail.svelte`, `SourceConnecting.svelte`, `PlayerOverlay.svelte`), `src/lib/themes/loading-clock.ts`, `episodeLoadingModel` in `host-model.ts` |
+| API 8 schedule entry | `airingDisplayModel` in `host-model.ts`, `AgendaWeek.svelte`, `DayColumn.svelte` (with `ScheduleGrid.svelte`, `PersonalSchedule.svelte`, `ScheduleNextUp.svelte` and `src/routes/app/schedule/+page.svelte` for the hooks) |
+| API 8 theme screens | `themeScreens`, `homeLayoutFor` and `openThemeScreen` in `src/lib/themes/layout-state.ts`, `src/routes/app/screen/[id]/+page.svelte`, `src/lib/components/shell/theme-screen-icons.ts`, `Sidebar.svelte`, `NavDrawer.svelte`, `NavPanel.svelte` |
 | TV rows, caption template, grid keyboard and player buttons | `src/lib/nav/anchor.ts` and `revealAnchored` in `src/lib/nav/index.ts`, `card-registry.ts`, `src/lib/components/search/GridKeyboard.svelte` (with `grid-keyboard.ts` and `searchGridKeyboard` in `runtime.ts`), `AndroidPlayer.svelte` and `Controls.svelte` |
 
 ## Validation
