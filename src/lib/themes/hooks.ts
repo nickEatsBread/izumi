@@ -396,6 +396,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'downloads.action', kind: 'part', description: 'The row\'s primary button; data-action is play, pause, resume, retry or options.' },
     { name: 'downloads.more', kind: 'part', description: 'The row\'s More button, which opens its options sheet.' },
     { name: 'downloads.toggle', kind: 'part', description: 'The Pause or Resume button beside Cancel on a row the pointer is over.' },
+    { name: 'downloads.bulk', kind: 'part', description: 'The bulk actions over the list: Pause all, Resume all, Cancel all pending and Clear finished (each button\'s data-bulk names it).' },
     { name: 'downloads.progress', kind: 'part', description: 'A download\'s progress track; its child span is the fill.' },
     { name: 'downloads.empty', kind: 'part', description: 'The empty state shown when nothing is saved.' },
     { name: 'browse', kind: 'slot', description: 'The Browse screen; data-variant is anilist, catalog or source.' },

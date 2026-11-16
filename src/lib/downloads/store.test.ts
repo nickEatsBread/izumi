@@ -42,7 +42,7 @@ vi.mock('$lib/player/direct-torrent', () => ({
 }))
 
 const { downloads } = await import('./state')
-const { attachDownloadEvents, enqueue, pauseDownload, resumeDownload, cancelDownload, startDownload } = await import('./store')
+const { attachDownloadEvents, enqueue, pauseDownload, resumeDownload, cancelDownload, startDownload, clearFromList, downloadOf } = await import('./store')
 const { downloadChooseSource } = await import('$lib/settings/ui')
 
 const media = {
@@ -291,6 +291,15 @@ describe('pause and resume', () => {
     expect(get(downloads)['7:2']).toMatchObject({ preferences: { quality: '1080', sourceOriginId: 'source.x' } })
     expect(get(downloads)['7:2'].source).toBeUndefined()
     await vi.waitFor(() => expect(get(downloads)['7:2'].status).toBe('error'))
+  })
+})
+
+describe('clearing finished downloads from the list', () => {
+  it('keeps the episode saved, playable offline and its file untouched', () => {
+    downloads.set({ '7:2': { id: '7:2', mediaId: 7, episode: 2, title: 'x', bytes: 10, downloaded: 10, status: 'done', addedAt: 1, path: '/downloads/x.mkv' } })
+    clearFromList(['7:2'])
+    expect(downloadOf(7, 2)).toMatchObject({ status: 'done', path: '/downloads/x.mkv', cleared: true })
+    expect(calls('download_delete')).toHaveLength(0)
   })
 })
 

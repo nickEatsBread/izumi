@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DownloadItem } from '$lib/downloads/state'
-import { groupDownloads, lowOnSpace, neighbourOf, primaryActionOf } from './group'
+import { bulkTargets, groupDownloads, lowOnSpace, neighbourOf, primaryActionOf } from './group'
 
 const item = (mediaId: number, episode: number, patch: Partial<DownloadItem> = {}): DownloadItem => ({
   id: `${mediaId}:${episode}`, mediaId, episode, title: `Show ${mediaId} — E${episode}`,
@@ -61,6 +61,46 @@ describe('Downloads grouping', () => {
   })
 })
 
+describe('Downloads bulk actions', () => {
+  const items = [
+    item(1, 1, { status: 'downloading' }),
+    item(1, 2, { status: 'queued' }),
+    item(1, 3, { status: 'paused' }),
+    item(1, 4, { status: 'error' }),
+    item(1, 5, { status: 'done' }),
+    item(1, 6, { status: 'done', cleared: true }),
+    item(2, 1, { status: 'downloading', kind: 'drm-local' }),
+    item(2, 2, { status: 'queued', kind: 'shaka' }),
+  ]
+
+  it('pauses running and queued episodes, queued first, and leaves a protected save that would restart', () => {
+    expect(bulkTargets(items).pause).toEqual(['1:2', '1:1'])
+  })
+
+  it('resumes the paused ones', () => {
+    expect(bulkTargets(items).resume).toEqual(['1:3'])
+  })
+
+  it('cancels everything not yet saved, queued first, protected saves included', () => {
+    expect(bulkTargets(items).cancel).toEqual(['1:2', '2:2', '1:1', '1:3', '1:4', '2:1'])
+  })
+
+  it('clears saved episodes still on the list, and counts the ones already cleared', () => {
+    expect(bulkTargets(items)).toMatchObject({ clear: ['1:5'], cleared: 1 })
+  })
+
+  it('has nothing to do on an empty or all-saved list', () => {
+    expect(bulkTargets([])).toEqual({ pause: [], resume: [], cancel: [], clear: [], cleared: 0 })
+    expect(bulkTargets([item(1, 1)])).toMatchObject({ pause: [], resume: [], cancel: [], clear: ['1:1'] })
+  })
+
+  it('keeps cleared episodes off the list until they are asked for', () => {
+    const list = [item(1, 1), item(1, 2, { cleared: true })]
+    expect(groupDownloads(list)[0].items.map((d) => d.id)).toEqual(['1:1'])
+    expect(groupDownloads(list, '', true)[0].items.map((d) => d.id)).toEqual(['1:1', '1:2'])
+  })
+})
+
 describe('Downloads controller contract', () => {
   const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 
@@ -69,6 +109,22 @@ describe('Downloads controller contract', () => {
     const action = page.slice(page.indexOf('data-part="downloads.action"'), page.indexOf('onclick={() => primary(d)}'))
     expect(action).toContain('aria-disabled={busy || undefined}')
     expect(page).toContain('if (starting) return')
+  })
+
+  it('reaches every bulk action with the d-pad and runs it through the per-episode actions', () => {
+    const bar = page.slice(page.indexOf('data-part="downloads.bulk"'), page.indexOf('{#if !groups.length}'))
+    for (const action of ['pause', 'resume', 'cancel', 'clear', 'show-cleared']) {
+      const at = bar.indexOf(`data-bulk="${action}"`)
+      expect(at, action).toBeGreaterThan(0)
+      expect(bar.slice(bar.lastIndexOf('<button', at), at), action).toContain('data-focusable')
+    }
+    expect(bar).toContain('aria-disabled={!bulk.pause.length || undefined}')
+    expect(bar).toContain('runBulk(bulk.pause, pauseDownload)')
+    expect(bar).toContain('runBulk(bulk.resume, resumeDownload)')
+    // Cancel asks first: it deletes what each episode has downloaded so far.
+    expect(bar).toContain('confirmCancel = true')
+    expect(page).toContain('runBulk(bulk.cancel, cancelDownload)')
+    expect(page).toContain('if (bulkBusy || starting || !ids.length) return')
   })
 
   it('opens the options sheet from ☰ on a row', () => {
