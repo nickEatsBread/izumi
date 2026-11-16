@@ -1,14 +1,22 @@
 <script module lang="ts">
   import { cubicOut } from 'svelte/easing'
+  import type { RowPresentation } from '$lib/themes/presentation'
   // ONE shared carousel-nav latch for ALL cards. A row moving under a stationary cursor must not
   // start another trailer; only a real pointer movement over a card explicitly rearms previews.
   let needsPointerMove = false
   if (typeof window !== 'undefined') {
     window.addEventListener('carousel-nav', () => { needsPointerMove = true })
   }
+  // Covers already shown this session: a card built again for one (coming back to Home) shows it at
+  // once, not a shimmer and a fade while the cached image reports in.
+  const shownCovers = new Set<string>()
   // Grows the preview out of the card: at scale 2/3 the 1.5x box sits exactly on it (expand-pos.ts).
   function grow(_node: Element, { duration }: { duration: number }) {
     return { duration, easing: cubicOut, css: (t: number) => `transform: scale(${2 / 3 + t / 3}); opacity: ${Math.min(1, t * 4)}` }
+  }
+  /** The width a card asks `cardCover` for. Home decodes the same URL for a row it has not built yet. */
+  export function coverWidthFor(row: RowPresentation, density: number, fill: boolean, tv: boolean, mobile: boolean): number {
+    return (row.width ?? (fill ? 0 : tv ? 198 : mobile ? 131 : 152)) * (row.width ? 1 : density)
   }
 </script>
 
@@ -34,6 +42,8 @@
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import * as h from '$lib/haptics'
   import Play from '@lucide/svelte/icons/play'
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import { goto } from '$app/navigation'
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom, SIDEBAR_W } from './preview-pos'
   import { cardMedia } from './card-registry'
@@ -74,7 +84,7 @@
   const cardFamily = getContext<CardFamily | undefined>(CARD_FAMILY) ?? 'poster'
   const themeRow = $derived(themeScope ? resolveRow($themePresentation, themeScope().id) : {})
   const cardTemplate = $derived(resolveCard($themePresentation, cardFamily, themeScope?.().id ?? ''))
-  const coverWidth = $derived((themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)) * (themeRow.width ? 1 : densityScale($themePresentation)))
+  const coverWidth = $derived(coverWidthFor(themeRow, densityScale($themePresentation), fill, $isTv, $isMobile))
   const coverSrc = $derived(cardCover(media, coverWidth))
   // API 6: key art and a title logo, only when the card's template binds them (see useCardArt).
   const cardArt = useCardArt(() => cardTemplate, () => media, () => el)
@@ -88,7 +98,7 @@
     ...cardArt.art,
   }, coverWidth) : undefined)
   let coverReady = $state(false)
-  $effect(() => { void coverSrc; coverReady = false })
+  $effect(() => { coverReady = !!coverSrc && shownCovers.has(coverSrc) })
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
   // A row's caption template binds the focused card's media through the registry.
@@ -113,7 +123,31 @@
   const cardRating = $derived((showRating ?? !animeCard) ? primaryRating(media) : undefined)
   // The row focus caption's detail line. `data-nav-key` below is the focus-memory key (a focus
   // restore composes it with the row's `data-row`).
-  const captionMeta = $derived(subline ?? [format(media), season(media) || media.startDate?.year, media.episodes ? `${media.episodes} episodes` : ''].filter(Boolean).join(' · '))
+  // A source catalog card that stands for one episode ("S2 E1 · 12m left") is a 16:9 still.
+  const sourceCard = $derived(media.sourceFacts?.card)
+  const sourceLine = $derived(sourceCard ? [sourceCard.label, sourceCard.remainingSec ? `${Math.max(1, Math.round(sourceCard.remainingSec / 60))}m left` : ''].filter(Boolean).join(' · ') || undefined : undefined)
+  const line = $derived(subline ?? sourceLine)
+  // A source flags its fresh titles (a new show or season); the reference handheld app tags those "New"
+  // on its posters. A card standing for one episode (Continue Watching) has its own label instead.
+  const shownBadge = $derived(badge ?? (media.sourceFacts?.isNew && !media.sourceFacts.card ? 'New' : undefined))
+  const widthClass = $derived(fill ? 'w-full' : sourceCard ? ($isTv ? 'w-80' : 'w-64') : $isTv ? 'w-44' : 'w-36 sm:w-[152px]')
+  // A source card that stands for one episode plays (resumes) it rather than opening the series, as the
+  // source's own app does. Its page opens when the source has nothing to play.
+  let resolving = $state(false)
+  function openCard(event: MouseEvent) {
+    h.tap()
+    const episode = sourceCard?.videoId
+    if (!episode) return
+    event.preventDefault()
+    if (resolving) return
+    resolving = true
+    void import('$lib/catalog/source-play')
+      .then(({ playSourceTitle }) => playSourceTitle(media, episode))
+      .then((played) => { if (!played) void goto(mediaHref(media)) })
+      .catch(() => goto(mediaHref(media)))
+      .finally(() => (resolving = false))
+  }
+  const captionMeta = $derived(line ?? [format(media), season(media) || media.startDate?.year, media.episodes ? `${media.episodes} episodes` : ''].filter(Boolean).join(' · '))
 
   // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
   // viewport so it never gets cut off by the sidebar or edges. The math is zoom-aware — see
@@ -197,22 +231,22 @@
   $effect(() => () => { clearTimeout(closeT); clearTimeout(openT) })
 </script>
 
-<div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
-  <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
+<div data-part="card" data-family={cardFamily} data-shape={sourceCard ? 'episode' : undefined} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class="{widthClass} {fill ? '' : 'shrink-0'}" style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+  <a href={mediaHref(media)} data-focusable draggable="false" onclick={(event) => { rememberDetail(media); openCard(event) }}
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
-     class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
+     class="group block {widthClass} {$isAndroid ? 'android-card-press' : ''}">
     {#if cardTemplate && cardModel}
       <ThemeNode node={cardTemplate} model={cardModel} />
     {:else}
-    <div data-part="card.art" class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
+    <div data-part="card.art" class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' || (sourceCard && !themeRow.aspect) ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
       {#if !coverReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- Keep image loading lazy: large browse grids and several library rows can still put many
            cards in the DOM, even though each AniList preview query is now capped to thirty. -->
-      <img use:reliableImage={coverSrc} alt={title(media)} draggable="false" loading="lazy" decoding="async" onload={() => (coverReady = true)}
+      <img use:reliableImage={coverSrc} alt={title(media)} draggable="false" loading="lazy" decoding="async" onload={() => { coverReady = true; if (coverSrc) shownCovers.add(coverSrc) }}
            class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
       {#if simpleHover}
         <span data-part="card.overlay" class="pointer-events-none absolute inset-0 grid place-items-center bg-black/0 transition-colors duration-150 group-hover:bg-black/40 group-focus-visible:bg-black/40">
@@ -221,8 +255,14 @@
           </span>
         </span>
       {/if}
-      {#if badge}
-        <span data-part="card.badge" class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{badge}</span>
+      {#if shownBadge}
+        <span data-part="card.badge" data-variant={badge ? undefined : 'new'} class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{shownBadge}</span>
+      {/if}
+      {#if resolving}
+        <span data-part="card.overlay" data-state="resolving" class="absolute inset-0 z-10 grid place-items-center bg-black/50"><LoaderCircle size={28} class="animate-spin text-white" /></span>
+      {/if}
+      {#if sourceCard?.progress}
+        <span data-part="card.progress" class="absolute inset-x-0 bottom-0 h-1 bg-white/25"><span class="block h-full bg-primary" style:width={`${Math.round(sourceCard.progress * 100)}%`}></span></span>
       {/if}
       {#if cardRating}
         <span data-part="card.score" class="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-1 text-[0.65rem] font-black text-white shadow-lg backdrop-blur"
@@ -238,8 +278,8 @@
     <div data-part="card.title" data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
-    {#if subline}
-      <div data-part="card.meta" data-theme-card-label class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{subline}</div>
+    {#if line}
+      <div data-part="card.meta" data-theme-card-label class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{line}</div>
     {:else if jvmSource}
       <div data-part="card.meta" data-theme-card-label class="mt-0.5 flex min-w-0 items-center justify-between gap-1.5 text-[0.7rem] text-muted-foreground">
         <span class="flex min-w-0 items-center gap-1">

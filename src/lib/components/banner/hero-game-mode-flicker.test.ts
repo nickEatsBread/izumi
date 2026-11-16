@@ -89,23 +89,32 @@ describe('Steam Deck featured banner flicker', () => {
 
   it('fills the rotation progress bar smoothly in Game mode without a 60 Hz tween', () => {
     const rule = gameMode('.hero-progress')
-    // The bar keeps a layer for its whole life, so a write to `scale` never drops it.
+    // The bar keeps a layer for its whole life, so a write to `translate` never drops it.
     expect(rule).toContain('transform: translateZ(0)')
-    // A running tween composited the whole screen every frame (nearly all of Home's idle cost);
-    // CSS steps() did not help, since WebKitGTK still composited at the display rate.
-    expect(rule).toContain('animation: none; scale: 0 1;')
+    // On WebKitGTK a running tween composited the whole screen every frame (nearly all of Home's idle
+    // cost); CSS steps() did not help, since WebKitGTK still composited at the display rate.
+    expect(hero).toContain(':global(html.gamemode.webkitgtk) .hero-progress { animation: none; translate: -100% 0; }')
     expect(rule).not.toMatch(/steps\(|animation-timing-function/)
+    // Chromium (CEF, WebView2, Android) keeps the scaleX keyframe on its compositor even in Game mode:
+    // the script below repainted the fill on the main thread every frame there.
+    expect(rule).not.toContain('animation: none')
+    expect(hero).toContain('const scriptedBar = isWebKitGtk()')
+    expect(hero).toContain('if (!$gameMode || !scriptedBar || !medias.length')
+    const platform = readFileSync(fileURLToPath(new URL('../../platform.ts', import.meta.url)), 'utf8')
+    expect(platform).toContain("document.documentElement.classList.toggle('webkitgtk', isWebKitGtk())")
     expect(hero).not.toContain('hero-progress-steps')
     expect(hero).not.toContain('@keyframes hero-progress-fill-layer')
-    // A script steps it from the slide clock instead, restarted with the slide.
-    const fps = Number(hero.match(/const GM_BAR_FPS = (\d+)/)?.[1])
-    expect(fps).toBeGreaterThanOrEqual(15)
+    // A script steps it from the slide clock instead, on display frames (a 15 fps timer jittered on
+    // the Deck), restarted with the slide.
     expect(hero).toContain('const progress = Math.min(1, (performance.now() - start) / DURATION)')
-    expect(hero).toContain('bar.style.scale = `${progress} 1`')
-    expect(hero).toContain('ticker = setInterval(paint, 1000 / GM_BAR_FPS)')
+    expect(hero).toContain('frame = progress < 1 ? requestAnimationFrame(paint) : 0')
+    expect(hero).not.toContain('setInterval(paint')
     expect(hero).toContain('const stopPlaying = playing.subscribe(restart)')
-    // A visibly ticking fill is what made the old steps(24) bar read as broken: the widest stock
-    // bar (5rem on the Deck) must move under half a pixel per step at the default interval.
-    expect(80 / 15 / fps).toBeLessThan(0.5)
+    // A scaled or translated layer's edge lands on whole pixels (a stutter); the fill is a gradient
+    // with a one-pixel soft edge, drawn between pixels, written on quarter-pixel changes only.
+    expect(hero).toContain('const edge = Math.round(progress * bar.offsetWidth * 4) / 4')
+    expect(hero).toContain('if (painted.get(bar) === edge) continue')
+    expect(hero).toContain('linear-gradient(90deg, ${colors.get(bar)} ${edge}px, transparent ${edge + 1}px)')
+    expect(hero).not.toContain('bar.style.scale')
   })
 })

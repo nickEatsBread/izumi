@@ -169,7 +169,7 @@
   {#if loading || (lookingClose && !media.length)}
     <div data-part="search.grid" data-variant="list" data-state="loading" class="mt-1.5 flex flex-col gap-1.5">
       {#each Array.from({ length: media.length ? 4 : 8 }) as _}
-        <div class="flex items-center gap-3 p-2"><div class="aspect-[2/3] w-12 shrink-0 animate-pulse rounded-md bg-muted"></div><div class="h-4 flex-1 animate-pulse rounded bg-muted"></div></div>
+        <div class="flex items-center gap-3 p-2"><div class="skeloader aspect-[2/3] w-12 shrink-0 rounded-md"></div><div class="skeloader h-4 flex-1 rounded"></div></div>
       {/each}
     </div>
   {/if}
@@ -192,7 +192,7 @@
   {#if loading || (lookingClose && !media.length)}
     <div data-part="search.grid" data-variant="grid" data-state="loading" class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
       {#each Array.from({ length: media.length ? 6 : 12 }) as _}
-        <div class="aspect-[2/3] w-full animate-pulse rounded-md bg-muted"></div>
+        <div class="skeloader aspect-[2/3] w-full rounded-md"></div>
       {/each}
     </div>
   {/if}

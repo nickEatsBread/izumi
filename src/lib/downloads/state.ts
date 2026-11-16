@@ -25,7 +25,9 @@ export interface DownloadItem {
   url?: string
   /** Which engine is fetching this item. Absent on items queued by older builds, which were all
    *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job. */
-  kind?: 'http' | 'torrent' | 'shaka'
+  /** `drm-local`: a protected episode saved by izumi's own Widevine module (Linux): `path` is its
+   *  folder of encrypted files, licensed again from the source each time it plays. */
+  kind?: 'http' | 'torrent' | 'shaka' | 'drm-local'
   /** The HTTP engine is assembling an adaptive playlist. Its raw partial restarts from segment 1
    * on resume, so the visible byte counter must restart with it. */
   hls?: boolean
@@ -72,6 +74,10 @@ export function setDownloadedMedia(m: Media) {
     // OFFLINE → the detail page shows "Episodes TBA" with zero rows even for downloaded episodes
     // (the exact bug offline mode exists to fix). Mirrors mediaSnapshot() in player/history.ts.
     airingSchedule: m.airingSchedule,
+    // A catalog title (a source's own, say) is found again by its catalog identity and its episodes'
+    // ids: its negative id is a hash no metadata service can look up.
+    catalog: m.catalog,
+    videos: m.videos?.map(({ id, number, season, episode, title, thumbnail }) => ({ id, number, season, episode, title, thumbnail })),
   } as Media
   downloadedMedia.update((d) => ({ ...d, [m.id]: lite }))
 }

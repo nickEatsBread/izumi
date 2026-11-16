@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 // Wiring contract for the end-of-series rating prompt: it is raised from every path an episode can
 // complete on, mounted app-wide, and owns the controller while up.
 
-const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+// Line endings normalised: a file saved with CRLF still holds the same code.
+const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 const play = read('../../stremio/play.ts')
 const layout = read('../../../routes/app/+layout.svelte')
 const prompt = read('./SeriesRatingPrompt.svelte')

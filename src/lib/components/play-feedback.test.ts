@@ -38,14 +38,28 @@ describe('player-flow feedback', () => {
     }
   })
 
+  it('puts the connecting screen up with a Continue card press, before the playback import', () => {
+    // A controller press on the Deck showed only the card's spinner for 1.25 s while it loaded.
+    const card = readFileSync(fileURLToPath(new URL('./cards/ContinueCard.svelte', import.meta.url)), 'utf8')
+    const play = card.slice(card.indexOf('async function play()'), card.indexOf('</script>'))
+    expect(play.indexOf('connecting.set(pending)')).toBeGreaterThan(-1)
+    expect(play.indexOf('connecting.set(pending)')).toBeLessThan(play.indexOf('await loadPlayback()'))
+    // A cancel during the import stops it from starting playback, and a failed import clears only
+    // this stand-in, never a screen a newer press put up.
+    expect(play).toContain('if (cancelled) return')
+    expect(play).toContain('connecting.update((c) => (c === pending ? null : c))')
+  })
+
   it('stays silent for a binge continuation, which hides the picker deliberately', () => {
     expect(layout).toContain('{#if !$streamPicker?.hidden && !$streamPicker?.playbackError}')
   })
 
   it('stays cheap enough to be worth eager-bundling', () => {
     // The whole point is that this renders while the heavy chunk is still loading. An import here
-    // could drag that chunk into the boot bundle and defeat it.
-    expect(feedback).not.toMatch(/^\s*import /m)
-    expect(feedback).not.toMatch(/from ['"]/)
+    // could drag that chunk into the boot bundle and defeat it. The one exception is the shared
+    // spinner, which only reads stores the app shell already imports.
+    expect(feedback.match(/^[ \t]*import .*$/gm)).toEqual(["  import Spinner from './Spinner.svelte'"])
+    expect(layout).toContain("from '$lib/player/session'")
+    expect(layout).toContain("from '$lib/settings/ui'")
   })
 })

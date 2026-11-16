@@ -22,7 +22,7 @@
   import TrendingUp from '@lucide/svelte/icons/trending-up'
   import Award from '@lucide/svelte/icons/award'
   import * as h from '$lib/haptics'
-  import { isAndroid, isMobile } from '$lib/platform'
+  import { isAndroid, isMobile, isWebKitGtk } from '$lib/platform'
   import { get } from 'svelte/store'
   import { linear, quintOut } from 'svelte/easing'
   import { motion, type MotionParams } from '$lib/motion/gm-motion'
@@ -32,7 +32,7 @@
   import { androidMpvActive } from '$lib/player/android-mpv'
   import { airingCountdown, airingCountdownAccessible } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { animeAwardHref, findTopAnimeAward } from '$lib/catalog/anime-awards'
   import { createSlideScheduler } from './hero-slides'
   import { heroBackdrop, heroNeedsKeyart, type HeroKeyart } from './hero-art'
@@ -127,7 +127,11 @@
   })
   function commitSlide(n: number, direction: 1 | -1, ready: boolean) {
     if (!medias[n]) return
-    if (fadeTransition && n !== i && medias[i] && motionAllowed()) startFade()
+    if (fadeTransition && n !== i && medias[i] && motionAllowed()) startFade(() => applySlide(n, direction, ready))
+    else applySlide(n, direction, ready)
+  }
+  function applySlide(n: number, direction: 1 | -1, ready: boolean) {
+    if (!medias[n]) return
     navDirection = direction
     // Ready artwork settles BEFORE the swap, so the first paint of the new slide is the image
     // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
@@ -170,23 +174,71 @@
       : { gameModeOnly: true, opacity: [0, shown], xPercent: [navDirection * 3, 0], scale: [1.015, 1], duration: 480, easing: quintOut }
   const slideOut = (carousel: boolean, shown: number): MotionParams =>
     ({ gameModeOnly: true, opacity: [0, shown], duration: carousel && !fadeTransition ? 480 : 0, easing: quintOut })
+  // A template hero's outgoing copy fades out over the incoming one (`.running`). In Game mode its
+  // keyframes ended with the same layer-drop blink, so there it fades from script instead.
+  function fadeOutWhen(node: HTMLElement, running: boolean) {
+    let frame = 0
+    const run = (on: boolean) => {
+      if (!on || frame || node.classList.contains('running')) return
+      if (!get(gameMode)) { node.classList.add('running'); return }
+      const start = performance.now()
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / FADE_MS)
+        node.style.opacity = String(1 - t)
+        frame = t < 1 ? requestAnimationFrame(step) : 0
+      }
+      frame = requestAnimationFrame(step)
+    }
+    run(running)
+    return { update: run, destroy: () => cancelAnimationFrame(frame) }
+  }
   const copyIn = (): MotionParams => fadeTransition
     ? { gameModeOnly: true, opacity: [0, 1], duration: FADE_MS, easing: linear }
     : { gameModeOnly: true, opacity: [0, 1], xPercent: [navDirection * 1.5, 0], y: [8, 0], duration: 360, easing: quintOut }
   const fadeTransition = $derived(showOverlay && heroTheme?.transition === 'fade')
-  let fadeFrom = $state<{ key: number; model: DisplayModel; art?: string } | null>(null)
+  // `shown` once the outgoing copy's artwork is decoded (hidden until then, or its scrims drew over
+  // the live slide for a frame without their image), `running` once it fades.
+  let fadeFrom = $state<{ key: number; model: DisplayModel; art?: string; shown: boolean; running: boolean } | null>(null)
+  let fadeGen = 0
+  let pendingSlide: (() => void) | null = null
   let fadeTimer: ReturnType<typeof setTimeout> | undefined
   const motionAllowed = () => {
     const motion = get(motionPreference)
     return motion !== 'reduce' && (motion === 'full' || !matchMedia('(prefers-reduced-motion: reduce)').matches)
   }
-  function startFade() {
+  function startFade(apply: () => void) {
     clearTimeout(fadeTimer)
+    // A step while the previous one still waits lands that one first, so quick presses all count.
+    pendingSlide?.()
+    pendingSlide = apply
     // The built-in layouts' outgoing artwork: the phone card's cover, the desktop banner (a desktop
     // hero showing covers just fades its incoming slide in).
     const art = !current ? undefined : get(isMobile) ? cover(current) : artworkMode === 'cover' ? undefined : backdropSrc || undefined
-    fadeFrom = { key: (fadeFrom?.key ?? 0) + 1, model: themeModel, art }
-    fadeTimer = setTimeout(() => (fadeFrom = null), FADE_MS)
+    fadeFrom = { key: (fadeFrom?.key ?? 0) + 1, model: themeModel, art, shown: false, running: false }
+    // The outgoing slide is drawn again over the live one, still showing the same slide, and the swap
+    // waits until that copy's artwork has painted: on the Deck a new layer's image can take a few
+    // frames, and the incoming slide showed through it meanwhile.
+    const gen = ++fadeGen
+    void tick().then(outgoingDecoded).then(async () => {
+      if (gen !== fadeGen) return
+      if (fadeFrom) fadeFrom = { ...fadeFrom, shown: true }
+      await nextFrames()
+      if (gen !== fadeGen) return
+      pendingSlide = null
+      apply()
+      if (fadeFrom) fadeFrom = { ...fadeFrom, running: true }
+      fadeTimer = setTimeout(() => (fadeFrom = null), FADE_MS)
+    })
+  }
+  const OUTGOING_PAINT_MS = 300
+  async function outgoingDecoded() {
+    const images = [...document.querySelectorAll<HTMLImageElement>('[data-slot="home.hero"] :is(.hero-fade-out, [data-state="leaving"]) img')]
+    const decoded = Promise.all(images.map((img) => img.decode().catch(() => {})))
+    await Promise.race([decoded, new Promise((resolve) => setTimeout(resolve, OUTGOING_PAINT_MS))])
+  }
+  // Decoded is not yet painted: two frames put the shown copy on screen before the slide changes under it.
+  function nextFrames(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
   }
 
   // `now` (a finger swipe) moves at once: waiting for the incoming artwork to decode made a quick run
@@ -348,44 +400,55 @@
     }
   })
 
-  // Game mode: the bar's 15 s compositor tween made WebKitGTK composite the whole Deck screen at
-  // 60 Hz, which was nearly all of Home's idle cost (~40% CPU, ~20% GPU). The fill steps at 15 fps
-  // from the slide clock instead, under half a pixel a step, so it still reads as continuous. Like
-  // the auto-advance above, it restarts when Home comes back from under the player.
-  const GM_BAR_FPS = 15
+  // Game mode on WebKitGTK: the bar's 15 s compositor tween made it composite the whole Deck screen at
+  // 60 Hz, which was nearly all of Home's idle cost (~40% CPU, ~20% GPU). A timer stepping it at
+  // 15 fps jittered visibly on the Deck. The fill follows the display's frames from the slide clock.
+  // WebKitGTK puts a scaled or translated layer's edge on whole pixels, so a fill growing ~8 px a
+  // second jumped a pixel every 7 frames (measured on the Deck), and a layer plus a faded edge pixel
+  // drifted a frame apart at each pixel. The fill is one gradient with a one-pixel soft edge instead,
+  // which draws between pixels in a single paint. Quarter pixels: WebKitGTK repaints it ~30 times a
+  // second here anyway, so finer writes only cost CPU. Like the auto-advance above, it restarts when
+  // Home comes back from under the player. Chromium (WebView2, Android, CEF) keeps the CSS scaleX
+  // keyframe on its compositor: this loop repainted the fill on the page's main thread every frame
+  // (the CEF spike's Home idle). The WebKitGTK branch goes with the Linux CEF port.
+  const scriptedBar = isWebKitGtk()
   $effect(() => {
-    if (!$gameMode || !medias.length || !showOverlay || heroTheme?.hidden) return
+    if (!$gameMode || !scriptedBar || !medias.length || !showOverlay || heroTheme?.hidden) return
     void cycle
     let start = 0
-    let ticker: ReturnType<typeof setInterval> | undefined
-    // Scrolled out of view a write would still cost a full-screen composite. Visibility comes from an
-    // observer: measuring the bar on every tick forced a style and layout pass 15 times a second, in
-    // the middle of every D-pad move and scroll (Game mode zooms natively, so the observer is exact).
-    const visible = new WeakMap<Element, boolean>()
-    const visibility = new IntersectionObserver((entries) => { for (const entry of entries) visible.set(entry.target, entry.isIntersecting) })
+    let frame = 0
+    const painted = new WeakMap<HTMLElement, number>()
+    const colors = new WeakMap<HTMLElement, string>()
     const paint = () => {
       const progress = Math.min(1, (performance.now() - start) / DURATION)
-      for (const bar of document.querySelectorAll<HTMLElement>('[data-slot="home.hero"] .hero-progress')) {
-        const hero = bar.closest('[data-slot="home.hero"]')!
-        if (!visible.has(hero)) { visible.set(hero, true); visibility.observe(hero) }
-        if (visible.get(hero)) bar.style.scale = `${progress} 1`
+      // Searched inside the banner only: a whole-document search each frame grew with every Home row.
+      for (const bar of document.querySelector('[data-slot="home.hero"]')?.querySelectorAll<HTMLElement>('.hero-progress') ?? []) {
+        // Scrolled out of view: a write would still cost a full-screen composite.
+        if (bar.getBoundingClientRect().bottom <= 0) continue
+        const edge = Math.round(progress * bar.offsetWidth * 4) / 4
+        if (painted.get(bar) === edge) continue
+        painted.set(bar, edge)
+        // The template's or theme's fill colour, read before the gradient replaces it.
+        if (!colors.has(bar)) colors.set(bar, getComputedStyle(bar).backgroundColor)
+        bar.style.translate = '0 0'
+        bar.style.background = `linear-gradient(90deg, ${colors.get(bar)} ${edge}px, transparent ${edge + 1}px)`
       }
-      if (progress >= 1) clearInterval(ticker)
+      frame = progress < 1 ? requestAnimationFrame(paint) : 0
     }
     const restart = () => {
-      clearInterval(ticker)
+      cancelAnimationFrame(frame)
       start = performance.now()
       if (document.hidden || get(playing) || get(androidMpvActive)) return
-      paint()
-      ticker = setInterval(paint, 1000 / GM_BAR_FPS)
+      // On the next frame, not now: Home is still being built here, and the bar's measuring forced a
+      // whole layout of it in the middle (143 ms of a 0.4 s Back to Home on the Deck).
+      frame = requestAnimationFrame(paint)
     }
     restart()
     document.addEventListener('visibilitychange', restart)
     const stopPlaying = playing.subscribe(restart)
     const stopAndroidMpv = androidMpvActive.subscribe(restart)
     return () => {
-      clearInterval(ticker)
-      visibility.disconnect()
+      cancelAnimationFrame(frame)
       document.removeEventListener('visibilitychange', restart)
       stopPlaying()
       stopAndroidMpv()
@@ -685,7 +748,7 @@
         {#key fadeFrom.key}
           <!-- The same markup as the live slide (its title an h1 too), so heading styles never change
                as the fade starts; aria-hidden keeps the copy's heading out of the page outline. -->
-          <div class="hero-fade-out" aria-hidden="true" inert><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
+          <div class="hero-fade-out" class:hero-fade-pending={!fadeFrom.shown} aria-hidden="true" inert use:fadeOutWhen={fadeFrom.running}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
         {/key}
       {/if}
       {#if medias.length > 1}
@@ -1141,7 +1204,9 @@
   }
   .hero-fade .hero-slide-in,
   .hero-fade .hero-copy { animation: hero-fade-in 650ms ease both; }
-  .hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateZ(0); animation: hero-fade-out 650ms ease both; }
+  .hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateZ(0); }
+  .hero-fade-out:global(.running) { animation: hero-fade-out 650ms ease both; }
+  .hero-fade-pending { visibility: hidden; }
   /* Game mode (the Deck's WebKitGTK 2.52). A transform or opacity tween lifts its element onto a
      compositor layer for the tween only. When the tween ends the layer is dropped and its pixels are
      repainted into the page's tiles, and since 2.52 WebKit composites without waiting for that
@@ -1160,9 +1225,11 @@
      2.52: one frame without the artwork ~480 ms after each step), so in Game mode the slides and
      their copy carry no CSS animation at all: `slideIn`/`copyIn` drive them from script. */
   :global(html.gamemode) .hero-carousel-slide,
-  :global(html.gamemode) .hero-copy { animation: none; }
-  /* The bar keeps its layer but no tween: the script above steps `scale` at 15 fps. */
-  :global(html.gamemode) .hero-progress { animation: none; scale: 0 1; }
+  :global(html.gamemode) .hero-copy,
+  :global(html.gamemode) .hero-fade-out { animation: none; }
+  /* On WebKitGTK the bar keeps its layer but no tween: the script above shows it and paints the fill as
+     a gradient. Chromium keeps the scaleX keyframe (`webkitgtk` is set by initPlatform). */
+  :global(html.gamemode.webkitgtk) .hero-progress { animation: none; translate: -100% 0; }
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
      Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives
      after the decode deadline, and the dim when Home scrolls. */

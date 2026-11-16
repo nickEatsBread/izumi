@@ -18,7 +18,7 @@
   import { isDead, markDead, markRouteDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
-  import SourceLoader from './SourceLoader.svelte'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState, type ResolveSession } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, preferredSubLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority, adaptiveSourceMode } from '$lib/settings/ui'
@@ -328,6 +328,9 @@
   }
   let busy = $state(false)
   let error = $state('')
+  // "Immediately" with something to take: an automatic pick is coming or under way, so the list is
+  // not a choice to show. It flashed for a frame or two between the resolve and the player.
+  const autoPicking = $derived(autoImmediate && !error && (resolving || busy || !!best))
   // The stream whose debrid resolve was refused for legal/content reasons (RD 451 etc). The block
   // is the service's, not the swarm's, so the error row offers a one-off direct-P2P retry of
   // exactly this stream. Set only together with `error`, cleared wherever `error` is.
@@ -781,6 +784,8 @@
        inline in the heading row — directly under the thumb aiming at the row, so a mis-tap
        copied a magnet instead of playing. Mobile moves it to a separated 48px rail. -->
   <div
+    data-part="sources.row"
+    data-best={isBest ? '' : undefined}
     class="group flex items-stretch overflow-hidden rounded-xl border border-transparent bg-secondary/40 transition-colors {inset ? 'ml-4' : 'w-full'}"
     class:opacity-40={info.cached === 'down' || !!filteredAs || knownBad}
     class:!border-theme={isBest}
@@ -891,9 +896,10 @@
      nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
      request. Errors clear the flag, so a failure is never silent. -->
 {#if pick && !pick.hidden}
-  {#if $isAndroid && autoImmediate && !playbackError}
-    <!-- The persistent Android watch page is mounted once by the app layout. An instant automatic
-         selection is not a choice screen, so this local picker surface remains intentionally empty. -->
+  {#if ($isAndroid ? autoImmediate : autoPicking) && !playbackError}
+    <!-- An instant automatic selection is not a choice screen, so this surface stays empty: the
+         loader below covers a slow resolve, and Android's persistent watch page (mounted once by
+         the app layout) covers its own. -->
   {:else}
   <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
@@ -913,7 +919,7 @@
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div bind:this={pickerTrap} data-nav-trap data-gm-tv-panel={tvPanel ? '' : undefined} use:gmPanel={tvPanel ? 'right' : 'fade'} class="sp-panel flex flex-col overflow-hidden shadow-2xl {tvPanel ? 'h-full w-[min(46rem,62vw)] border-l border-white/10 bg-[#101012]/95' : $isMobile ? 'sp-mobile h-full w-full bg-card' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border bg-card'}" in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} out:panelOut|global onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
+    <div bind:this={pickerTrap} data-slot="sources" data-variant={tvPanel ? 'panel' : $isMobile ? 'phone' : 'dialog'} data-state={resolving ? 'loading' : undefined} data-nav-trap data-gm-tv-panel={tvPanel ? '' : undefined} use:gmPanel={tvPanel ? 'right' : 'fade'} class="sp-panel flex flex-col overflow-hidden shadow-2xl {tvPanel ? 'h-full w-[min(46rem,62vw)] border-l border-white/10 bg-[#101012]/95' : $isMobile ? 'sp-mobile h-full w-full bg-card' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border bg-card'}" in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} out:panelOut|global onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}
@@ -926,8 +932,8 @@
           {/if}
           <div class="min-w-0 flex-1">
             <h2 class="sp-title font-black leading-tight drop-shadow {$isMobile ? 'line-clamp-1 text-base' : 'line-clamp-2 text-xl'}">{title(pick.media)}</h2>
-            <p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              {#if resolving}<span data-source-spinner class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" class:animate-spin={!$gameMode} style:transform={$gameMode ? `rotate(${spinnerFrame * 45}deg)` : undefined}></span>{$jvmRuntimeState === 'starting' ? 'Starting extension runtime…' : 'Finding sources…'}{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
+            <p data-part="sources.status" data-state={resolving ? 'loading' : undefined} class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              {#if resolving}<Spinner size="xs" frame={$gameMode ? spinnerFrame : undefined} />{$jvmRuntimeState === 'starting' ? 'Starting extension runtime…' : 'Finding sources…'}{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
           <button data-focusable onclick={close} class="grid shrink-0 place-items-center bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'size-11 rounded-full text-lg' : 'size-10 rounded-lg sm:size-8'}" aria-label="Close">✕</button>
@@ -1097,7 +1103,7 @@
       {/if}
 
       {#if playbackError && !setupEmpty}
-        <div role="alert" class="sp-inset shrink-0 border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
+        <div data-part="sources.error" role="alert" class="sp-inset shrink-0 border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
           <p>{playbackError}</p>
           {#if blockedRetry}
             <div class="flex flex-wrap gap-2 {$isMobile ? 'mt-2' : 'mt-1.5'}">
@@ -1110,10 +1116,10 @@
 
       <!-- Results — reveal sources the instant each addon/extension lands;
            skeletons only until the FIRST results arrive. -->
-      <div class="sp-list min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain p-2.5">
+      <div data-part="sources.list" class="sp-list min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain p-2.5">
         {#if resolving && rendered.length === 0 && !playbackError}
           {#each Array(6) as _}
-            <div class="flex items-start gap-3 rounded-xl bg-secondary/40 px-3 {$isMobile ? 'py-3' : 'py-2.5'}">
+            <div data-part="sources.row" data-state="loading" class="flex items-start gap-3 rounded-xl bg-secondary/40 px-3 {$isMobile ? 'py-3' : 'py-2.5'}">
               <!-- Matches the real row: mobile has no glyph column, so a skeleton with one would
                    shift every line sideways the moment the first source lands. -->
               {#if !$isMobile}<div class="skeloader mt-0.5 size-5 shrink-0 rounded-full"></div>{/if}
@@ -1134,7 +1140,7 @@
             {#if grouped}
               {@const gk = variantGroupKey(grouped.head)}
               {@const open = forceExpand || expandedGroups.has(gk) || groupHasBest(grouped)}
-              <div class="space-y-1 rounded-xl border border-border/60 bg-secondary/20 p-1">
+              <div data-part="sources.group" class="space-y-1 rounded-xl border border-border/60 bg-secondary/20 p-1">
                 {@render sourceRow(grouped.head, false)}
                 <button data-focusable aria-expanded={open} onclick={() => toggleGroup(gk)} onfocus={cancelAuto}
                         class="flex w-full items-center justify-center gap-1.5 rounded-lg text-center font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-accent {$isMobile ? 'min-h-10 py-2 text-sm' : 'py-1.5 text-xs'}">
@@ -1157,8 +1163,8 @@
           </div>
         {/each}
         {#if resolving}
-          <div class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-            <span data-source-spinner class="size-3 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" class:animate-spin={!$gameMode} style:transform={$gameMode ? `rotate(${spinnerFrame * 45}deg)` : undefined}></span>
+          <div data-part="sources.more" data-state="loading" class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+            <Spinner size="xs" frame={$gameMode ? spinnerFrame : undefined} />
             Finding more sources…
           </div>
         {/if}
@@ -1169,7 +1175,7 @@
           </button>
         {/if}
         {#if setupEmpty}
-          <div class="flex min-h-[18rem] flex-1 flex-col items-center justify-center gap-5 px-6 py-12 text-center">
+          <div data-part="sources.empty" data-state="setup" class="flex min-h-[18rem] flex-1 flex-col items-center justify-center gap-5 px-6 py-12 text-center">
             <div class="grid size-14 place-items-center rounded-2xl bg-secondary text-muted-foreground">
               <Blocks size={26} />
             </div>
@@ -1185,14 +1191,14 @@
             {/if}
           </div>
         {:else if !shown.length}
-          <p class="px-3 pb-3 pt-8 text-center text-sm text-muted-foreground">
+          <p data-part="sources.empty" data-state="none" class="px-3 pb-3 pt-8 text-center text-sm text-muted-foreground">
             {filter.trim() ? 'No sources match your filter.' : 'No sources — enable “Dead” to see uncached/dead torrents.'}
           </p>
         {/if}
         <!-- A provider that failed for a REASON says so, whether or not other providers found rows:
              a login-gated source is actionable, and an empty list alone reads as izumi being broken. -->
         {#if !resolving && $providerProblems.length}
-          <div class="mx-3 mb-3 rounded-xl border border-border/70 bg-secondary/30 px-3 py-2.5 text-left">
+          <div data-part="sources.problems" class="mx-3 mb-3 rounded-xl border border-border/70 bg-secondary/30 px-3 py-2.5 text-left">
             {#each $providerProblems as problem (problem.provider)}
               <p class="py-0.5 text-xs text-muted-foreground"><span class="font-bold text-amber-400">{problem.provider}</span> · {problem.message}</p>
             {/each}
@@ -1227,27 +1233,21 @@
         />
       </div>
     {:else}
+    <!-- The player's own loader, as SourceConnecting draws it once a stream is chosen: the one ring on
+         black where the player's appears, so the hand-off changes nothing until the picture. A
+         "Connecting" screen with its own art, title and caption read as a stop on the way. -->
     <div
+      data-slot="play.connecting"
+      data-variant="player"
       class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
       onclick={close}
       onkeydown={(e) => e.key === 'Escape' && close()}
       role="presentation"
       transition:fade={{ duration: $gameMode ? 0 : 160 }}
     >
-      {#if backdrop}
-        <!-- Desktop blurs this static image; Game mode removes the filter via loading-backdrop so
-             the loader cannot trigger a full-screen filtered repaint on every frame. -->
-        <img src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
-      {/if}
-      <button data-focusable onclick={(e) => { e.stopPropagation(); close() }} class="absolute z-10 grid place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] size-11' : 'right-4 top-4 size-10'}" aria-label="Close">✕</button>
-      <div class="relative" onclick={(e) => e.stopPropagation()} role="presentation">
-        <SourceLoader
-          title={pick ? title(pick.media) : ''}
-          caption={directP2p ? 'Preparing download' : 'Connecting'}
-          detail={chosenLabel}
-          onCancel={cancelChoice}
-        />
-      </div>
+      <span class="sr-only" role="status">{directP2p ? 'Preparing download' : 'Connecting'}{pick ? ` ${title(pick.media)}` : ''}</span>
+      <button data-focusable data-part="play.connecting.back" onclick={(e) => { e.stopPropagation(); close() }} class="absolute z-10 grid place-items-center rounded-full bg-black/40 text-xl text-white/85 transition-colors hover:bg-white/20 hover:text-white {$isMobile ? 'left-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] size-11' : 'left-6 top-6 size-11'}" aria-label="Back">‹</button>
+      <div data-part="play.loader" class="grid place-items-center" aria-hidden="true"><Spinner size="player" /></div>
     </div>
     {/if}
   {/if}

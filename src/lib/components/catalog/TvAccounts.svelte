@@ -4,7 +4,8 @@
   import { activeProfile } from '$lib/profiles/store'
   import { stremioAuthKey } from '$lib/stremio/account'
   import { cloudAccountRequest, type CloudAccountState } from '$lib/sync/cloudflare'
-  import { Check, ExternalLink, LoaderCircle, RefreshCw, Tv } from '@lucide/svelte'
+  import { Check, ExternalLink, RefreshCw, Tv } from '@lucide/svelte'
+  import Spinner from '$lib/components/Spinner.svelte'
 
   let accounts = $state<CloudAccountState[]>([])
   let profiles = $state<Array<{ id: number; name: string; locked: boolean }>>([])
@@ -60,7 +61,7 @@
     <button data-focusable class="grid min-h-11 min-w-11 place-items-center rounded-lg bg-secondary disabled:opacity-50" aria-label="Refresh TV accounts" disabled={!!busy} onclick={() => run('refresh', refresh)}><RefreshCw size={17} class={busy === 'refresh' ? 'animate-spin' : ''} /></button>
   </div>
   <p class="mt-2 text-xs leading-5 text-muted-foreground">Connecting stores an account session in your private Worker so it can contact the service. Library and collection reads are automatic; sending playback progress is optional.</p>
-  {#if busy === 'loading'}<p role="status" class="mt-4 flex items-center gap-2 text-sm"><LoaderCircle class="animate-spin" size={16} /> Loading connections…</p>{/if}
+  {#if busy === 'loading'}<p role="status" class="mt-4 flex items-center gap-2 text-sm"><Spinner /> Loading connections…</p>{/if}
   <div class="mt-4 divide-y divide-border">
     {#each ['nuvio', 'stremio'] as service}
       {@const account = service === 'nuvio' ? nuvio : stremio}

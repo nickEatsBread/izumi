@@ -70,12 +70,12 @@ describe('the series progress row', () => {
 })
 
 describe('the folding actions row', () => {
-  it('reveals Save, Share and Trailer on the first tap, and opens the menu on the next', () => {
+  it('reveals Watchlist, Share and Trailer on the first tap, and opens the menu on the next', () => {
     expect(detail).toContain("const actionsFold = $derived(detailTheme.actions === 'expand')")
     expect(detail).toContain('if (actionsFold && !actionsOpen) { actionsOpen = true; return }')
     expect(detail).toContain("<div data-part=\"detail.actions\" data-expanded={actionsFold && actionsOpen ? '' : undefined}")
     expect(detail).toContain('{#if !actionsFold || actionsOpen}')
-    expect(detail).toContain('data-action="more" data-focusable onclick={pressMore}')
+    expect(detail).toContain('data-action="more" data-focusable data-nav-scroll-top onclick={pressMore}')
   })
   it('folds again when the menu closes', () => {
     expect(detail).toContain('function closeMenu() {\n    showMore = false\n    if (actionsFold) actionsOpen = false\n  }')

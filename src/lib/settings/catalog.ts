@@ -1,7 +1,9 @@
 import { persisted } from 'svelte-persisted-store'
 import { derived, get, writable } from 'svelte/store'
+import { isSourceSelection, knownSourceSelection, sourceCatalogName, type SourceSelection } from '$lib/catalog/source-catalogs'
 
-export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
+/** `source:<packageId>` is a source's own catalog (a local-service source that serves one). */
+export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | SourceSelection
 /** A user-made screen: a named Merged screen with a Home layout (and optionally a theme) of its own. */
 export type CustomScreenId = `custom:${string}`
 export type CatalogScreen = CatalogSelection | 'merged' | CustomScreenId
@@ -12,6 +14,10 @@ export type CatalogSwitcherPlacement = 'automatic' | 'integrated' | 'below'
 export type StremioHeroArtwork = 'backdrop' | 'cover'
 
 export const CATALOG_SELECTIONS: CatalogSelection[] = ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']
+
+/** A built-in catalog, or a source catalog that is still installed and switched on. */
+export const isCatalogSelection = (value: unknown): value is CatalogSelection =>
+  (typeof value === 'string' && CATALOG_SELECTIONS.includes(value as CatalogSelection)) || knownSourceSelection(value)
 
 export interface CustomScreen { id: string; name: string }
 export const CUSTOM_SCREEN_LIMIT = 12
@@ -36,7 +42,7 @@ export const isCustomScreen = (screen: unknown): screen is CustomScreenId => typ
 /** Screens that compose rows from every enabled catalog: Merged, and every custom screen. */
 export const isMergedScreen = (screen: unknown): screen is 'merged' | CustomScreenId => screen === 'merged' || isCustomScreen(screen)
 
-const CATALOG_LABELS: Record<Exclude<CatalogDefaultSelection, CustomScreenId>, string> = {
+const CATALOG_LABELS: Record<Exclude<CatalogDefaultSelection, CustomScreenId | SourceSelection>, string> = {
   adaptive: 'Adaptive',
   merged: 'Merged',
   auto: 'Automatic anime',
@@ -49,14 +55,14 @@ const CATALOG_LABELS: Record<Exclude<CatalogDefaultSelection, CustomScreenId>, s
 
 /** Pass `custom` from a component's `$customScreens`, so a renamed screen relabels at once. */
 export function catalogLabel(provider: CatalogDefaultSelection, custom: CustomScreen[] = get(customScreens)): string {
+  if (isSourceSelection(provider)) return sourceCatalogName(provider)
   if (!isCustomScreen(provider)) return CATALOG_LABELS[provider]
   return custom.find((screen) => customScreenId(screen.id) === provider)?.name ?? 'Custom screen'
 }
 
 export function normalizeCatalogProviders(value: unknown, fallback: CatalogSelection = 'auto'): CatalogSelection[] {
   if (!Array.isArray(value)) return [fallback]
-  const valid = value.filter((item): item is CatalogSelection =>
-    typeof item === 'string' && CATALOG_SELECTIONS.includes(item as CatalogSelection))
+  const valid = value.filter(isCatalogSelection)
   return [...new Set(valid)].length ? [...new Set(valid)] : [fallback]
 }
 
@@ -84,12 +90,10 @@ export function resolveCatalogStartup(
 ): CatalogSelection {
   const enabled = normalizeCatalogProviders(providers)
   if (defaultProvider === 'adaptive'
-      && typeof lastProvider === 'string'
-      && CATALOG_SELECTIONS.includes(lastProvider as CatalogSelection)
-      && enabled.includes(lastProvider as CatalogSelection)) return lastProvider as CatalogSelection
-  if (typeof defaultProvider === 'string'
-      && CATALOG_SELECTIONS.includes(defaultProvider as CatalogSelection)
-      && enabled.includes(defaultProvider as CatalogSelection)) return defaultProvider as CatalogSelection
+      && isCatalogSelection(lastProvider)
+      && enabled.includes(lastProvider)) return lastProvider
+  if (isCatalogSelection(defaultProvider)
+      && enabled.includes(defaultProvider)) return defaultProvider
   return enabled[0]
 }
 
@@ -261,9 +265,12 @@ export function selectCatalogScreen(screen: CatalogScreen): void {
   selectCatalogProvider(screen)
 }
 
-/** The TV companion and cloud profile know only built-in screens: a custom one reads as its concrete provider. */
-export const companionScreen = (screen: CatalogScreen): Exclude<CatalogScreen, CustomScreenId> =>
-  isCustomScreen(screen) ? get(catalogProvider) : screen
+/** The TV companion and cloud profile know only built-in screens: a custom one reads as its concrete
+ *  provider, and a source's own catalog as Stremio metadata (which is what it serves). */
+export const companionScreen = (screen: CatalogScreen): Exclude<CatalogScreen, CustomScreenId | SourceSelection> => {
+  const concrete = isCustomScreen(screen) ? get(catalogProvider) : screen
+  return isSourceSelection(concrete) ? 'stremio' : concrete
+}
 
 /** A desktop app cannot safely embed a shared TMDB application credential in its distributable.
  * Users may supply their own read token; packaged/private builds can instead set PUBLIC_TMDB_READ_TOKEN. */

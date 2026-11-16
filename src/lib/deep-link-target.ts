@@ -1,12 +1,20 @@
 import { parseTraktCallback } from '$lib/trakt/oauth'
 import { parseCompanionRestoreLink } from '$lib/companion/restore'
 import { parseDeviceTransferLink } from '$lib/onboarding/device-transfer'
-import { resolveStoreUrl } from '$lib/store/url'
+import { canonicalStoreUrl, resolveStoreUrl } from '$lib/store/url'
 export type DeepLinkTarget = { path: string; notice?: string }
 
 /** What a batch of incoming links resolves to: somewhere to navigate, something to tell the user,
  *  or both. `null` means there was nothing to act on at all. */
 export type DeepLinkOutcome = { path?: string; notice?: string }
+
+/** A pack link: a public https URL (GitHub file pages become their raw file). */
+export function packLink(input: string): string | null {
+  const value = input.trim()
+  if (!/^https:\/\//i.test(value)) return null
+  const resolved = resolveStoreUrl(value)
+  return resolved && /\.json$/i.test(new URL(resolved).pathname) ? resolved : canonicalStoreUrl(value)
+}
 
 /** Parse only navigation intent here. A magnet link never starts playback without the picker. */
 export function parseDeepLink(raw: string): DeepLinkTarget | null {
@@ -53,6 +61,11 @@ export function parseDeepLink(raw: string): DeepLinkTarget | null {
       // Opens the add-store preview; adding still needs the user's confirmation there.
       const target = resolveStoreUrl(url.searchParams.get('url') ?? '')
       return target ? { path: `/app/settings/store?add=${encodeURIComponent(target)}`, notice: 'Store link opened' } : null
+    }
+    if (kind === 'pack') {
+      // Opens the pack's review screen; nothing is installed before the user sets it up there.
+      const target = packLink(url.searchParams.get('url') ?? '')
+      return target ? { path: `/app/pack?url=${encodeURIComponent(target)}`, notice: 'Pack link opened' } : null
     }
     if ((kind === 'anime' || kind === 'watch') && /^\d+$/.test(parts[0] ?? '')) {
       const id = parts[0]

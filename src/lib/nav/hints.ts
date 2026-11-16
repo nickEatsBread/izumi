@@ -42,7 +42,7 @@ export function hintsFor(focused: Element | null, context: HintContext): Hint[] 
   if (context.y && !dialog) labels.y = context.y
   labels.b = context.back ? BACK_LABELS[context.back] ?? 'Back' : dialog ? 'Close' : context.home ? 'Exit' : 'Back'
   if (context.pageTabs) labels.l2r2 = 'Tabs'
-  if (!dialog) labels.start = 'Menu'
+  if (!dialog) labels.start = element?.dataset.hintStart ?? 'Menu'
   return ORDER.flatMap((button) => {
     const label = labels[button]
     return label ? [{ button, label }] : []

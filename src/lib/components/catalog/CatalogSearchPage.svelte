@@ -11,6 +11,7 @@
   import StremioAdvancedFilters from './StremioAdvancedFilters.svelte'
   import JvmSourceFilters from './JvmSourceFilters.svelte'
   import { catalogProvider, type CatalogSelection } from '$lib/settings/catalog'
+  import { isSourceSelection } from '$lib/catalog/source-catalogs'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import type { CatalogContentType } from '$lib/catalog/identity'
   import { mediaKey } from '$lib/catalog/identity'
@@ -83,7 +84,8 @@
 
   const animeOnly = $derived(activeSelection === 'kitsu' || activeSelection === 'jvm')
   const isTmdb = $derived(activeSelection === 'tmdb')
-  const isStremio = $derived(activeSelection === 'stremio')
+  // A source's own catalog speaks the Stremio add-on protocol.
+  const isStremio = $derived(activeSelection === 'stremio' || isSourceSelection(activeSelection))
   const isJvm = $derived(activeSelection === 'jvm')
   const typeOptions = $derived(animeOnly
     ? [{ value: 'all', label: 'Anime' }]
@@ -95,7 +97,7 @@
       ])
   const sortOptions = $derived(activeSelection === 'jvm'
     ? [{ value: 'popular', label: 'Popular' }, { value: 'recent', label: 'Latest' }]
-    : activeSelection === 'tmdb' || activeSelection === 'stremio'
+    : activeSelection === 'tmdb' || isStremio
     ? [
         { value: 'popular', label: 'Most popular' }, { value: 'rating', label: 'Highest rated' },
         { value: 'recent', label: 'Newest releases' }, { value: 'oldest', label: 'Oldest releases' },
@@ -424,7 +426,7 @@
       {/if}
       {#if availableGenres.length}
         <SelectMenu bind:value={genre} ariaLabel="Genre" filter="genre" className="w-44 shrink-0" options={genreOptions} />
-      {:else if activeSelection === 'stremio'}
+      {:else if isStremio}
         <input data-part="search.filter" data-filter="genre" data-label="Genre" data-active={!!genre || undefined} bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
           class="h-11 w-32 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
@@ -471,7 +473,8 @@
       </VirtualGrid>
     </div>
   {:else if !loading && !error}
-    <div class="rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results.</div>
+    <!-- A catalog that lists nothing without a query (a source's own search) asks for one instead. -->
+    <div data-part="search.empty" data-state={query.trim() ? 'none' : 'idle'} class="rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">{query.trim() ? 'No results.' : 'Type to search.'}</div>
   {/if}
 
   {#if loading}

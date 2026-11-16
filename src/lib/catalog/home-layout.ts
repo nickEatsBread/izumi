@@ -2,9 +2,10 @@ import { persisted } from 'svelte-persisted-store'
 import { get } from 'svelte/store'
 import { hiddenHomeRows, homeRowOrder } from '$lib/settings/ui'
 import type { CatalogScreen, CustomScreenId } from '$lib/settings/catalog'
+import type { SourceSelection } from './source-catalogs'
 import type { CatalogHomeRowOption } from './types'
 
-export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | 'merged' | CustomScreenId
+export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | 'merged' | CustomScreenId | SourceSelection
 export type CatalogHomeTarget = CatalogScreen
 
 export interface CatalogHomeLayout {

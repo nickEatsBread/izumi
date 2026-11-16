@@ -26,7 +26,9 @@ fn deck_wayland_prefers_zero_copy_with_safe_fallbacks() {
 #[test]
 fn gamepad_blocks_until_input_instead_of_polling_at_120hz() {
     let gamepad = include_str!("../src/player/gamepad_linux.rs");
-    assert!(gamepad.contains("next_event_blocking(Some(Duration::from_millis(250)))"));
+    // Blocks until input, waking only for a held direction's next repeat or the 250 ms bound.
+    assert!(gamepad.contains("next_event_blocking(Some(dirs.wait(Instant::now())))"));
+    assert!(gamepad.contains("const READ_BOUND: Duration = Duration::from_millis(250);"));
     assert!(gamepad.contains("with_default_filters(false)"));
     assert!(gamepad.contains("Axis::DPadX | Axis::DPadY"));
     assert!(gamepad.contains("RUN_ID"));
@@ -111,7 +113,7 @@ fn native_controls_match_crunchy_deck_motion_and_seekbar() {
     // Native shapes keep 1/8px ASS coordinates and use the same icon identities as the HTML HUD.
     assert!(osd.contains(r"\\p4"));
     assert!(!osd.contains(r"\\p1"));
-    assert!(osd.contains("Lucide Settings silhouette"));
+    assert!(osd.contains("fn gear("));
     assert!(osd.contains("Lucide MessageSquare"));
     assert!(!osd.contains("rounded_rect_ring"));
     // The seek track has no independent shadow; the one bottom wash uses the reference's stops.

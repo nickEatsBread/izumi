@@ -18,6 +18,9 @@
   import { getExternalTrackerProgress } from '$lib/trackers'
   import ListEditor from './ListEditor.svelte'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
+  import { navLayer } from '$lib/nav/overlay'
+  import X from '@lucide/svelte/icons/x'
+  import Spinner from '$lib/components/Spinner.svelte'
 
   let { media, onclose }: { media: Media; onclose: () => void } = $props()
 
@@ -73,4 +76,23 @@
     {onclose}
     onsaved={() => {}}
   />
+{:else}
+  <!-- The entry is still being read: the editor's frame at once, so the press visibly did something. -->
+  <div role="dialog" aria-modal="true" aria-label="Edit list entry" aria-busy="true" tabindex="-1" data-slot="list.loading"
+       use:navLayer={{ kind: 'list-sheet-loading', onClose: onclose, initialFocus: 'always' }}
+       class="fixed inset-0 z-50 grid h-[100dvh] place-items-end overflow-hidden sm:place-items-center sm:p-4"
+       onclick={(e) => { if (e.target === e.currentTarget) onclose() }}
+       onkeydown={(e) => { if (e.key === 'Escape') onclose() }}>
+    <div class="pointer-events-none absolute inset-0 bg-black/70"></div>
+    <div class="relative flex w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:rounded-2xl">
+      <div class="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
+        <h3 class="text-lg font-black">Edit list</h3>
+        <button data-focusable aria-label="Close" onclick={onclose} class="grid size-8 place-items-center rounded-md hover:bg-accent"><X size={18} /></button>
+      </div>
+      <div class="flex flex-col items-center gap-3 px-5 pb-10 pt-6 text-sm text-muted-foreground">
+        <Spinner size="lg" />
+        Reading your list entry…
+      </div>
+    </div>
+  </div>
 {/if}

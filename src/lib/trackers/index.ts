@@ -25,7 +25,7 @@ import {
   type TrackerOp, type TrackerName, type PushResult, type ProgressExtras,
 } from './queue'
 import type { Media, FuzzyDate } from '$lib/anilist/types'
-import { externalIdsOf } from '$lib/catalog/identity'
+import { anilistIdOf, externalIdsOf } from '$lib/catalog/identity'
 import { traktToken } from '$lib/trakt/config'
 import { addTraktHistory, setTraktRating, setTraktWatchlist } from '$lib/trakt/sync'
 
@@ -275,6 +275,15 @@ export function markWatched(media: Media, episode: number, options: { importedAt
     // A recovery advances known progress but never infers a new rewatch from a completed title.
     if (played <= known) return known
   } else recordProgress(media, played)
+  // A source catalog's own title has no tracker identity; its source can name the AniList entry each
+  // episode is (`track`), and the watch is tracked there, as that entry's own episode.
+  const tracked = !imported && !anilistIdOf(media) ? media.videos?.find((video) => video.number === played)?.track : undefined
+  if (tracked) {
+    void import('$lib/anilist/fetch-media')
+      .then(({ fetchMediaById }) => fetchMediaById(tracked.anilist))
+      .then((entry) => { markWatched(entry, tracked.episode) })
+      .catch(() => {})
+  }
   void addTraktHistory(media, played, options.importedAt).catch(() => {})
   const persistLocal = get(saveLocalHistory)
   const threshold = Math.max(1, Math.floor(get(autoWatchlistEpisodes) || 1))

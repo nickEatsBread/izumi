@@ -12,6 +12,7 @@
   import type { PlayState } from '$lib/stremio/play'
   import { nearViewport } from '$lib/util/near-viewport'
   import Pager from '../Pager.svelte'
+  import Spinner from '$lib/components/Spinner.svelte'
 
   // Newly aired episodes as 16:9 stills, newest first. The still plays the episode; the title opens the series.
   let { block }: { block: LatestEpisodesBlock } = $props()
@@ -129,7 +130,7 @@
               <span data-part="episode.number" class="absolute left-2 top-2 rounded bg-black/75 px-1.5 py-0.5 text-xs font-black text-white">EP {release.episode}</span>
             {/if}
             {#if playing === key}
-              <span class="absolute inset-0 grid place-items-center bg-black/50"><span class="size-7 animate-spin rounded-full border-2 border-white/30 border-t-white"></span></span>
+              <span class="absolute inset-0 grid place-items-center bg-black/50"><Spinner size="lg" inline class="text-white" /></span>
             {/if}
           </button>
           {#if block.caption === 'overlay'}

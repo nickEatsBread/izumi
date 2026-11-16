@@ -9,6 +9,7 @@
   import Sparkles from '@lucide/svelte/icons/sparkles'
   import PackageOpen from '@lucide/svelte/icons/package-open'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
+  import { protectedSurface } from '$lib/themes/safe-mode'
 
   // Android's update prompt. The desktop corner toast was a thin strip over the phone tab bar and a
   // card too small to read on a TV, so Android gets a centred dialog. It is a nav layer: the d-pad
@@ -77,7 +78,7 @@
 {#if open && $availableUpdate}
   <div role="presentation" class="fixed inset-0 z-[150] grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
        onclick={(e) => { if (e.target === e.currentTarget) later() }}>
-    <div bind:this={card} role="alertdialog" aria-modal="true" aria-labelledby="update-dialog-title" data-theme-protected
+    <div bind:this={card} role="alertdialog" aria-modal="true" aria-labelledby="update-dialog-title" data-theme-protected use:protectedSurface
          use:navLayer={{ kind: 'update', onClose: later, initialFocus: 'always' }}
          class="max-h-full w-full overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl {$isTv ? 'max-w-2xl p-8' : 'max-w-md p-6'}">
       {#if $updatePhase === 'available'}

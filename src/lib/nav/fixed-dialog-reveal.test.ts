@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { initDpadNav } from './index'
 import { oskOpen } from '$lib/player/session'
 
@@ -18,7 +19,7 @@ function rectOf(this: Element): DOMRect {
 const extent = (node: Element, index: number) => Number((node.getAttribute('data-scroll') ?? '0,0').split(',')[index])
 
 const paneScrolls: Array<{ el: Element; options: ScrollToOptions }> = []
-let windowScrollBy: ReturnType<typeof vi.fn>
+let windowMoves: ReturnType<typeof vi.fn<(options: ScrollToOptions) => void>>
 let windowScrollTo: ReturnType<typeof vi.fn>
 
 const el = (label: string) => [...document.querySelectorAll<HTMLElement>('[data-focusable]')].find((node) => node.textContent?.trim() === label)!
@@ -40,15 +41,18 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   paneScrolls.length = 0
-  HTMLElement.prototype.scrollBy = function (this: HTMLElement, options?: ScrollToOptions | number) {
-    paneScrolls.push({ el: this, options: options as ScrollToOptions })
-  } as HTMLElement['scrollBy']
-  HTMLElement.prototype.scrollTo = function () {} as HTMLElement['scrollTo']
-  windowScrollBy = vi.fn()
-  windowScrollTo = vi.fn()
-  window.scrollBy = windowScrollBy as unknown as typeof window.scrollBy
+  HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {
+    const move = asMove(this, options as ScrollToOptions)
+    if (move) paneScrolls.push({ el: this, options: move })
+  } as HTMLElement['scrollTo']
+  windowMoves = vi.fn()
+  windowScrollTo = vi.fn((options: ScrollToOptions) => {
+    const move = asMove(window, options)
+    if (move) windowMoves(move)
+  })
   window.scrollTo = windowScrollTo as unknown as typeof window.scrollTo
 })
 
@@ -72,7 +76,7 @@ describe('d-pad reveal inside fixed dialogs', () => {
     // Left/Right at the keyboard's left edge would ask for a horizontal window scroll too.
     press('ArrowLeft')
     expect(document.activeElement).toBe(el('q3'))
-    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(windowMoves).not.toHaveBeenCalled()
     expect(windowScrollTo).not.toHaveBeenCalled()
     expect(paneScrolls).toEqual([])
   })
@@ -91,7 +95,7 @@ describe('d-pad reveal inside fixed dialogs', () => {
     el('Field 5').focus()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Field 6'))
-    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(windowMoves).not.toHaveBeenCalled()
     const body = document.querySelector('.editor-body')
     expect(paneScrolls).toHaveLength(1)
     expect(paneScrolls[0].el).toBe(body)
@@ -111,7 +115,7 @@ describe('d-pad reveal inside fixed dialogs', () => {
     el('Score').focus()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Save'))
-    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(windowMoves).not.toHaveBeenCalled()
     expect(paneScrolls).toEqual([])
   })
 
@@ -124,7 +128,7 @@ describe('d-pad reveal inside fixed dialogs', () => {
     el('Profile A').focus()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Profile B'))
-    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(windowMoves).not.toHaveBeenCalled()
     expect(paneScrolls.map((scroll) => scroll.el)).toEqual([document.querySelector('.switcher')])
   })
 
@@ -140,7 +144,7 @@ describe('d-pad reveal inside fixed dialogs', () => {
     el('Option 2').focus()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Option 3'))
-    expect(windowScrollBy).toHaveBeenCalledTimes(1)
+    expect(windowMoves).toHaveBeenCalledTimes(1)
     expect(paneScrolls).toEqual([])
   })
 
@@ -149,6 +153,6 @@ describe('d-pad reveal inside fixed dialogs', () => {
     el('Card 3').focus()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Card 4'))
-    expect(windowScrollBy).toHaveBeenCalledTimes(1)
+    expect(windowMoves).toHaveBeenCalledTimes(1)
   })
 })

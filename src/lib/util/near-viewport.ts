@@ -12,6 +12,8 @@ export interface NearViewportOptions {
   marginViewports?: number
   /** Recheck when siblings collapse and change the row's position without a scroll event. */
   observeParent?: boolean
+  /** Also wait while far above the screen: a page reopened at its middle need not build all it skipped. */
+  bothWays?: boolean
 }
 
 interface Entry {
@@ -97,11 +99,9 @@ function check(): void {
       if (top === undefined) parentTops.set(parent, top = parent.getBoundingClientRect().top)
       if (!isNearViewport(top, height, entry.options.marginViewports)) continue
     }
-    if (!isNearViewport(
-      entry.node.getBoundingClientRect().top,
-      height,
-      entry.options.marginViewports,
-    )) continue
+    const box = entry.node.getBoundingClientRect()
+    if (!isNearViewport(box.top, height, entry.options.marginViewports)) continue
+    if (entry.options.bothWays && box.bottom < -height * Math.max(0, entry.options.marginViewports ?? 1.5)) continue
     // Remove first: onEnter commonly changes layout synchronously and can trigger the shared RO.
     remove(entry)
     entry.options.onEnter()
