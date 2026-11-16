@@ -118,9 +118,11 @@ describe('ranking languages', () => {
 describe('source account languages', () => {
   const languages = { audio: 'audioLanguage', subtitle: 'subtitleLanguage' }
 
-  it('reads the named fields as one-language orders, an empty subtitle as off', () => {
-    expect(documentLanguages({ languages, values: { audioLanguage: 'en-US', subtitleLanguage: '' } }, 5))
+  it('reads the named fields as one-language orders, none as off and an empty value as not set', () => {
+    expect(documentLanguages({ languages, values: { audioLanguage: 'en-US', subtitleLanguage: 'none' } }, 5))
       .toEqual({ audio: ['en-US'], subtitle: ['none'], at: 5 })
+    expect(documentLanguages({ languages, values: { audioLanguage: 'en-US', subtitleLanguage: '' } }, 5))
+      .toEqual({ audio: ['en-US'], at: 5 })
     expect(documentLanguages({ languages, values: { audioLanguage: '', subtitleLanguage: 'es-419' } }, 5))
       .toEqual({ subtitle: ['es-419'], at: 5 })
   })

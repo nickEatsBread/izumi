@@ -53,7 +53,7 @@
     saving = key
     error = ''
     try {
-      document = await saveSourceLanguageSection(packageId, document, key, value)
+      document = await saveSourceLanguageSection(packageId, key, value)
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
     } finally {

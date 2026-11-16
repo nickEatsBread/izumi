@@ -117,8 +117,9 @@ export const rankingLanguages = (order: LanguageOrder): { audioLang?: string; su
 })
 
 /** The account languages a source's settings document reports. A document names the fields that
- *  hold them in `languages`; each holds one language tag, and an empty subtitle means off. A named
- *  field missing from `values` keeps what `previous` said for that kind. */
+ *  hold them in `languages`; each holds one language tag, `none` turns subtitles off and an empty
+ *  value is not set (the catalog falls back to its other orders). A named field missing from
+ *  `values` keeps what `previous` said for that kind. */
 export function documentLanguages(
   document: Pick<ServiceSettingsDocument, 'languages' | 'values'>,
   now = Date.now(),
@@ -134,8 +135,8 @@ export function documentLanguages(
     }
     const value = document.values[key]
     const tag = typeof value === 'string' ? value.trim() : ''
-    if (tag) found[kind] = [tag]
-    else if (kind === 'subtitle' && typeof value === 'string') found.subtitle = [SUBTITLES_OFF]
+    if (tag.toLowerCase() === SUBTITLES_OFF) { if (kind === 'subtitle') found.subtitle = [SUBTITLES_OFF] }
+    else if (tag) found[kind] = [tag]
   }
   return found.audio || found.subtitle ? found : undefined
 }

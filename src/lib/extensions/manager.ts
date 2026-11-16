@@ -1197,7 +1197,7 @@ export interface ServiceSettingField {
   step?: number
   options?: ServiceSettingOption[]
   /** Also shown in one of izumi's own Settings places. `languages`: Settings › Languages, under
-   *  this source's catalog. izumi saves a section by posting only that section's fields. */
+   *  this source's catalog. izumi saves a change there by posting just that field. */
   section?: 'languages'
 }
 export interface ServiceSettingsNotice {
@@ -1223,8 +1223,8 @@ export interface ServiceSettingsDocument {
   fields: ServiceSettingField[]
   values: Record<string, ServiceSettingValue>
   /** The fields holding the account's playback languages, each one language tag (BCP-47 such as
-   *  `ja-JP`, or ISO 639); an empty subtitle value means off. izumi plays this source's catalog in
-   *  them and writes changes made in its own Settings back through these fields. */
+   *  `ja-JP`, or ISO 639); `none` turns subtitles off and an empty value is not set. izumi plays this
+   *  source's catalog in them and writes changes made in its own Settings back through these fields. */
   languages?: { audio?: string; subtitle?: string }
 }
 export interface ServiceSettingsSaveResult {

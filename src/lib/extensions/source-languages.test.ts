@@ -33,19 +33,19 @@ describe('Language section', () => {
       .toEqual(['audioLanguage', 'subtitleLanguage', 'subtitleStyle'])
   })
 
-  it('saves only the section fields it has values for, with the change applied', async () => {
+  it('posts only the changed field', async () => {
     const next = { ...document, values: { ...document.values, audioLanguage: 'en-US' } }
     manager.saveExtensionServiceSettings.mockResolvedValue({ ...next, ok: true, message: 'Saved' })
-    await expect(saveSourceLanguageSection('video.example', document, 'audioLanguage', 'en-US')).resolves.toMatchObject({ values: next.values })
-    expect(manager.saveExtensionServiceSettings).toHaveBeenCalledWith('video.example', { audioLanguage: 'en-US', subtitleLanguage: '' })
+    await expect(saveSourceLanguageSection('video.example', 'audioLanguage', 'en-US')).resolves.toMatchObject({ values: next.values })
+    expect(manager.saveExtensionServiceSettings).toHaveBeenCalledWith('video.example', { audioLanguage: 'en-US' })
   })
 
   it('reads the document again after a short answer, and reports a refusal', async () => {
     manager.saveExtensionServiceSettings.mockResolvedValueOnce({ ok: true })
     manager.extensionServiceSettings.mockResolvedValueOnce(document)
-    await expect(saveSourceLanguageSection('video.example', document, 'subtitleLanguage', 'en-US')).resolves.toBe(document)
+    await expect(saveSourceLanguageSection('video.example', 'subtitleLanguage', 'en-US')).resolves.toBe(document)
     manager.saveExtensionServiceSettings.mockResolvedValueOnce({ ok: false, message: 'Sign in first.' })
-    await expect(saveSourceLanguageSection('video.example', document, 'subtitleLanguage', 'en-US')).rejects.toThrow('Sign in first.')
+    await expect(saveSourceLanguageSection('video.example', 'subtitleLanguage', 'en-US')).rejects.toThrow('Sign in first.')
   })
 })
 

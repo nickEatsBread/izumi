@@ -64,7 +64,7 @@ the existing service settings document (`GET/POST /__izumi/settings`), with two 
   "version": 1,
   "fields": [
     { "key": "audioLanguage", "label": "Audio language", "type": "select", "section": "languages", "options": [ … ] },
-    { "key": "subtitleLanguage", "label": "Subtitle language", "type": "select", "section": "languages", "options": [ { "value": "", "label": "None" }, … ] }
+    { "key": "subtitleLanguage", "label": "Subtitle language", "type": "select", "section": "languages", "options": [ { "value": "none", "label": "Off" }, … ] }
   ],
   "values": { "audioLanguage": "ja-JP", "subtitleLanguage": "en-US" },
   "languages": { "audio": "audioLanguage", "subtitle": "subtitleLanguage" }
@@ -72,23 +72,27 @@ the existing service settings document (`GET/POST /__izumi/settings`), with two 
 ```
 
 - **`languages`** names the fields that hold the account's audio and subtitle language. Each field
-  holds one tag. An empty subtitle value means off. Rules:
+  holds one tag. The subtitle value `none` means off. An empty value means "not set": the catalog then
+  falls back to its other orders. (A source account may have no language stored at all, and a
+  service such as the one this was built against cannot store "off", so `''` must not be read as off.)
+  Rules:
   - Leave `languages` out while signed out. izumi then drops what it kept.
   - A document that names the fields but has no values yet (details still loading) leaves izumi's copy
     alone.
 - **`section: "languages"`** on a field shows it in izumi's Settings › Languages › Per catalog, under
   the source's catalog. This is the source's Language section. Rules:
   - A `visibleWhen` there counts only when it names another field of the same section.
-  - izumi saves a change by posting only that section's fields, with no action field. The source must
-    accept such a save.
+  - izumi saves a change by posting just the changed field, with no action field. The source must
+    accept such a save and change only the fields it is given. Re-sending the section's other values
+    could put back an older one when the last reply was read before the account caught up.
 
 ### Sync
 
 - **The source's own settings → izumi.** Every document izumi reads or gets back from a save updates
   its copy (`extensionServiceSettings` / `saveExtensionServiceSettings` in
   `src/lib/extensions/manager.ts`). That includes saves from the source's own sheet.
-- **izumi's menu → the source.** In Settings › Languages, the source's section saves to the account
-  (`saveSourceLanguageSection`). izumi's copy follows the document the source returns.
+- **izumi's menu → the source.** In Settings › Languages, a change in the source's section saves that
+  one field to the account (`saveSourceLanguageSection`). izumi's copy follows the document the source returns.
 - **Before playback.** Playing a source title refreshes the copy if it is more than ten minutes old.
   The refresh runs in the background. Only the very first play from that source waits for it, and for
   at most 1.5 s (`refreshSourceLanguages`).

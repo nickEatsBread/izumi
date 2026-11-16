@@ -1,7 +1,7 @@
 /** A source account's playback languages, through the service settings protocol: the document's
  *  `languages` names the fields holding them, and fields marked `section: 'languages'` make up the
  *  Language section izumi shows in Settings › Languages. Reading a document keeps izumi's copy
- *  (manager.ts); saving the section writes izumi's change back to the account. */
+ *  (manager.ts); saving a field of the section writes izumi's change back to the account. */
 import { get } from 'svelte/store'
 import { sourceAccountLanguages } from '$lib/settings/catalog-languages'
 import {
@@ -47,19 +47,15 @@ export function refreshSourceLanguages(packageId: string, maxAgeMs = FRESH_MS): 
   return job
 }
 
-/** Save the Language section with one field changed, posting only that section's fields. Returns
- *  the refreshed document (re-read when the source answered with a short result). */
+/** Save one field of the Language section, posting only that field: re-sending the section's other
+ *  values could put back an older one when the last reply was read before the account caught up.
+ *  Returns the refreshed document (re-read when the source answered with a short result). */
 export async function saveSourceLanguageSection(
   packageId: string,
-  document: ServiceSettingsDocument,
   key: string,
   value: ServiceSettingValue,
 ): Promise<ServiceSettingsDocument> {
-  // Only fields the document has a value for: a missing one must not be posted as cleared.
-  const values = Object.fromEntries(document.fields
-    .filter((field) => field.section === 'languages' && field.key in document.values)
-    .map((field) => [field.key, document.values[field.key]]))
-  const result = await saveExtensionServiceSettings(packageId, { ...values, [key]: value })
+  const result = await saveExtensionServiceSettings(packageId, { [key]: value })
   if (result?.ok === false) throw new Error(result.message || 'The source did not save the change.')
   return result?.version === 1 && Array.isArray(result.fields) && result.values
     ? result as ServiceSettingsDocument
