@@ -41,4 +41,14 @@ describe('player top row', () => {
     expect(titlebar.match(/<button[^>]*\n?[^>]*pointer-events-auto/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
     expect(titlebar.match(/class="pointer-events-auto grid h-8 w-11/g)).toHaveLength(3)
   })
+
+  it('never lays the titlebar leading slot over Back as a drag region', () => {
+    const titlebar = read('../shell/Titlebar.svelte')
+    // Back keeps the bar's 16px edge unless the slot holds something, so the empty slot (56px wide,
+    // 32px tall, a drag region) covered the top two thirds of the circle: a click there dragged the
+    // window instead. The slot follows the bar's pointer events; the GIF chip inside opts back in.
+    const slot = titlebar.match(/<div data-tauri-drag-region class="([^"]*h-8 shrink-0[^"]*)"/)?.[1] ?? ''
+    expect(slot).toContain('relative flex h-8 shrink-0')
+    expect(slot).not.toContain('pointer-events-auto')
+  })
 })

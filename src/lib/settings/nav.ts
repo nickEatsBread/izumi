@@ -8,6 +8,7 @@ import { isMobile } from '$lib/platform'
 import { themeHeaderIds, themeNavConfig } from './theme-nav'
 import { pinNavItems, searchModeNav } from './nav-rules'
 import { interfaceMode } from './interface-mode'
+import { browseShown } from './catalog'
 import Home from '@lucide/svelte/icons/house'
 import Calendar from '@lucide/svelte/icons/calendar'
 import Download from '@lucide/svelte/icons/download'
@@ -70,7 +71,7 @@ export const navConfig = persisted<NavItemConfig[]>('nav-config-v1', DEFAULT_NAV
  *  default placement) so the UI is robust to items added/removed across versions and to a
  *  partially-written stored value. Either way Settings never ends up hidden: `pinNavItems`
  *  (nav-rules.ts) moves it to the bar or the top, depending on the layout and the phone layout. */
-export const effectiveNav = derived([navConfig, activeThemeLayout, isMobile, interfaceMode], ([$c, layout, $isMobile, $mode]) => {
+const placedNav = derived([navConfig, activeThemeLayout, isMobile, interfaceMode], ([$c, layout, $isMobile, $mode]) => {
   // Search box mode replaces both the user's and a theme's placement; neither is written to.
   if ($mode === 'search') return searchModeNav(DEFAULT_NAV).map((item) => ({ ...item, placement: 'bottom' as const }))
   const themed = layout?.nav ? themeNavConfig(layout.nav, Object.keys(NAV_META)) : null
@@ -83,12 +84,16 @@ export const effectiveNav = derived([navConfig, activeThemeLayout, isMobile, int
   return pinNavItems(out, { themed: false, phone: $isMobile })
 })
 
+/** Browse is opt-in (catalog.ts `browseShown`): while it is off, no placement lists it. */
+const withBrowse = <T extends { id: string }>(items: T[], shown: boolean) => shown ? items : items.filter((item) => item.id !== 'browse')
+export const effectiveNav = derived([placedNav, browseShown], ([$nav, $browse]) => withBrowse($nav, $browse))
+
 /** The phone Home header's destination icons. A theme's `nav.top` may repeat a bottom-bar tab there
  *  as a shortcut (API 4); the effective config above keeps one placement per destination, so the
  *  bottom bar and the Navigation settings never see the repeat. */
-export const homeHeaderNav = derived([effectiveNav, activeThemeLayout], ([$nav, layout]) => {
+export const homeHeaderNav = derived([effectiveNav, activeThemeLayout, browseShown], ([$nav, layout, $browse]) => {
   const ids = themeHeaderIds(layout?.nav, Object.keys(NAV_META), $nav.filter((item) => item.placement === 'top').map((item) => item.id))
-  return ids.map((id) => ({ id: id as NavItemId, placement: 'top' as const }))
+  return withBrowse(ids.map((id) => ({ id: id as NavItemId, placement: 'top' as const })), $browse)
 })
 
 /** Home's position on the bottom bar: 0 (first) unless the active theme layout places it elsewhere. */

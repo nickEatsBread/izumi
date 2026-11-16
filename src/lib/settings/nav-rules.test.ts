@@ -80,7 +80,7 @@ describe('navigation placement rules', () => {
   it('applies search box mode to the bottom bar and the side rail', () => {
     expect(read('./nav.ts')).toContain("if ($mode === 'search') return searchModeNav(DEFAULT_NAV)")
     const sidebar = read('../components/shell/Sidebar.svelte')
-    expect(sidebar).toContain("$interfaceMode === 'search' ? searchModeNav(items)")
+    expect(sidebar).toContain("$interfaceMode === 'search' ? searchModeNav(listed)")
     expect(sidebar).toContain("$interfaceMode !== 'search' && (topBar.search === 'field-center'")
   })
 })
@@ -91,7 +91,8 @@ describe('effective navigation wiring', () => {
   it('re-derives on the phone layout and pins both theme and user layouts', () => {
     expect(nav).toContain("import { isMobile } from '$lib/platform'")
     expect(nav).toContain("import { pinNavItems, searchModeNav } from './nav-rules'")
-    expect(nav).toContain('export const effectiveNav = derived([navConfig, activeThemeLayout, isMobile, interfaceMode], ([$c, layout, $isMobile, $mode]) => {')
+    expect(nav).toContain('const placedNav = derived([navConfig, activeThemeLayout, isMobile, interfaceMode], ([$c, layout, $isMobile, $mode]) => {')
+    expect(nav).toContain('export const effectiveNav = derived([placedNav, browseShown]')
     expect(nav).toContain('if (themed) return pinNavItems(themed as NavItemConfig[], { themed: true, phone: $isMobile })')
     expect(nav).toContain('return pinNavItems(out, { themed: false, phone: $isMobile })')
   })
