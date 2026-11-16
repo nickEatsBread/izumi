@@ -42,6 +42,10 @@ const packEntry: StoreEntry = {
   ...base, key: 's:pack:example.pack', kind: 'pack', id: 'example.pack', name: 'Example Pack',
   install: { type: 'pack', url: 'https://x.test/packs/example.pack/pack.json', sha256: 'a'.repeat(64), bytes: 10 },
 }
+const pluginEntry: StoreEntry = {
+  ...base, key: 's:plugin:example.plugin', kind: 'plugin', id: 'example.plugin', name: 'Example Plugin',
+  install: { type: 'plugin', url: 'https://x.test/plugins/example/plugin.json', sha256: 'a'.repeat(64), bytes: 10, pluginApi: 1 },
+}
 const themeEntry: StoreEntry = {
   ...base, key: 's:theme:test.cinema', kind: 'theme', id: 'test.cinema', name: 'Cinema',
   install: { type: 'theme', release: { id: 'test.cinema', name: 'Cinema', version: '1.0.0', author: 'T', description: '', themeApi: 2, tags: [], download: 'https://x.test/t.json', sha256: 'a'.repeat(64), bytes: 1 } },
@@ -149,6 +153,14 @@ describe('installStoreEntry', () => {
     expect(Object.values(mocks.stores).every((store) => get(store).length === 0)).toBe(true)
     await expect(installStoreEntry(packEntry, { storeUrl: 'https://x.test/store.json', locked: true }, installPackage)).rejects.toThrow('signing-key check')
   })
+
+  it('sends plugins to their page on the Plugins page, where the viewer reviews their permissions', async () => {
+    const installPackage = vi.fn()
+    expect(await installStoreEntry(pluginEntry, { storeUrl: 'https://x.test/store.json' }, installPackage))
+      .toEqual({ kind: 'open-plugin', path: '/app/settings/plugins?store=s&plugin=example.plugin' })
+    expect(installPackage).not.toHaveBeenCalled()
+    expect(Object.values(mocks.stores).every((store) => get(store).length === 0)).toBe(true)
+  })
 })
 
 describe('installedRef', () => {
@@ -172,6 +184,9 @@ describe('installedRef', () => {
     expect(installedRef(themeEntry, state, 'https://other.test/themes.json')).toBeNull()
     expect(installedRef(packEntry, state, 'https://x.test/store.json')).toBeNull()
     expect(installedRef(packEntry, { ...state, packs: ['example.pack'] }, 'https://x.test/store.json')).toBe('example.pack')
+    const plugins = [{ id: 'example.plugin', origin: 'https://x.test/store.json' }]
+    expect(installedRef(pluginEntry, { ...state, plugins }, 'https://x.test/store.json')).toBe('example.plugin')
+    expect(installedRef(pluginEntry, { ...state, plugins }, 'https://other.test/store.json')).toBeNull()
   })
 
   it('matches an installed addon by manifest id only on its manifest host', () => {

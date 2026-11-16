@@ -5,13 +5,13 @@ import type { ThemeRelease } from '$lib/themes/packages'
 // §5-§6). Every store format is normalised into StoreEntry, so filtering, installing and rendering
 // never depend on which format a store was published in.
 
-/** Kinds a store may list. Plugins are part of the format already so documents written today stay
- *  valid; this build installs SUPPORTED_STORE_KINDS and ignores the rest. */
+/** Kinds a store may list. This build installs SUPPORTED_STORE_KINDS and ignores the rest, so a
+ *  kind added later never breaks an older client. */
 export type StoreKind = 'plugin' | 'theme' | 'pack' | 'source'
 export type SourceType = 'stremio-addon' | 'torrent-provider' | 'stream-provider' | 'package'
 export type ContentType = 'anime' | 'movie' | 'series'
 
-export const SUPPORTED_STORE_KINDS: readonly StoreKind[] = ['theme', 'source', 'pack']
+export const SUPPORTED_STORE_KINDS: readonly StoreKind[] = ['theme', 'source', 'pack', 'plugin']
 
 /** The community addon directory is searched on its server: a store without an index URL. */
 export const ADDON_DIRECTORY_ID = 'addon-directory'
@@ -24,6 +24,9 @@ export type InstallRef =
   | { type: 'theme'; release: ThemeRelease }
   /** Set up through the pack's review screen, which reads it from `url`. */
   | { type: 'pack'; url: string; sha256: string; bytes: number }
+  /** A plugin's `plugin.json`, pinned by size and SHA-256; it pins its own code in turn. Installed
+   *  from the Plugins page after the viewer reviews its permissions. */
+  | { type: 'plugin'; url: string; sha256: string; bytes: number; pluginApi: number }
 
 export interface StoreEntry {
   /** `${storeId}:${kind}:${id}` — unique across every loaded store. */

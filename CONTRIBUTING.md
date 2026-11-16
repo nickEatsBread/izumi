@@ -32,17 +32,17 @@ CI runs the same on every PR.
   keys, no personal info.
 - New user-facing strings and settings should be generic (no third-party brand names).
 
-## Themes, plugins and packs
+## Themes, plugins, sources and packs
 
-This repository is the client. Themes, plugins and packs are published elsewhere:
+This repository is the client. Themes, plugins, packaged sources and packs are published elsewhere:
 
 - **Themes:** [izumi-themes](https://github.com/nickEatsBread/izumi-themes), following its
   [submission guide](https://github.com/nickEatsBread/izumi-themes#submitting-a-theme).
-- **Plugins and packs:** [izumi-plugins](https://github.com/nickEatsBread/izumi-plugins), following its
-  [submission guide](https://github.com/nickEatsBread/izumi-plugins#submitting-a-plugin-or-a-pack).
+- **Plugins, sources and packs:** [izumi-plugins](https://github.com/nickEatsBread/izumi-plugins),
+  following its README.
 
-Changes to the theme API, the `.izumi-ext` package rules or the pack format start here (see
-[docs/THEMES.md](docs/THEMES.md) and [docs/PLUGINS.md](docs/PLUGINS.md)); the two catalog
+Changes to the theme API, the plugin format, the `.izumi-ext` package rules or the pack format start
+here (see [docs/THEMES.md](docs/THEMES.md) and [docs/PLUGINS.md](docs/PLUGINS.md)); the two catalog
 repositories copy those validators and follow.
 
 ## Licence
