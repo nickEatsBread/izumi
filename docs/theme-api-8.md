@@ -1,6 +1,7 @@
 # Theme API 8: plan
 
-Status: plan for the owner's review, built on `feat/theme-api-8` in the phases at the end. Theme API 7
+Status: written as the plan for the owner's review, then built on `feat/theme-api-8` in the phases at
+the end; this copy matches what was built (THEMES.md "Theme API 8" is the reference). Theme API 7
 shipped in v0.1.75, so everything a package can declare here is Theme API 8. The branch is stacked on
 PR #218 (`fix/player-loader-size`), which makes the playback ring's size a stylesheet setting
 (`--theme-player-spinner-size` and `--theme-player-spinner-stroke`), because the loading screens below
@@ -61,8 +62,8 @@ for each moment:
   already knows. `data-variant` is `series` or `catalog`.
 - `loading.episode`: from the press to the first frame, the opening screen and the player's black cover
   draw the template (`loading.episode` slot, `data-variant` `opening` then `player`) bound to the title
-  and episode: the title fields plus `episodeNumber`, `episodeNo`, `episodeCode`, `episodeName`,
-  `episodeTitle` and `still`. The ring (`play.loader`), Back (`play.connecting.back`) and the slow-source
+  and episode: the title fields plus `episodeNumber`, `episodeNo` and `episodeCode` (the opener does not
+  have the episode's own title or still yet). The ring (`play.loader`), Back (`play.connecting.back`) and the slow-source
   line (`play.loader.detail`) stay on top, where a stylesheet can move and size them (a Navigator look
   puts a 16 px ring bottom left with `--theme-player-spinner-size`).
 - Templates here are display-only (no actions), like card templates, and use the existing node types,
@@ -110,10 +111,12 @@ template. API 8:
   - Days: `schedule.day.title` (`data-today`).
   - Built-in entry pieces (when no template): `schedule.item.poster`, `schedule.item.title`,
     `schedule.item.meta`, `schedule.item.badge` (`data-variant` `status` or `source`),
-    `schedule.item.countdown`, `schedule.item.delay`; `schedule.item` gains `data-aired`.
+    `schedule.item.countdown`, `schedule.item.delay`, `schedule.item.context`; `schedule.item` gains
+    `data-aired`.
   - Next up: `schedule.nextup`, `schedule.nextup.item`.
   - `schedule.empty` (the "nothing this week/day" boxes), `schedule.loading` (the placeholders).
-  - Release calendar: `schedule.feeds` and `schedule.feed` (`data-active`).
+  - Release calendar: `schedule.feeds` and `schedule.feed` (`data-active`); `schedule.error` now covers
+    its error box too.
 - `schedule` may sit in the `mobile` and `tv` blocks.
 - Coverage: the Schedule store screenshot already exists; a theme using `schedule` counts as Shell.
 
