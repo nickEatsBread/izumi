@@ -17,6 +17,7 @@ const ROWS: Record<string, string> = {
   'offline-mode': 'offline',
   'download-folder': 'folder',
   'download-quality': 'folder',
+  'choose-download-source': 'folder',
   'automatic-downloads': 'folder',
   'storage-used': 'storage',
   'cache-total': 'storage',

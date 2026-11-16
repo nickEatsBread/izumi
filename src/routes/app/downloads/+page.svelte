@@ -189,6 +189,9 @@
           {#if !d.offlineUri}<button type="button" title="Show in folder" aria-label="Show in folder" onclick={() => revealDownload(d.id)} class="grid size-12 place-items-center rounded-xl hover:bg-accent"><FolderOpen size={18} /></button>{/if}
           <button type="button" title="Delete download" aria-label="Delete download" onclick={() => remove(d, deleteDownload)} class="grid size-12 place-items-center rounded-xl text-destructive hover:bg-accent"><Trash2 size={18} /></button>
         {:else}
+          {#if action === 'pause' || action === 'resume'}
+            <button type="button" data-part="downloads.toggle" title={PRIMARY_LABEL[action]} aria-label={`${PRIMARY_LABEL[action]} download`} aria-busy={busy} onclick={() => primary(d)} class="grid size-12 place-items-center rounded-xl hover:bg-accent"><Icon size={18} /></button>
+          {/if}
           <button type="button" title="Cancel download" aria-label="Cancel download" onclick={() => remove(d, cancelDownload)} class="grid size-12 place-items-center rounded-xl hover:bg-accent"><X size={18} /></button>
         {/if}
       </div>

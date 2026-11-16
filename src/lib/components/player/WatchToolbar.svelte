@@ -16,6 +16,7 @@
   import { downloads, keyFor } from '$lib/downloads/state'
   import { enqueue } from '$lib/downloads/store'
   import { currentDownloadPreferences } from '$lib/downloads/rules'
+  import { savableStream } from '$lib/downloads/source'
   import type { PlayerToolbarItem } from '$lib/themes/presentation'
   import ChevronUp from '@lucide/svelte/icons/chevron-up'
 
@@ -117,7 +118,10 @@
   }
   function downloadEpisode() {
     open = null
-    if (media && current != null) enqueue(media, current, currentDownloadPreferences())
+    if (!media || current == null) return
+    // The episode on screen downloads from the source it is playing from, as the right-click Download does.
+    const playing = recovery?.media.id === media.id && recovery.episode === current ? savableStream(currentStream) : undefined
+    enqueue(media, current, currentDownloadPreferences(), undefined, playing)
   }
 
   const label = (item: PlayerToolbarItem) =>

@@ -36,6 +36,15 @@ describe('Downloads grouping', () => {
       .toEqual(['play', 'pause', 'resume', 'retry', 'options'])
   })
 
+  it('offers no pause for a protected save that would start over: it can only be cancelled', () => {
+    for (const kind of ['drm-local', 'shaka'] as const) {
+      expect(primaryActionOf(item(1, 1, { status: 'downloading', kind }))).toBe('options')
+    }
+    for (const kind of ['http', 'torrent', 'drm', undefined] as const) {
+      expect(primaryActionOf(item(1, 1, { status: 'downloading', kind }))).toBe('pause')
+    }
+  })
+
   it('moves focus to the next row, else the one before, else the empty state', () => {
     const groups = groupDownloads(items)
     expect(neighbourOf(groups, '1:3')).toBe('2:1')

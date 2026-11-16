@@ -528,6 +528,9 @@ export const downloadCachedOnly = persisted<boolean>('download-cached-only', tru
 export const downloadQuality = persisted<Quality>('download-quality', '1080')
 export const downloadAudio = persisted<'any' | 'sub' | 'dub'>('download-audio', 'sub')
 export const downloadCodec = persisted<'any' | 'h264' | 'h265' | 'av1'>('download-codec', 'any')
+/** Starting one episode's download opens the source picker instead of saving the source the rules
+ *  above pick. Bulk and automatic downloads still choose by the rules. */
+export const downloadChooseSource = persisted<boolean>('download-choose-source', false)
 /** Wait after the scheduled air time so release/indexing providers can catch up. */
 export const autoDownloadDelayMinutes = persisted<number>('auto-download-delay-minutes', 15)
 

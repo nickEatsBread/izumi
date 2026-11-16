@@ -85,6 +85,7 @@ import { sourceProgressReporter, sourceStreams } from '$lib/catalog/source-strea
 import { isSourceOrigin } from '$lib/catalog/source-catalogs'
 import { phttp } from '$lib/net/http'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
+import { findSource, savedSource } from '$lib/downloads/source'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
 import { resolveOnlineStreams } from './onlinestream'
@@ -239,6 +240,9 @@ export type PlayEpisodeOptions = {
   resolveSession?: ResolveSession
   /** An in-place episode advance from inside playback: a docked Android mini-player stays docked. */
   keepMini?: boolean
+  /** The picker chooses a source to download instead of one to play (with `forceManual` and
+   *  `remoteOnly`, so nothing starts on its own and local playback is left alone). */
+  download?: StreamPickerState['download']
 }
 
 export type PlayStreamOptions = {
@@ -1903,14 +1907,16 @@ export function savedProtectedStream(path: string, fresh: ResolvedShakaDownload)
 
 /** A protected episode the module already decrypted to clear files, as a plain local stream: its
  *  `video.mp4` with `audio.mp4` as a separate audio track. No DRM, no licence, no network — it plays
- *  exactly like any downloaded file. The folder name is encoded so a `#`, `?` or `%` cannot break
- *  the path; the two file names inside are fixed (see widevine/save.rs). */
+ *  exactly like any downloaded file, by its plain path. mpv reports a `file://` URL back as a path,
+ *  so the audio track and the seek-bar previews, which wait for the URL that was loaded, never
+ *  arrived. The two file names inside are fixed (see widevine/save.rs). */
 export function clearProtectedStream(folder: string): Stream {
-  const base = folder.split(/[/\\]/).map(encodeURIComponent).join('/')
+  const base = folder.replace(/[/\\]+$/, '')
+  const sep = base.includes('\\') ? '\\' : '/'
   return {
-    url: `file://${base}/video.mp4`,
+    url: `${base}${sep}video.mp4`,
     name: '📥 Downloaded',
-    __audioTracks: [{ url: `file://${base}/audio.mp4` }],
+    __audioTracks: [{ url: `${base}${sep}audio.mp4` }],
   } as Stream
 }
 
@@ -2060,6 +2066,7 @@ export async function playEpisode(
     manualOnly: options.forceManual,
     forceAuto: options.forceAuto,
     companion: options.companion,
+    download: options.download,
     autoplay,
     startSeconds: options.startSeconds,
   })
@@ -2412,6 +2419,7 @@ export async function playEpisode(
         manualOnly: options.forceManual,
         forceAuto: options.forceAuto,
         companion: options.companion,
+        download: options.download,
         autoplay,
         startSeconds: options.startSeconds,
       })
@@ -3805,7 +3813,12 @@ export async function playStream(
       ...(stream.__stream ? stream.__subtitles ?? [] : []),
       ...candidates.filter((s) => !!s.url).map((s) => ({ url: s.url!, lang: s.lang })),
     ]
-    const audioTracks = stream.__stream ? stream.__audioTracks ?? [] : []
+    // A saved file's audio track is its only audio (a protected episode is saved as video + audio
+    // files), so it is attached and selected.
+    const savedFile = !!stream.url && !stream.url.includes('://')
+    const audioTracks = stream.__stream
+      ? stream.__audioTracks ?? []
+      : savedFile ? (stream.__audioTracks ?? []).map((track) => ({ ...track, select: true })) : []
     // mpv applies `http-header-fields` GLOBALLY — there is no per-URL header option — so a
     // Referer-gated sidecar subtitle can only be fetched by folding its headers into the same set
     // the stream uses. Stream headers win on a key clash: breaking the video to fetch a subtitle
@@ -4275,7 +4288,12 @@ export function playNext(onState: (s: PlayState) => void = noticeState, autoplay
   resolveAndPlayBest(currentMedia, ep + 1, onState, autoplay)
 }
 
-interface ResolvedDownloadBase { filename: string; quality?: string; provider?: string; infoHash?: string }
+interface ResolvedDownloadBase {
+  filename: string; quality?: string; provider?: string; infoHash?: string
+  /** The stream being saved, so a resume fetches the same file again. Absent for protected
+   *  sources, which keep their own source identity (`sourceOriginId`). */
+  source?: Stream
+}
 /** A byte-addressable link (a plain addon url, or a debrid resolve) streamed to disk over HTTP.
  *  `headers` carries an extension source's gate (Referer/Origin) — absent for debrid links. */
 export interface ResolvedHttpDownload extends ResolvedDownloadBase {
@@ -4332,12 +4350,53 @@ export type ResolvedDownload =
   | ResolvedShakaDownload
   | ResolvedDrmDownload
 
+/** The stream a download of this episode saves when izumi chooses: the Settings → Downloads rules
+ *  (cached only, audio, codec, quality) over `streams`. Also the row the source picker suggests
+ *  when the user chooses a download's source themselves. */
+export function pickDownloadStream(streams: Stream[], media: Media, want?: EpisodeWant, preferences?: DownloadPreferences): Stream | undefined {
+  let eligible = streams
+  if (preferences?.release) {
+    const release = preferences.release
+    const sameRelease = eligible.filter((stream) => matchesRelease(stream, release))
+    if (sameRelease.length) eligible = sameRelease
+  }
+  if (preferences?.sourceOriginId) {
+    const sameSource = eligible.filter((stream) => stream.__origin?.id === preferences.sourceOriginId)
+    if (sameSource.length) eligible = sameSource
+  }
+  if (preferences?.cachedOnly) eligible = eligible.filter((stream) => !isUncached(stream))
+  const raw = (stream: Stream) => `${stream.name ?? ''} ${stream.title ?? ''} ${stream.behaviorHints?.filename ?? ''}`.toLowerCase()
+  if (preferences?.audio && preferences.audio !== 'any') {
+    const wantDub = preferences.audio === 'dub'
+    const preferred = eligible.filter((stream) => {
+      if (stream.__audio) return wantDub ? stream.__audio === 'dub' : stream.__audio === 'sub'
+      if (stream.__audioTracks?.some((track) => track.switchUrl)) return true
+      return wantDub
+        ? /\b(?:dub|dual[ ._-]?audio|english[ ._-]?audio)\b/i.test(raw(stream))
+        : !/\b(?:dub|english[ ._-]?audio)\b/i.test(raw(stream))
+    })
+    if (preferred.length) eligible = preferred
+  }
+  if (preferences?.codec && preferences.codec !== 'any') {
+    const patterns = {
+      h264: /\b(?:h\.?264|x264|avc)\b/i,
+      h265: /\b(?:h\.?265|x265|hevc)\b/i,
+      av1: /\bav1\b/i,
+    }
+    const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
+    if (preferred.length) eligible = preferred
+  }
+  return pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(anilistIdOf(media), runtimeSecondsOf(media))) ?? eligible[0]
+}
+
 // Resolve a single episode to something downloadable — no player, no mpv. Reuses the same
 // resolveStreams+pickBest path as playback, and honours the SAME torrent-source preference:
 // a torrent-only pick goes to the local P2P engine under Direct P2P (or with no debrid
 // credential at all), and through debrid otherwise. Uses the persisted Media snapshot first so a
 // restart or metadata outage cannot block source resolution; old queues fall back to fetch-by-id.
-export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences, forceShaka = false): Promise<ResolvedDownload> {
+// `source` is the stream the download already saves (chosen by the user, or picked on its first
+// run): its fresh twin from this resolve is used, else the saved stream itself.
+export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences, forceShaka = false, source?: Stream): Promise<ResolvedDownload> {
   // A download is queued from a page that already owns this Media object, and enqueue() persists a
   // source-complete snapshot before the pump starts. Prefer it: AniList being slow, rate-limited or
   // offline has no bearing on whether the configured source can provide a file. Older queue items
@@ -4345,7 +4404,11 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   const media = getDownloadedMedia(mediaId) ?? await fetchMediaById(mediaId).catch(() => {
     throw new Error('This download is missing its saved series details. Open the series once, then retry.')
   })
-  const { streams, want, kitsu } = await resolveStreams(media, episode)
+  // A saved source is fetched again even when nothing lists it today (its twin is only preferred).
+  const { streams, want, kitsu } = await resolveStreams(media, episode).catch((error) => {
+    if (source) return { streams: [] as Stream[], want: undefined, kitsu: undefined }
+    throw error
+  })
   let all = streams
   // Extensions are a first-class playback source but were never consulted here, so an
   // extension-only setup played episodes fine and then reported "no source found" the moment a
@@ -4374,34 +4437,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   // HLS is a first-class download source. It used to be filtered out and then put back when it
   // was the provider's only option, which handed the tiny playlist to the progressive downloader
   // and reported ~25 KB as a completed episode. The native path now resolves and joins segments.
-  let eligible = all
-  if (preferences?.sourceOriginId) {
-    const sameSource = eligible.filter((stream) => stream.__origin?.id === preferences.sourceOriginId)
-    if (sameSource.length) eligible = sameSource
-  }
-  if (preferences?.cachedOnly) eligible = eligible.filter((stream) => !isUncached(stream))
-  const raw = (stream: Stream) => `${stream.name ?? ''} ${stream.title ?? ''} ${stream.behaviorHints?.filename ?? ''}`.toLowerCase()
-  if (preferences?.audio && preferences.audio !== 'any') {
-    const wantDub = preferences.audio === 'dub'
-    const preferred = eligible.filter((stream) => {
-      if (stream.__audio) return wantDub ? stream.__audio === 'dub' : stream.__audio === 'sub'
-      if (stream.__audioTracks?.some((track) => track.switchUrl)) return true
-      return wantDub
-        ? /\b(?:dub|dual[ ._-]?audio|english[ ._-]?audio)\b/i.test(raw(stream))
-        : !/\b(?:dub|english[ ._-]?audio)\b/i.test(raw(stream))
-    })
-    if (preferred.length) eligible = preferred
-  }
-  if (preferences?.codec && preferences.codec !== 'any') {
-    const patterns = {
-      h264: /\b(?:h\.?264|x264|avc)\b/i,
-      h265: /\b(?:h\.?265|x265|hevc)\b/i,
-      av1: /\bav1\b/i,
-    }
-    const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
-    if (preferred.length) eligible = preferred
-  }
-  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(anilistIdOf(media), runtimeSecondsOf(media))) ?? eligible[0]
+  const best = source ? findSource(all, source) ?? source : pickDownloadStream(all, media, want, preferences)
   if (!best) throw new Error('No source found to download.')
   const info = describe(best)
   // The saved name follows the release when it has one; otherwise the title/episode. The extension
@@ -4414,7 +4450,11 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
     }
     return `${base}.${ext}`
   }
-  const common = { quality: info.quality ? `${info.quality}p` : undefined, infoHash: best.infoHash }
+  const common = {
+    quality: info.quality ? `${info.quality}p` : undefined,
+    infoHash: best.infoHash,
+    source: best.__drm ? undefined : savedSource(best),
+  }
 
   if (best.url) {
     if (best.__drm && /(?:\.mpd(?:$|\?)|\/manifest\.mpd(?:$|\?))/i.test(best.url)) {

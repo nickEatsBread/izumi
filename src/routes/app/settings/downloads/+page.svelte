@@ -4,7 +4,7 @@
   import { open } from '@tauri-apps/plugin-dialog'
   import {
     downloadDir, downloadConcurrency, downloadCachedOnly, downloadQuality, downloadCodec,
-    autoDownloadDelayMinutes, type Quality,
+    downloadChooseSource, autoDownloadDelayMinutes, type Quality,
   } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
   import { downloads } from '$lib/downloads/store'
@@ -47,6 +47,7 @@
   let checkError = $state('')
   const toggleOffline = () => ($forceOffline = !$forceOffline)
   const toggleCachedOnly = () => ($downloadCachedOnly = !$downloadCachedOnly)
+  const toggleChooseSource = () => ($downloadChooseSource = !$downloadChooseSource)
 
   async function checkAutoDownloads() {
     checkError = ''
@@ -112,6 +113,18 @@
       ]}
       onChange={(value) => ($downloadQuality = value as Quality)}
     />
+    <SettingsRow
+      settingKey="choose-download-source"
+      title="Choose the source"
+      description="Pick which source to save each time you download an episode"
+      learnMore="Off: izumi picks one with the download rules. On: the source list opens with that pick suggested. Downloading several episodes at once, and automatic downloads, still pick for you."
+      onActivate={toggleChooseSource}
+      pressed={$downloadChooseSource}
+    >
+      {#snippet control()}
+        <SettingsSwitch value={$downloadChooseSource} onToggle={toggleChooseSource} label="Choose the source" interactive={false} />
+      {/snippet}
+    </SettingsRow>
     <SettingsRow
       settingKey="automatic-downloads"
       title="Automatic downloads"
