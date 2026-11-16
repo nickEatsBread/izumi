@@ -1,7 +1,8 @@
 //! Gets Google's Widevine module onto the user's device without ever bundling it. It asks Google's
-//! component update service over HTTPS for the current Linux x64 build, downloads it from an HTTPS
-//! mirror and checks the size and SHA-256 the update response gave. It then strips the CRX3 header
-//! and keeps only `manifest.json`, `LICENSE` and `libwidevinecdm.so`.
+//! component update service over HTTPS for the current build for this OS and architecture (Linux x64,
+//! Windows x64, macOS arm64 or x64), downloads it from an HTTPS mirror and checks the size and SHA-256
+//! the update response gave. It then strips the CRX3 header and keeps only `manifest.json`, `LICENSE`
+//! and the module library. On Windows and macOS a copy a browser already ships is used first.
 //!
 //! The first download is staged: the user reads the module's own LICENSE before [`accept`] moves it
 //! to `<data>/widevine/<version>/`, where the player looks. After that, newer builds install in the
@@ -24,9 +25,20 @@ const UPDATE_URL: &str = "https://update.googleapis.com/service/update2/json";
 const SO_ENTRY: &str = "_platform_specific/win_x64/widevinecdm.dll";
 #[cfg(target_os = "windows")]
 pub const SO_NAME: &str = "widevinecdm.dll";
-#[cfg(not(target_os = "windows"))]
+// Google ships one thin dylib per Mac architecture, so each slice of a universal build names its own.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+const PLATFORM_DIR: &str = "mac_arm64";
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+const PLATFORM_DIR: &str = "mac_x64";
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+const SO_ENTRY: &str = "_platform_specific/mac_arm64/libwidevinecdm.dylib";
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+const SO_ENTRY: &str = "_platform_specific/mac_x64/libwidevinecdm.dylib";
+#[cfg(target_os = "macos")]
+pub const SO_NAME: &str = "libwidevinecdm.dylib";
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 const SO_ENTRY: &str = "_platform_specific/linux_x64/libwidevinecdm.so";
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub const SO_NAME: &str = "libwidevinecdm.so";
 
 const MAX_CRX_BYTES: u64 = 64 << 20;
@@ -57,8 +69,17 @@ pub struct Installed {
 /// The update-service platform name: the OS whose module build we want offered.
 #[cfg(target_os = "windows")]
 const PLATFORM: &str = "win";
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+const PLATFORM: &str = "Mac OS X";
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 const PLATFORM: &str = "Linux";
+
+/// The update-service architecture name. Only Apple silicon asks for a non-x64 build; it is offered
+/// the `mac_arm64` package, an Intel Mac (or the x86-64 slice under Rosetta) the `mac_x64` one.
+#[cfg(target_arch = "aarch64")]
+const ARCH: &str = "arm64";
+#[cfg(not(target_arch = "aarch64"))]
+const ARCH: &str = "x64";
 
 pub fn update_request() -> Value {
     json!({ "request": {
@@ -67,8 +88,8 @@ pub fn update_request() -> Value {
         "@os": "", "@updater": "", "acceptformat": "crx3,download,puff,run,xz,zucc",
         // A deliberately old version makes the service offer a full download rather than a diff.
         "apps": [{ "appid": APP_ID, "installsource": "ondemand", "updatecheck": {}, "version": "1.0.0.0" }],
-        "dedup": "cr", "ismachine": false, "arch": "x64",
-        "os": { "arch": "x64", "platform": PLATFORM },
+        "dedup": "cr", "ismachine": false, "arch": ARCH,
+        "os": { "arch": ARCH, "platform": PLATFORM },
         "protocol": "4.0", "updaterversion": "151.0.7922.173"
     }})
 }
@@ -145,18 +166,50 @@ pub fn check_manifest(manifest: &[u8]) -> Result<(String, i32)> {
     Ok((version, interface.parse()?))
 }
 
-/// The module binary must be a 64-bit x86-64 object of the host's kind: an ELF .so elsewhere, a PE
-/// .dll on Windows. Only the header is read.
-#[cfg(not(target_os = "windows"))]
-fn check_module_x86_64(so: &[u8]) -> Result<()> {
+/// The module binary must be a 64-bit object of the host's kind and architecture: an x86-64 ELF .so
+/// on Linux, an x86-64 PE .dll on Windows, a Mach-O .dylib for this slice's architecture on macOS.
+/// Only the header is read.
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn check_module(so: &[u8]) -> Result<()> {
     // e_ident: ELF magic, 64-bit, little-endian; e_machine at 18 = 0x3E (x86-64).
     ensure!(so.len() > 20 && &so[..4] == b"\x7fELF" && so[4] == 2 && so[5] == 1, "not a 64-bit ELF library");
     ensure!(u16::from_le_bytes([so[18], so[19]]) == 0x3e, "module is not built for x86-64");
     Ok(())
 }
 
+/// Mach-O CPU type of the running slice: CPU_TYPE_ARM64 or CPU_TYPE_X86_64 (each ORed with ABI64).
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+const MACHO_CPU: u32 = 0x0100_000c;
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+const MACHO_CPU: u32 = 0x0100_0007;
+
+/// Google ships a thin 64-bit Mach-O per architecture (MH_MAGIC_64, little-endian). A universal (fat)
+/// file is accepted too when it carries a slice for this architecture, since dyld picks that slice.
+#[cfg(target_os = "macos")]
+fn check_module(dylib: &[u8]) -> Result<()> {
+    const MH_MAGIC_64: [u8; 4] = [0xcf, 0xfa, 0xed, 0xfe];
+    const FAT_MAGIC: [u8; 4] = [0xca, 0xfe, 0xba, 0xbe];
+    const FAT_MAGIC_64: [u8; 4] = [0xca, 0xfe, 0xba, 0xbf];
+    ensure!(dylib.len() >= 8, "not a Mach-O library");
+    let magic: [u8; 4] = dylib[..4].try_into()?;
+    let be = |at: usize| -> Option<u32> { dylib.get(at..at + 4).map(|b| u32::from_be_bytes(b.try_into().unwrap())) };
+    if magic == MH_MAGIC_64 {
+        let cpu = u32::from_le_bytes(dylib[4..8].try_into()?);
+        ensure!(cpu == MACHO_CPU, "module is built for another Mac architecture (CPU type {cpu:#x})");
+        return Ok(());
+    }
+    ensure!(magic == FAT_MAGIC || magic == FAT_MAGIC_64, "not a 64-bit Mach-O library");
+    // fat_header (big-endian): nfat_arch, then fat_arch entries of 20 bytes (32 for fat_arch_64),
+    // each starting with the slice's cputype.
+    let count = be(4).unwrap_or(0) as usize;
+    let entry = if magic == FAT_MAGIC { 20 } else { 32 };
+    let found = (0..count.min(16)).filter_map(|i| be(8 + i * entry)).any(|cpu| cpu == MACHO_CPU);
+    ensure!(found, "module has no slice for this Mac's architecture");
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
-fn check_module_x86_64(dll: &[u8]) -> Result<()> {
+fn check_module(dll: &[u8]) -> Result<()> {
     // MZ header, then the PE header offset at 0x3C, then "PE\0\0" and Machine 0x8664 (AMD64).
     ensure!(dll.len() > 0x40 && &dll[..2] == b"MZ", "not a PE library");
     let pe = u32::from_le_bytes([dll[0x3c], dll[0x3d], dll[0x3e], dll[0x3f]]) as usize;
@@ -228,12 +281,12 @@ fn installed_with_library(dir: &Path, library: &Path) -> Result<Installed> {
     // Enough for an ELF e_machine and a PE header (whose offset can sit a few hundred bytes in).
     let mut head = [0u8; 1024];
     let read = fs::File::open(library)?.read(&mut head)?;
-    check_module_x86_64(&head[..read])?;
+    check_module(&head[..read])?;
     Ok(Installed { version, dir: dir.to_owned(), library: library.to_owned(), interface })
 }
 
-/// Newest valid accepted module under `<data>/widevine/`, if any. On Windows a copy that a browser
-/// runtime already ships is preferred over a download, so the user never has to fetch it.
+/// Newest valid accepted module under `<data>/widevine/`, if any. On Windows and macOS a copy that a
+/// browser already ships is preferred over a download, so the user never has to fetch it.
 pub fn installed(data_dir: &Path) -> Option<Installed> {
     if !consented(data_dir) {
         return None;
@@ -246,7 +299,7 @@ pub fn installed(data_dir: &Path) -> Option<Installed> {
         .filter_map(|e| installed_at(&e.path()).ok())
         .collect();
     found.sort_by_key(|i| version_key(&i.version));
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     if let Some(system) = system_module() {
         // Prefer whichever is newer: a downloaded module or the one a browser runtime ships.
         if found.last().is_none_or(|f| version_key(&system.version) >= version_key(&f.version)) {
@@ -291,6 +344,56 @@ fn system_module() -> Option<Installed> {
     best
 }
 
+/// A `libwidevinecdm.dylib` Google Chrome already has for this Mac's architecture, newest first:
+/// the copy inside an installed Chrome, else the one Chrome's component updater keeps in the user's
+/// profile. `IZUMI_WIDEVINE_NO_SYSTEM=1` forces a downloaded module instead, as on Windows.
+#[cfg(target_os = "macos")]
+fn system_module() -> Option<Installed> {
+    if std::env::var_os("IZUMI_WIDEVINE_NO_SYSTEM").is_some() {
+        return None;
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let mut apps = vec![PathBuf::from("/Applications/Google Chrome.app")];
+    apps.extend(home.as_ref().map(|h| h.join("Applications/Google Chrome.app")));
+    let profile = home.map(|h| h.join("Library/Application Support/Google/Chrome/WidevineCdm"));
+    mac_system_module_in(&apps, profile.as_deref())
+}
+
+/// The newest valid module among `apps` (Chrome bundles) and `profile` (Chrome's component folder).
+/// Kept apart from [`system_module`] so it can be tested against a fake tree.
+///
+/// - In a Chrome bundle it sits at `Contents/Frameworks/Google Chrome Framework.framework/Versions/
+///   <chrome>/Libraries/WidevineCdm/_platform_specific/<dir>/`, with `manifest.json` in `WidevineCdm/`.
+///   Every `Versions/*` entry is considered, `Current` (a link to the live one) included.
+/// - In the profile it sits at `<profile>/<module version>/_platform_specific/<dir>/`.
+#[cfg(target_os = "macos")]
+fn mac_system_module_in(apps: &[PathBuf], profile: Option<&Path>) -> Option<Installed> {
+    let subdirs = |dir: &Path| -> Vec<PathBuf> {
+        fs::read_dir(dir).map(|e| e.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default()
+    };
+    let mut cdm_dirs: Vec<PathBuf> = Vec::new();
+    for app in apps {
+        let versions = app.join("Contents/Frameworks/Google Chrome Framework.framework/Versions");
+        cdm_dirs.extend(subdirs(&versions).into_iter().map(|v| v.join("Libraries/WidevineCdm")));
+    }
+    if let Some(profile) = profile {
+        cdm_dirs.extend(subdirs(profile));
+    }
+    let mut best: Option<Installed> = None;
+    for cdm in cdm_dirs {
+        let dylib = cdm.join("_platform_specific").join(PLATFORM_DIR).join(SO_NAME);
+        if !dylib.is_file() {
+            continue;
+        }
+        if let Ok(found) = installed_with_library(&cdm, &dylib) {
+            if best.as_ref().is_none_or(|b| version_key(&found.version) > version_key(&b.version)) {
+                best = Some(found);
+            }
+        }
+    }
+    best
+}
+
 pub fn consented(data_dir: &Path) -> bool {
     root(data_dir).join(CONSENT_FILE).is_file()
 }
@@ -306,7 +409,7 @@ fn unpack(offer: &Offer, crx: &[u8]) -> Result<(Vec<u8>, Option<Vec<u8>>, Vec<u8
     ensure!(version == offer.version, "package version {version} != offered {}", offer.version);
     let license = read_entry(&mut zip, "LICENSE").ok();
     let so = read_entry(&mut zip, SO_ENTRY)?;
-    check_module_x86_64(&so)?;
+    check_module(&so)?;
     Ok((manifest, license, so))
 }
 
@@ -365,8 +468,23 @@ fn staged_license(dir: &Path) -> String {
     }
 }
 
-/// Downloads and verifies the current module into a staging folder and returns its licence text.
+/// A valid module a browser on this machine already ships (Windows and macOS), found whether or not
+/// the user has accepted the licence yet. Using it still needs that acceptance ([`accept`]); it only
+/// saves the download.
+pub fn system_copy() -> Option<Installed> {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    return system_module();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    None
+}
+
+/// Readies a module for the user to accept and returns its licence text. When a browser already ships
+/// one, that copy and its own LICENSE are used and nothing is downloaded; otherwise the current module
+/// is downloaded and verified into a staging folder.
 pub async fn stage(client: &reqwest::Client, data_dir: &Path, progress: &(dyn Fn(u64, u64) + Send + Sync)) -> Result<Staged> {
+    if let Some(system) = system_copy() {
+        return Ok(Staged { license: staged_license(&system.dir), version: system.version });
+    }
     let offer = query(client).await?;
     let dest = staged_dir(data_dir, &offer.version);
     if !dest.join(SO_NAME).exists() {
@@ -378,19 +496,30 @@ pub async fn stage(client: &reqwest::Client, data_dir: &Path, progress: &(dyn Fn
 }
 
 /// Records the licence acceptance and moves the staged module to where the player loads it. `via`
-/// says where it was accepted: `user` (the player's prompt) or `pack:<id>` (a pack's review screen).
+/// says where it was accepted: `user` (the in-app prompt) or `pack:<id>` (a pack's review screen).
+/// When `version` is a browser's own copy ([`system_copy`]) and nothing was downloaded, only the
+/// acceptance is recorded and that copy is used in place.
 pub fn accept(data_dir: &Path, version: &str, via: &str) -> Result<Installed> {
     ensure!(valid_version(version), "bad version");
     let staged = staged_dir(data_dir, version);
     let dest = root(data_dir).join(version);
+    let mut system = None;
     if !dest.join(SO_NAME).exists() {
-        ensure!(staged.join(SO_NAME).exists(), "that module download is gone; download it again");
-        fs::rename(&staged, &dest).context("could not install the module")?;
+        if staged.join(SO_NAME).exists() {
+            fs::rename(&staged, &dest).context("could not install the module")?;
+        } else {
+            system = system_copy().filter(|s| s.version == version);
+            ensure!(system.is_some(), "that module download is gone; download it again");
+        }
     } else {
         let _ = fs::remove_dir_all(&staged);
     }
+    fs::create_dir_all(root(data_dir))?;
     let consent = json!({ "acceptedVersion": version, "acceptedAt": unix_now(), "acceptedVia": via });
     fs::write(root(data_dir).join(CONSENT_FILE), serde_json::to_vec_pretty(&consent)?)?;
+    if let Some(system) = system {
+        return Ok(system);
+    }
     let found = installed_at(&dest)?;
     // Older versions stay until this one has loaded once (see prune_old).
     Ok(found)
@@ -479,8 +608,8 @@ mod tests {
         assert!(check_manifest(&manifest("12")).is_err());
     }
 
-    /// A minimal valid header of the host's module kind, so check_module_x86_64 accepts it.
-    #[cfg(not(target_os = "windows"))]
+    /// A minimal valid header of the host's module kind, so check_module accepts it.
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     fn fake_module() -> Vec<u8> {
         let mut so = vec![0u8; 64];
         so[..4].copy_from_slice(b"\x7fELF");
@@ -499,6 +628,86 @@ mod tests {
         dll[pe..pe + 4].copy_from_slice(b"PE\0\0");
         dll[pe + 4..pe + 6].copy_from_slice(&0x8664u16.to_le_bytes());
         dll
+    }
+    #[cfg(target_os = "macos")]
+    fn fake_module() -> Vec<u8> {
+        macho(MACHO_CPU)
+    }
+
+    /// A thin 64-bit Mach-O header (MH_MAGIC_64, little-endian) for `cpu`.
+    #[cfg(target_os = "macos")]
+    fn macho(cpu: u32) -> Vec<u8> {
+        let mut m = vec![0u8; 32];
+        m[..4].copy_from_slice(&[0xcf, 0xfa, 0xed, 0xfe]);
+        m[4..8].copy_from_slice(&cpu.to_le_bytes());
+        m
+    }
+
+    /// The Mac check takes this slice's architecture only: the other thin build, an ELF or a PE are
+    /// refused, and a universal file is accepted when it holds this architecture's slice.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_module_must_match_this_architecture() {
+        const ARM64: u32 = 0x0100_000c;
+        const X86_64: u32 = 0x0100_0007;
+        let other = if MACHO_CPU == ARM64 { X86_64 } else { ARM64 };
+        assert!(check_module(&macho(MACHO_CPU)).is_ok());
+        assert!(check_module(&macho(other)).is_err(), "the other architecture's dylib must be refused");
+        assert!(check_module(b"\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0\0\0\x3e\0").is_err());
+        assert!(check_module(b"MZ\0\0\0\0\0\0").is_err());
+        let fat = |cpus: &[u32]| {
+            let mut f = vec![0xca, 0xfe, 0xba, 0xbe];
+            f.extend((cpus.len() as u32).to_be_bytes());
+            for cpu in cpus {
+                f.extend(cpu.to_be_bytes());
+                f.extend([0u8; 16]);
+            }
+            f
+        };
+        assert!(check_module(&fat(&[X86_64, ARM64])).is_ok());
+        assert!(check_module(&fat(&[other])).is_err());
+        // The real packages name these sub-folders (seen in the mac_arm64 and mac64 CRX3 files).
+        assert_eq!(SO_ENTRY, format!("_platform_specific/{PLATFORM_DIR}/libwidevinecdm.dylib"));
+        assert_eq!(update_request()["request"]["os"]["platform"], "Mac OS X");
+        assert_eq!(update_request()["request"]["os"]["arch"], if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" });
+    }
+
+    /// Chrome's own copy is found in an installed bundle (any `Versions/*`, including `Current`) or in
+    /// the profile's component folder, newest version first; a dylib for the other architecture or
+    /// without a valid manifest beside it is skipped.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_finds_chromes_module_newest_first() {
+        let root = std::env::temp_dir().join(format!("izumi-mac-chrome-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let manifest_of = |v: &str| format!(r#"{{"version":"{v}","x-cdm-module-versions":"4","x-cdm-interface-versions":"10"}}"#);
+        let put = |cdm: &Path, version: &str, module: Vec<u8>| {
+            let lib = cdm.join("_platform_specific").join(PLATFORM_DIR);
+            fs::create_dir_all(&lib).unwrap();
+            fs::write(cdm.join("manifest.json"), manifest_of(version)).unwrap();
+            fs::write(lib.join(SO_NAME), module).unwrap();
+        };
+        let app = root.join("Google Chrome.app");
+        let versions = app.join("Contents/Frameworks/Google Chrome Framework.framework/Versions");
+        put(&versions.join("157.0.8103.39/Libraries/WidevineCdm"), "4.10.3112.0", fake_module());
+        std::os::unix::fs::symlink(versions.join("157.0.8103.39"), versions.join("Current")).unwrap();
+        let profile = root.join("profile/WidevineCdm");
+
+        let found = mac_system_module_in(&[app.clone()], Some(&profile)).expect("Chrome's bundled module");
+        assert_eq!(found.version, "4.10.3112.0");
+        assert_eq!(found.interface, 10);
+        assert!(found.library.ends_with(Path::new(PLATFORM_DIR).join(SO_NAME)));
+
+        // A newer component in the profile wins; one built for the other architecture never does.
+        put(&profile.join("4.10.3200.0"), "4.10.3200.0", fake_module());
+        let other = if MACHO_CPU == 0x0100_000c { 0x0100_0007 } else { 0x0100_000c };
+        put(&profile.join("4.10.9999.0"), "4.10.9999.0", macho(other));
+        let found = mac_system_module_in(&[app.clone()], Some(&profile)).unwrap();
+        assert_eq!(found.version, "4.10.3200.0");
+        assert!(found.library.starts_with(&profile));
+
+        assert!(mac_system_module_in(&[root.join("missing.app")], None).is_none());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     fn fake_crx(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
@@ -534,18 +743,19 @@ mod tests {
         let (manifest, license, module) = unpack(&offer, &crx).unwrap();
         assert_eq!(check_manifest(&manifest).unwrap(), ("4.10.3112.0".into(), 11));
         assert_eq!(license.as_deref(), Some(b"module licence text".as_slice()));
-        assert!(check_module_x86_64(&module).is_ok());
+        assert!(check_module(&module).is_ok());
 
         let mut tampered = crx.clone();
         *tampered.last_mut().unwrap() ^= 1;
         assert!(unpack(&offer, &tampered).is_err(), "hash mismatch must be refused");
     }
 
-    // The install flow writes to a temp dir; that round trip is exercised on Linux (identical code).
-    #[cfg(target_os = "linux")]
+    // The install flow writes to a temp dir; that round trip is exercised on Linux and macOS (identical
+    // code on Windows).
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn stages_only_named_files_and_installs_after_acceptance() {
-        // A browser's system copy must not stand in for the fake download on Windows.
+        // A browser's system copy must not stand in for the fake download on Windows or macOS.
         std::env::set_var("IZUMI_WIDEVINE_NO_SYSTEM", "1");
         let crx = fake_crx(&[
             ("manifest.json", manifest("10,11")),

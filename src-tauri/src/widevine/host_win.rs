@@ -8,6 +8,11 @@
 //! `ContentDecryptionModule_10` (what the module gives us) — matching `content_decryption_module.h`
 //! exactly. The WebView2 module ships interface 10 only, which is the one this host speaks.
 //!
+//! macOS uses this host unchanged for `libwidevinecdm.dylib` (also interface 10 only). Its module is
+//! built with the Itanium C++ ABI, whose vtables list virtual methods in the same declaration order;
+//! the only difference is the destructor (two slots instead of one), and every class here declares
+//! its destructor last, so no slot this host fills or calls moves.
+//!
 //! Single-threaded by design, like the C++ shim: every call on one host happens on the CDM thread
 //! (`cdm.rs`). Persistent state is off (so `CreateFileIO` is never used), there is no platform
 //! verification, and output protection is reported unknown with no HDCP — a desktop browser's answer.
