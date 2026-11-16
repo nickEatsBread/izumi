@@ -135,7 +135,7 @@ describe('plugin gallery', () => {
     await installPlugin(await preparePlugin(manifest(), CODE, PLUGIN_STORE_URL))
     const listings = [
       listing(official, entry('example.plugin', official.id, { version: '1.1.0' })),
-      listing(official, entry('future.plugin', official.id, { install: { ...entry('x', 'x').install, pluginApi: 2 } as StoreEntry['install'] })),
+      listing(official, entry('future.plugin', official.id, { install: { ...entry('x', 'x').install, pluginApi: 3 } as StoreEntry['install'] })),
       // Another store's copy of an installed id is still listed there: installing it would be refused.
       listing(mine, entry('example.plugin', mine.id)),
     ]

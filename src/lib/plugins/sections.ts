@@ -49,6 +49,4 @@ export const pluginUpdatable = (entry: PluginEntry) =>
 
 /** Why this client can't install a listing, else ''. */
 export const pluginNote = (entry: PluginEntry) =>
-  entry.listing && !entry.installed && entry.listing.install.pluginApi !== PLUGIN_API
-    ? entry.listing.install.pluginApi > PLUGIN_API ? 'Needs a newer izumi' : 'Needs a different plugin API'
-    : ''
+  entry.listing && !entry.installed && entry.listing.install.pluginApi > PLUGIN_API ? 'Needs a newer izumi' : ''

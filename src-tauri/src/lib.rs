@@ -40,6 +40,8 @@ mod jvm_extensions;
 mod net_interfaces;
 #[cfg(not(target_os = "android"))]
 mod oauth;
+#[cfg(not(target_os = "android"))]
+mod plugin_signin;
 mod reset;
 #[cfg(not(target_os = "android"))]
 mod reset_data;
@@ -6844,6 +6846,9 @@ pub fn run() {
             opensubtitles_moviehash,
             subtitle_fonts::subtitle_fonts_save,
             embedded_subtitles::embedded_subtitle_cues,
+            plugin_signin::plugin_signin_listen,
+            plugin_signin::plugin_signin_wait,
+            plugin_signin::plugin_signin_cancel,
             http_post,
             ext_fetch,
             http_cancel,

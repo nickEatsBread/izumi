@@ -32,7 +32,8 @@ describe('plugin manifest', () => {
 
   it('refuses what izumi would not run', () => {
     const base = example()
-    expect(() => parseManifest({ ...base, pluginApi: 2 })).toThrow('different version')
+    expect(() => parseManifest({ ...base, pluginApi: 3 })).toThrow('different version')
+    expect(() => parseManifest({ ...base, pluginApi: 0 })).toThrow('different version')
     expect(() => parseManifest({ ...base, id: 'Bad Id' })).toThrow('id')
     expect(() => parseManifest({ ...base, permissions: { scopes: ['library.write'] } })).toThrow('Unknown plugin permission')
     expect(() => parseManifest({ ...base, permissions: { ...base.permissions, scopes: ['player.panel'] } })).toThrow('network')
@@ -40,6 +41,19 @@ describe('plugin manifest', () => {
     expect(() => parseManifest({ ...base, permissions: { scopes: ['network'], network: { domains: ['http://x'], reason: 'x' } } })).toThrow('not a domain')
     expect(() => parseManifest({ ...base, settings: [...base.settings, { id: 'k', type: 'secret', label: 'K', default: 'x' }] })).toThrow('default')
     expect(() => parseManifest({ ...base, panel: { label: 'x', placeholder: 'y' }, permissions: { scopes: [] } })).toThrow('player.panel')
+  })
+
+  it('takes API 2 browser sign-in only with fixed domains, and https key links', () => {
+    const signin = { ...example(), pluginApi: 2, permissions: {
+      scopes: ['network', 'signin', 'player.panel'],
+      network: { domains: ['auth.openai.com', 'api.openai.com'], fromSetting: 'endpoint', reason: 'Sign-in and questions.' },
+    } }
+    expect(parseManifest(signin).permissions.scopes).toContain('signin')
+    expect(() => parseManifest({ ...signin, permissions: { ...signin.permissions, network: { domains: [], fromSetting: 'endpoint', reason: 'x' } } })).toThrow('signin')
+    const key = (links: unknown) => ({ ...signin, settings: [signin.settings[0], { id: 'apiKey', type: 'secret', label: 'API key', links }] })
+    expect(parseManifest(key([{ label: 'OpenAI keys', url: 'https://platform.openai.com/api-keys' }])).settings[1].links).toEqual([{ label: 'OpenAI keys', url: 'https://platform.openai.com/api-keys' }])
+    expect(() => parseManifest(key([{ label: 'x', url: 'http://example.com/' }]))).toThrow('https')
+    expect(() => parseManifest(key([{ label: 'x', url: 'javascript:alert(1)' }]))).toThrow('https')
   })
 
   it('hashes the grant independently of order, so only a real permission change asks again', () => {

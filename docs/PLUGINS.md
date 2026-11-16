@@ -49,8 +49,8 @@ A plugin entry pins its `plugin.json`, which pins its code:
 }
 ```
 
-`url` is https and `bytes` at most 64 KB. An entry for another plugin API stays listed, and its page
-says it needs a different izumi.
+`url` is https and `bytes` at most 64 KB. izumi runs plugin APIs 1 and 2; an entry for a newer one
+stays listed, and its page says it needs a newer izumi.
 
 **Settings → Sources and store → Plugins (beta)** lists them like the Themes page lists themes:
 Installed first, then one section per store, with chips and search. A card opens the plugin's page
