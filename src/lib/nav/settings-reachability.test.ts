@@ -56,7 +56,6 @@ const ESCAPE_OWNERS: Record<string, string> = {
  *  below fails if one of them starts being reachable from Settings, forcing a decision. */
 const DEFERRED_OUTSIDE_SETTINGS: Record<string, string> = {
   'src/lib/components/library/LocalListManager.svelte': 'library list manager; its own pass',
-  'src/lib/components/library/LocalListPicker.svelte': 'element and window Escape; library pass',
   'src/lib/components/player/UpNextOverlay.svelte': 'player overlay owned by the player chain',
   'src/lib/components/watch/DebridRoomNotice.svelte': 'watch-room notice; player pass',
   'src/lib/components/detail/AnimeDetail.svelte': 'showMore overflow menu (:475); Themes-owned file',

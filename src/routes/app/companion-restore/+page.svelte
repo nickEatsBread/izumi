@@ -3,7 +3,7 @@
   import { page } from '$app/state'
   import { goto } from '$app/navigation'
   import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { activeProfile, activeProfileLocked, profileSwitcherOpen } from '$lib/profiles/store'
   import { cloudflareSyncConfig } from '$lib/sync/cloudflare'
   import {
@@ -113,7 +113,7 @@
         <p class="mt-2 text-muted-foreground">Full encrypted sync requires a recovery key. Account logins that were not synced are not restored; sign in to those accounts separately.</p>
       </div>
       <button type="submit" disabled={!!busy || !validInput || !unlocked} data-focusable class="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 font-black text-primary-foreground disabled:opacity-50">
-        {#if busy}<LoaderCircle size={18} class="animate-spin" />{/if}{busy ? 'Linking and restoring…' : 'Link and restore'}
+        {#if busy}<Spinner inline />{/if}{busy ? 'Linking and restoring…' : 'Link and restore'}
       </button>
     </form>
   {:else}

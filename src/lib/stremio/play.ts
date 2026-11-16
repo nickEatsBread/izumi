@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { playerCommand } from '$lib/player/native'
 import { DRM_ENDED_EVENT, DRM_PROGRESS_EVENT } from '$lib/player/drm'
+import { usesNativeDrm } from '$lib/player/native-drm'
 import { downloadAudioLang, offlineManifestUrl, preferredDrmPresentation, refreshDrmSource } from '$lib/player/preferred-drm'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
@@ -80,6 +81,9 @@ import { kitsuIdFromLinks } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { episodeOffset, fetchSeasonChain, mayListSeasons } from '$lib/anilist/seasons'
 import { anilistIdOf, externalIdsOf, kitsuIdOf } from '$lib/catalog/identity'
+import { sourceProgressReporter, sourceStreams } from '$lib/catalog/source-streams'
+import { isSourceOrigin } from '$lib/catalog/source-catalogs'
+import { phttp } from '$lib/net/http'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
@@ -569,9 +573,13 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
   let lastPosition = 0
   let lastDuration = 0
   let sourceAlive = false
+  // A source catalog that asked for the playhead gets it back (its own Continue Watching).
+  const sourceProgress = sourceProgressReporter(stream)
+  if (sourceProgress) stop.push(() => sourceProgress.flush())
   const onProgress = (pos: number, dur: number) => {
     lastPosition = pos
     lastDuration = dur
+    sourceProgress?.progress(pos, dur)
     if (dur > 0) {
       if (!sourceAlive) { sourceAlive = true; markAlive(stream) }
       markSourceObservation(observation, 'first-frame')
@@ -656,6 +664,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     const dur = remote?.durationSeconds && remote.durationSeconds > 0
       ? remote.durationSeconds
       : local.dur
+    sourceProgress?.flush(pos)
     if (!dur || dur <= 0) return
     // If EOF already tombstoned this episode (cleared), a near-end finalize must NOT resurrect a
     // ~100% resume point — that would reopen the episode seeked to the very end AND destroy the
@@ -997,6 +1006,19 @@ export function embeddedVideoStreams(
   }
 }
 
+/** A source catalog's own title plays from that source; any other title keeps its embedded streams
+ *  (synchronously: the picker's fan-out must not wait a tick for titles that are not a source's). */
+function catalogVideoStreams(media: Media, episode: number | undefined): { declared: boolean; streams: Stream[] } | Promise<{ declared: boolean; streams: Stream[] }> {
+  return isSourceOrigin(media.catalog?.addonId) ? sourceVideoStreams(media, episode) : embeddedVideoStreams(media, episode)
+}
+
+async function sourceVideoStreams(media: Media, episode: number | undefined): Promise<{ declared: boolean; streams: Stream[] }> {
+  const video = mediaVideo(media, episode)
+  const own = video?.id ? await sourceStreams(media, video.id, video.title) : null
+  if (!own) return embeddedVideoStreams(media, episode)
+  return embeddedVideoStreams({ ...media, videos: media.videos?.map((item) => (item === video ? { ...item, streams: own } : item)) }, episode)
+}
+
 async function mediaSeasonMap(media: Media): Promise<Record<number, { season?: number; abs?: number }>> {
   const native: Record<number, { season?: number; abs?: number }> = {}
   for (const video of media.videos ?? []) {
@@ -1110,7 +1132,8 @@ export function prefetchSourceMetadata(
 }
 
 async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: EpisodeWant; kitsu?: number }> {
-  const embedded = embeddedVideoStreams(media, episode)
+  const pending = catalogVideoStreams(media, episode)
+  const embedded = pending instanceof Promise ? await pending : pending
   if (embedded.declared) {
     const want = episode != null ? await episodeWant(media, episode) : undefined
     let streams = refineStreams(media, embedded.streams).kept
@@ -1862,6 +1885,22 @@ function retainRecoveryCandidates(media: Media, episode: number | undefined, str
 // `playStream` starts it. `continuation` (set by auto-advance) carries the previous episode's
 // release identity: as sources fold in, a same-release one auto-continues without the user
 // touching the picker — a ready one instantly, an uncached one after the list settles.
+/** A protected episode saved by izumi's own Widevine module, as a stream: its folder, with the
+ *  licence a fresh resolution brought. The saved files are the presentation that plays: no track
+ *  refresh, and no subtitle that would switch to another (burned-in) presentation, which would
+ *  stream that instead. */
+export function savedProtectedStream(path: string, fresh: ResolvedShakaDownload): Stream {
+  return {
+    // Encoded: a `#`, `?` or `%` in the episode's name would otherwise end or garble the path.
+    url: `file://${path.split('/').map(encodeURIComponent).join('/')}`,
+    name: '📥 Downloaded',
+    __manifest: 'dash',
+    __drm: { ...fresh.drm, refreshUrl: undefined },
+    __audioLang: fresh.audioLang,
+    __subtitles: fresh.subtitles?.filter((track) => track.url && !track.switchUrl),
+  } as Stream
+}
+
 export async function playEpisode(
   media: Media,
   episode: number | undefined,
@@ -1925,6 +1964,30 @@ export async function playEpisode(
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = !options.remoteOnly && episode != null ? downloadOf(media.id, episode) : undefined
+  if (local?.status === 'done' && local.kind === 'drm-local' && local.path) {
+    // A protected episode saved by izumi's own Widevine module: its files are on this device and
+    // its licence comes from the source again, so playing it needs the source to be reachable.
+    traceResolve(trace, 'completed protected download hit; licensing it again')
+    onState({ status: 'resolving' })
+    // The fresh licence takes the source a few seconds: the connecting screen holds from the click
+    // (the page sat there as if the press was lost), and playStream takes it over.
+    connecting.set({
+      title: title(media), art: banner(media) || cover(media), media, episode,
+      cancel: () => { connecting.set(null); abort.abort(); onState({ status: 'idle' }) },
+    })
+    let fresh: Awaited<ReturnType<typeof resolveDownloadUrl>>
+    try {
+      fresh = await resolveDownloadUrl(media.id, episode!, { ...local.preferences, sourceOriginId: local.sourceOriginId })
+      if (fresh.kind !== 'shaka' || !fresh.drm?.licenseUrl) throw new Error('The source no longer provides a licence for this download.')
+      // Some sources only accept a licence request for a presentation that was asked for.
+      if (!signal.aborted) await phttp(fresh.url, { timeoutMs: 20_000 }).catch(() => undefined)
+    } catch (error) {
+      if (!signal.aborted) connecting.set(null)
+      throw error
+    }
+    if (signal.aborted) return
+    return await playStream(media, episode, savedProtectedStream(local.path, fresh), onState, { autoplay, startSeconds: options.startSeconds })
+  }
   if (local?.status === 'done' && (local.path || local.offlineUri)) {
     traceResolve(trace, 'completed download hit; skipping source discovery')
     let offlineDrm: Stream['__drm'] = local.offlineUri
@@ -2115,7 +2178,8 @@ export async function playEpisode(
       }
     }
 
-    const embedded = embeddedVideoStreams(media, episode)
+    const ownStreams = catalogVideoStreams(media, episode)
+    const embedded = ownStreams instanceof Promise ? await ownStreams : ownStreams
     const bases = get(enabledAddonUrls)
     const addonBases = embedded.declared ? [] : bases
     const extensionCheckStartedAt = performance.now()
@@ -3390,9 +3454,10 @@ export async function playStream(
       return
     }
 
-    // Encrypted DASH (Widevine etc.) cannot go through mpv — it would paint CENC as rainbow
-    // scramble. Play in the webview CDM instead. This also wins over Android mpv and the
-    // external-player setting: those backends cannot decrypt either.
+    // Encrypted DASH (Widevine etc.) cannot go through plain mpv — it would paint CENC as rainbow
+    // scramble. Windows/macOS play it in the webview CDM; Linux (no EME in WebKitGTK) plays it in
+    // izumi's own player through NativeDrmSurface. This also wins over Android mpv and the
+    // external-player setting: those backends cannot decrypt.
     if (stream.__drm) {
       if (await abandonIfStale()) return
       nowPlayingStream.set({
@@ -3419,13 +3484,18 @@ export async function playStream(
           switchUrl: s.switchUrl,
         })),
         previewUrl: stream.__previewUrl,
+        skip: stream.__skip,
+        rating: stream.__rating,
       })
       spriteKey.set(stream.infoHash ?? `${media.id}-${episode ?? 0}`)
       recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
       rememberSuccess()
       playing.set(true)
       onState({ status: 'playing' })
-      void invoke('close_player').catch(() => {})
+      // The native path reuses the player: stop the old file now, the protected one loads once
+      // its licence is in. The webview path needs the native player gone.
+      if (usesNativeDrm(stream.__drm)) void invoke('player_command', { name: 'stop', args: [] }).catch(() => {})
+      else void invoke('close_player').catch(() => {})
       if (episode != null) attach(media, episode, onState, observation, recoveryOriginal)
       return
     }
@@ -3519,6 +3589,8 @@ export async function playStream(
             kind: subtitle.kind,
             headers: subtitle.headers,
           })),
+          skip: stream.__skip,
+          rating: stream.__rating,
         })
         await startMpvEvents()
         if (await abandonIfStale()) return
@@ -3745,6 +3817,8 @@ export async function playStream(
         kind: 'kind' in subtitle ? subtitle.kind : undefined,
         headers: 'headers' in subtitle ? subtitle.headers : undefined,
       })),
+      skip: stream.__skip,
+      rating: stream.__rating,
     })
     // alang/slang drive mpv's preferred-language track auto-selection.
     const embedStartedAt = performance.now()
@@ -4237,7 +4311,9 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   // extension-only setup played episodes fine and then reported "no source found" the moment a
   // download was queued. Fold both extension flavours in exactly like playback does, then put the
   // merged list through the same refine + season gates.
-  if (await hasConfiguredExtensions()) {
+  // A source catalog's own title has its streams from that source: searching every other
+  // extension by its title would only add other providers' copies.
+  if (!isSourceOrigin(media.catalog?.addonId) && await hasConfiguredExtensions()) {
     let extra: Stream[] = []
     // Bounded: a download is a queued background job and must survive one wedged provider —
     // whatever folded in before the budget expires is what gets considered.

@@ -37,16 +37,21 @@
   import { incognito } from '$lib/stores/incognito'
   import { ratingOnPage } from '$lib/settings/ui'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
-  import { localLibrary, localTrackingForMedia, localTrackingKey, localTrackingRemoved, mediaIsSaved } from '$lib/library/local-lists'
+  import OptionsSheet, { type SheetGroup } from '$lib/components/detail/OptionsSheet.svelte'
+  import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
+  import { WATCHLIST_ID, localLibrary, localTrackingForMedia, localTrackingKey, localTrackingRemoved, mediaIsInLocalList, mediaIsSaved, toggleMediaInLocalList } from '$lib/library/local-lists'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
+  import Plus from '@lucide/svelte/icons/plus'
+  import ListPlus from '@lucide/svelte/icons/list-plus'
+  import ListChecks from '@lucide/svelte/icons/list-checks'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Share2 from '@lucide/svelte/icons/share-2'
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import Play from '@lucide/svelte/icons/play'
   import Download from '@lucide/svelte/icons/download'
-  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Check from '@lucide/svelte/icons/check'
   import MoreHorizontal from '@lucide/svelte/icons/ellipsis'
   import { isAndroid, isMobile } from '$lib/platform'
@@ -66,6 +71,7 @@
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { connecting, gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
+  import { PAGE_OPTIONS_EVENT } from '$lib/nav/gamepad'
   import { getEpisodeMeta, getKitsuId } from '$lib/anizip'
   import type { EpMeta } from '$lib/anizip/types'
   import { positions, positionPercent, progressKey } from '$lib/player/progress'
@@ -592,6 +598,43 @@
   const canRemove = $derived(!entryRemoved && (hasEntry || (!!media && Object.values($localHistory)
     .some((entry) => localTrackingKey(entry.media) === localTrackingKey(media)))))
   const savedLocally = $derived(shown ? mediaIsSaved($localLibrary, shown) : false)
+  // One press puts the title on izumi's Watchlist or takes it off, as on a catalog title page; the
+  // other device lists are in the More menu, and tracking stays with the list button.
+  const watchlisted = $derived(shown ? mediaIsInLocalList($localLibrary, shown, WATCHLIST_ID) : false)
+
+  // The desktop More menu: the Watchlist, the other device lists and the trackers, as a catalog title
+  // page's. Focus goes back to More when a list editor opened from it closes.
+  let optionsOpen = $state(false)
+  let optionsReturn: FocusDescriptor | null = null
+  const returnFromOptions = () => requestAnimationFrame(() => {
+    if (!document.activeElement || document.activeElement === document.body) restoreFocus(optionsReturn)
+  })
+  function openOptions() {
+    optionsReturn = describeFocus(document.activeElement)
+    optionsOpen = true
+  }
+  // ☰ opens the same menu, as on a catalog title page; ☰ again closes it.
+  $effect(() => {
+    const claim = (event: Event) => {
+      if (!media) return
+      if (optionsOpen) { event.preventDefault(); optionsOpen = false; return }
+      if (showEditor || showLocalLists || document.querySelector('[data-nav-trap]')) return
+      event.preventDefault()
+      openOptions()
+    }
+    window.addEventListener(PAGE_OPTIONS_EVENT, claim)
+    return () => window.removeEventListener(PAGE_OPTIONS_EVENT, claim)
+  })
+  const optionGroups = $derived<SheetGroup[]>([{
+    options: [
+      {
+        id: 'watchlist', label: watchlisted ? 'Remove from Watchlist' : 'Add to Watchlist', icon: watchlisted ? BookmarkCheck : BookmarkPlus,
+        onselect: () => { if (media) toggleMediaInLocalList(media, WATCHLIST_ID) },
+      },
+      { id: 'lists', label: savedLocally ? 'Saved to your lists' : 'Save to a list', icon: savedLocally ? ListChecks : ListPlus, onselect: () => { optionsOpen = false; showLocalLists = true } },
+      { id: 'tracker', label: 'Track on AniList / MyAnimeList', detail: effStatus ? STATUS_LABEL[effStatus] : undefined, icon: ListChecks, onselect: () => { optionsOpen = false; showEditor = true } },
+    ],
+  }])
   // "Your rating" sits on the page itself once the viewer has actually watched something — rating a
   // title from the plan-to-watch pile is noise, and before this the score was only reachable three
   // clicks deep inside the list editor and never shown anywhere.
@@ -935,7 +978,6 @@
                stretched cover reads as broken art. -->
           {@render hiddenCover(m, '')}
         {:else}
-          <!-- `!absolute`: app.css declares `.skeloader { position: relative }` after the utilities. -->
           <span class="!absolute inset-0 skeloader" aria-hidden="true"></span>
         {/if}
         <div data-part="detail.banner.fade" class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
@@ -976,24 +1018,25 @@
               <ThemeNode node={detailTheme.actionsLead} model={leadModel(m)} />
             </div>
           {/if}
-          <!-- API 4 `detail.actions: "expand"`: Save, Share and Trailer only while More has unfolded them. -->
+          <!-- API 4 `detail.actions: "expand"`: Watchlist, Share and Trailer only while More has unfolded them. -->
           {#if !actionsFold || actionsOpen}
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => { h.tap(); showLocalLists = true })} aria-label="Save to lists"
+          <!-- The Watchlist button keeps data-action="save": published themes style it by that name. -->
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} onclick={ready((full) => { h.tap(); toggleMediaInLocalList(full, WATCHLIST_ID) })}
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
-            {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
+            {#if watchlisted}<Check size={17} class="text-theme" />{:else}<Plus size={17} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
           </button>
           <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={ready((full) => { h.tap(); void onShare(full) })} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
           {#if m.trailer?.id}
-            <button data-part="detail.action" data-action="trailer" data-focusable onclick={ready((full) => { if (!full.trailer?.id) return; h.tap(); openTrailerPopup(full.trailer.id, title(full)) })} aria-label="Trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable data-nav-scroll-top onclick={ready((full) => { if (!full.trailer?.id) return; h.tap(); openTrailerPopup(full.trailer.id, title(full)) })} aria-label="Trailer"
                     class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
               <Clapperboard size={18} />
             </button>
           {/if}
           {/if}
-          <button data-part="detail.action" data-action="more" data-focusable onclick={pressMore} aria-label="More"
+          <button data-part="detail.action" data-action="more" data-focusable data-nav-scroll-top onclick={pressMore} aria-label="More"
                   aria-haspopup="true" aria-expanded={actionsFold ? actionsOpen : showMore}
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             <MoreHorizontal size={18} />
@@ -1008,6 +1051,10 @@
               <button data-part="detail.list-button" data-action="list" data-state={effStatus ? 'listed' : undefined} data-focusable onclick={ready(() => { h.tap(); closeMenu(); showEditor = true })}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                 <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
+              </button>
+              <button data-focusable onclick={ready(() => { h.tap(); closeMenu(); showLocalLists = true })}
+                      class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+                {#if savedLocally}<ListChecks size={15} /> Saved to your lists{:else}<ListPlus size={15} /> Save to a list{/if}
               </button>
               {#if shownButtons.includes('download')}
                 <button data-focusable onclick={ready((full) => downloadSelect(full))}
@@ -1065,7 +1112,7 @@
         {@render seriesTitle(m, 'text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl')}
         {@render seriesHeader(m, '')}
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
-          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top data-nav-player-return
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={warmPlay}
                   onfocus={warmPlay}
@@ -1073,9 +1120,13 @@
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
             <Play size={18} />{ctaStarted ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
+                  class="flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white transition-colors hover:bg-white/25">
+            {#if watchlisted}<Check size={18} />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
+          </button>
+          <button data-part="detail.action" data-action="more" data-focusable data-nav-scroll-top onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
-            {#if savedLocally}<BookmarkCheck size={20} />{:else}<BookmarkPlus size={20} />{/if}
+            <MoreHorizontal size={20} />
           </button>
         </div>
         {#if m.studios?.nodes?.[0]}
@@ -1167,7 +1218,7 @@
     {#snippet actionsBlock()}
         <!-- Action bar -->
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
-          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top data-nav-player-return
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={warmPlay}
                   onfocus={warmPlay}
@@ -1176,9 +1227,9 @@
             <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaStarted ? 'Continue Now' : 'Watch Now') : (ctaStarted ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
-            {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
+            {#if watchlisted}<Check size={18} class="text-theme" />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
           </button>
 
           {#if detailTheme.listButton !== 'hidden'}
@@ -1200,7 +1251,7 @@
           </button>
 
           {#if m.trailer?.id && !posterColumn}
-            <button data-part="detail.action" data-action="trailer" data-focusable onclick={ready((full) => { if (full.trailer?.id) openTrailerPopup(full.trailer.id, title(full)) })} title="Watch trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable data-nav-scroll-top onclick={ready((full) => { if (full.trailer?.id) openTrailerPopup(full.trailer.id, title(full)) })} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
             </button>
@@ -1212,6 +1263,11 @@
               <TrackerProviderBadge provider={tracker.id} compact />
             </button>
           {/each}
+
+          <button data-part="detail.action" data-action="more" data-focusable data-nav-scroll-top onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
+                  class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
+            <MoreHorizontal size={18} />
+          </button>
         </div>
     {/snippet}
 
@@ -1334,11 +1390,12 @@
       {hasEntry}
       {canRemove}
       anchor={editorAnchor}
-      onclose={() => (showEditor = false)}
+      onclose={() => { showEditor = false; returnFromOptions() }}
       onsaved={(patch) => { listOpt = { ...listEntry.edit, ...patch }; watchedBefore = watched }}
     />
   {/if}
-  {#if showLocalLists && media}<LocalListPicker media={media} onclose={() => (showLocalLists = false)} />{/if}
+  {#if showLocalLists && media}<LocalListPicker media={media} onclose={() => { showLocalLists = false; returnFromOptions() }} />{/if}
+  {#if optionsOpen && media}<OptionsSheet title={title(media)} groups={optionGroups} onclose={() => (optionsOpen = false)} />{/if}
 {:else if $offlineMode}
   <div class="grid min-h-[50vh] place-items-center p-8 text-center">
     <div class="max-w-sm text-muted-foreground">
@@ -1434,7 +1491,7 @@
       <button data-part="button" data-variant="secondary" data-action="download" data-state={downloadState} data-episode={downloadEp} data-focusable onclick={ready((full) => downloadCta(full))}
               style:--download-progress="{episodeDownloadPercent(download)}%" aria-label={episodeDownloadLabel(download, String(downloadEp))}
               class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-secondary py-2.5 text-sm font-bold">
-        {#if downloadState === 'done'}<Check size={17} class="text-theme" />{:else if downloadState === 'queued'}<Loader size={17} class="animate-spin" />{:else}<Download size={17} />{/if}<span aria-live="polite">{episodeDownloadText(download, String(downloadEp))}</span>
+        {#if downloadState === 'done'}<Check size={17} class="text-theme" />{:else if downloadState === 'queued'}<Spinner inline />{:else}<Download size={17} />{/if}<span aria-live="polite">{episodeDownloadText(download, String(downloadEp))}</span>
       </button>
     {/if}
   {/each}
@@ -1526,14 +1583,14 @@
      shows a placeholder line inside the heading. -->
 {#snippet seriesTitle(m: Media, className: string)}
   {#if detailLogo}
-    <h1 data-part="detail.title" aria-label={named(m) ? title(m) : undefined} class={className}>
+    <h1 data-part="detail.title" aria-label={named(m) ? title(m) : undefined} data-length={title(m).length > 40 ? 'long' : undefined} class={className}>
       <img data-part="detail.logo" src={detailLogo} alt="" onerror={() => (failedDetailLogo = detailLogo)}
            class="block max-h-44 w-auto max-w-[min(26rem,85%)] object-contain object-left-bottom" />
     </h1>
   {:else if unnamed(m)}
     <h1 data-part="detail.title" class={className}><span class="inline-block w-3/5 min-w-32 max-w-full rounded-md align-top skeloader" aria-hidden="true">&nbsp;</span><span class="sr-only">Loading</span></h1>
   {:else}
-    <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
+    <h1 data-part="detail.title" data-length={title(m).length > 40 ? 'long' : undefined} class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
   {/if}
 {/snippet}
 

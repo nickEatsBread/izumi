@@ -366,6 +366,15 @@ describe('entering and leaving the pane', () => {
     document.querySelector('[data-setting-key="subtitles-1"]')!.remove()
     expect(paneEntryTarget(document.querySelector('[data-settings-pane]')!)).toBe(row('Subtitles basics'))
   })
+
+  it("paneEntryTarget lands on a page's marked entry (its current value) before its first control", () => {
+    resetControllerZonesForTests()
+    const pane = document.querySelector<HTMLElement>('[data-settings-pane]')!
+    const entry = row('Text size')
+    entry.setAttribute('data-pane-entry', '')
+    expect(paneEntryTarget(pane, '/app/settings/fresh-page')).toBe(entry)
+    entry.removeAttribute('data-pane-entry')
+  })
 })
 
 describe('entering Settings', () => {

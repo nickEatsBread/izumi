@@ -133,3 +133,17 @@ top, and `src-tauri/vendor/README.md` describes the changes.
 
 Copyright 2021 Igor Katson. Licensed under the Apache License, Version 2.0:
 https://www.apache.org/licenses/LICENSE-2.0
+
+## Chromium CDM interface header — BSD-3-Clause
+
+`src-tauri/native/widevine/cdm/` holds an unmodified copy of Chromium's Content Decryption Module
+interface header (`content_decryption_module.h` and `content_decryption_module_export.h`) from
+[chromium/cdm](https://chromium.googlesource.com/chromium/cdm/) at commit
+`d6c4e1ea4c8fc3dcd98ac3ab5a981f63067223a4`. izumi's Linux host for protected playback is built
+against it. The full license is in `src-tauri/native/widevine/cdm/LICENSE`.
+
+Copyright 2015 The Chromium Authors. Licensed under the BSD 3-Clause License.
+
+Google's Widevine module itself is not part of izumi and is never distributed with it. On Linux,
+izumi downloads it from Google's update service on the user's device, after the user has read and
+accepted the licence that comes with it.

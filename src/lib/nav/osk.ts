@@ -183,9 +183,35 @@ function writeValue(field: TextEntryField, value: string, caret?: number): void 
   if (field.value !== before) field.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+/** Steam's own floating keyboard (Game mode on a Steam Deck), which the app shell provides. Tried
+ *  before the built-in keyboard; once Steam says it cannot show one, the built-in keyboard serves. */
+type SteamKeyboard = (field: TextEntryField, layout: OskLayout) => Promise<boolean>
+let steamKeyboard: SteamKeyboard | null = null
+let steamKeyboardWorks = true
+
+export function useSteamKeyboard(show: SteamKeyboard | null): void {
+  steamKeyboard = show
+  steamKeyboardWorks = true
+}
+
 function openFieldSession(field: TextEntryField): void {
   const current = get(session)
   if (current?.kind === 'field' && current.field === field) return
+  if (steamKeyboard && steamKeyboardWorks && get(gameMode)) {
+    // Steam types into the focused field itself: nothing here to open, unless it declines.
+    if (current) closeOsk({ restore: false })
+    const fallback = () => {
+      steamKeyboardWorks = false
+      if (field.isConnected && document.activeElement === field) openBuiltInSession(field)
+    }
+    void steamKeyboard(field, oskLayoutFor(field)).then((shown) => { if (!shown) fallback() }, fallback)
+    return
+  }
+  openBuiltInSession(field)
+}
+
+function openBuiltInSession(field: TextEntryField): void {
+  const current = get(session)
   if (current) closeOsk({ restore: false })
   const layout = oskLayoutFor(field)
   suppressIme(field)

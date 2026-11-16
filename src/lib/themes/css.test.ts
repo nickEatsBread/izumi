@@ -35,6 +35,20 @@ describe('theme stylesheet sanitiser', () => {
     expect(result.global).not.toContain('https:')
     expect(result.css).toContain('.g')
     expect(themeStyleText(result, true)).toMatch(/^@keyframes[\s\S]*@scope \(:root\) to \(\[data-theme-protected\], \[data-theme-unthemed\]\) \{/)
+    expect(themeStyleText(result, false)).toMatch(/^@keyframes[\s\S]*\.g \{/)
+    expect(themeStyleText(result, false)).not.toContain('@scope')
+  })
+  it('rewrites :scope to :root in the plain rules through the parsed selectors', () => {
+    const result = sanitizeThemeCss(':scope{--a:1px} :scope[data-surface="tv"] .x{color:red} .b{ :scope.dark &{color:blue} } @media (min-width:1px){:scope .m{color:green}} .y:is(:scope .z){color:teal} [title=":scope"]{color:gray} @scope (.s){:scope{color:pink}}')
+    if (result.error !== undefined) throw new Error(result.error)
+    const plain = result.plain.replace(/\s+/g, ' ')
+    for (const selector of [':root { --a: 1px; }', ':root[data-surface="tv"] .x {', ':root.dark & {', ':root .m {', '.y:is(:root .z) {']) expect(plain).toContain(selector)
+    // Strings stay as written, and a theme's own @scope keeps the :scope naming its root.
+    expect(plain).toContain('[title=":scope"] {')
+    expect(plain).toContain('@scope (.s) { :scope { color: pink; } }')
+    // The scoped form keeps every :scope: inside the wrapper it already names the root.
+    expect(result.css).not.toContain(':root')
+    expect(themeStyleText(result, true)).toContain(':scope[data-surface="tv"] .x')
   })
   it('deletes a rule whose serialized text still loads a URL (var() shorthands)', () => {
     const deleted: number[] = []
@@ -49,8 +63,10 @@ describe('theme stylesheet sanitiser', () => {
     expect(sanitizeThemeCss(`@keyframes k{${'0%{opacity:0}'.repeat(4001)}}`).error).toMatch(/too many rules/)
     expect(sanitizeThemeCss('.a{}', null).error).toMatch(/cannot check/)
   })
-  it('leaves the text unwrapped for engines without @scope', () => {
-    expect(themeStyleText({ css: '.a { color: red; }', global: '' }, false)).toBe('.a { color: red; }')
+  it('emits the plain rules while no protected surface is mounted, and the @scope wrapper while one is', () => {
+    const result = { css: ':scope { --a: 1px; }', plain: ':root { --a: 1px; }', global: '' }
+    expect(themeStyleText(result, false)).toBe(':root { --a: 1px; }')
+    expect(themeStyleText(result, true)).toBe('@scope (:root) to ([data-theme-protected], [data-theme-unthemed]) {\n:scope { --a: 1px; }\n}')
   })
 })
 

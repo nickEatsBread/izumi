@@ -5,7 +5,7 @@
   import { page } from '$app/state'
   import { getContextClient } from '@urql/svelte'
   import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Check from '@lucide/svelte/icons/check'
   import { pairCompanion, type PairedCompanion } from '$lib/companion/client'
   import { isAndroid } from '$lib/platform'
@@ -146,13 +146,13 @@
       {#if !complete}
         <button type="button" data-focusable disabled={!link || busy} onclick={addTv}
           class="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-black text-primary-foreground disabled:opacity-50">
-          {#if busy}<LoaderCircle size={18} class="animate-spin" />{/if}{busy ? 'Adding TV…' : actionLabel}
+          {#if busy}<Spinner inline />{/if}{busy ? 'Adding TV…' : actionLabel}
         </button>
       {/if}
       {#if complete && pairedDevice?.cloudflare && $isAndroid}
         <button type="button" data-focusable disabled={notificationBusy} onclick={enableTvNotifications}
           class="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-black text-primary-foreground disabled:opacity-50">
-          {#if notificationBusy}<LoaderCircle size={18} class="animate-spin" />{/if}
+          {#if notificationBusy}<Spinner inline />{/if}
           {notificationSetupStarted ? 'Open notification setup again' : 'Enable TV notifications'}
         </button>
       {/if}

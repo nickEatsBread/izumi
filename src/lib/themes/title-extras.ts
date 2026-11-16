@@ -317,7 +317,9 @@ export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtr
     if (media.contentRating) out.ageRating = media.contentRating
     else if (media.idMal) tasks.push(fetchMalRating(media.idMal).then((rating) => { out.ageRating = malAgeRating(rating) }, () => {}))
   }
-  if (needs.has('audio') && anilistId) {
+  // A source catalog says which audio versions it has: no schedule lookup can know better.
+  if (needs.has('audio') && media.sourceFacts?.audio) out.audio = media.sourceFacts.audio
+  else if (needs.has('audio') && anilistId) {
     const primed = primedSchedule.get(anilistId) ?? Promise.resolve()
     tasks.push(primed.catch(() => {})
       .then(() => getScheduleInfo(anilistId, scheduleTitles(media.title)))

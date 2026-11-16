@@ -7,7 +7,7 @@
   import type { DownloadItem } from '$lib/downloads/store'
   import * as h from '$lib/haptics'
   import Download from '@lucide/svelte/icons/download'
-  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Check from '@lucide/svelte/icons/check'
   import { episodeDownloadAction, episodeDownloadLabel, episodeDownloadPercent, episodeDownloadState } from './episode-download'
   import { pressEpisodeDownload } from './episode-download-press'
@@ -39,7 +39,7 @@
         aria-label={label} title={label} data-hint-a={episodeDownloadAction(downloadState) === 'queue' ? 'Download' : 'Downloads'} onclick={press}
         class="relative grid size-10 shrink-0 place-items-center self-center rounded-full transition-colors disabled:opacity-40 {downloadState === 'done' ? 'text-theme' : 'text-muted-foreground hover:text-foreground'}">
   {#if downloadState === 'done'}<Check size={18} />
-  {:else if downloadState === 'queued'}<Loader size={18} class="animate-spin" />
+  {:else if downloadState === 'queued'}<Spinner inline />
   {:else if downloadState === 'progress'}<span class="text-[0.65rem] font-black tabular-nums">{percent}%</span>
   {:else}<Download size={18} />{/if}
 </button>

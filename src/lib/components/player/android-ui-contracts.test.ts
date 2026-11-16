@@ -33,7 +33,7 @@ describe('Android UI contracts', () => {
   })
 
   it('renders useful watch content while automatic source startup runs', () => {
-    expect(picker).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
+    expect(picker).toContain('{#if ($isAndroid ? autoImmediate : autoPicking) && !playbackError}')
     expect(layout).toContain('const androidWatchTarget = $derived.by(() => {')
     expect(layout).toContain('<Lazy load={loadAndroidPreparingPlayer}')
     expect(layout).toContain('active: $androidMpvActive, mini: $androidMiniPlayer')

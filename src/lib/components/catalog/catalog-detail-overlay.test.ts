@@ -27,12 +27,13 @@ describe('catalog title page under a theme overlay layout', () => {
     expect(detail).toContain('<ThemeNode node={detailTheme.header} model={mediaDisplayModel(media)} />')
   })
 
-  it('shows Save as a round icon button with an accessible name', () => {
-    expect(detail).toContain("aria-label={savedLocally ? 'Saved' : 'Save to lists'}")
-    expect(detail).toContain("{#if !themedOverlay}{savedLocally ? 'Saved' : 'Save'}{/if}")
-    // The trailer button beside it takes the same round shape.
-    expect(detail.match(/class=\{themedOverlay \? 'grid h-12 w-12 place-items-center rounded-full bg-white\/15/g)).toHaveLength(2)
-    expect(anime).toContain('title="Save to lists"\n                  class="grid h-12 w-12 place-items-center rounded-full')
+  it('labels the Watchlist on an overlay too, as a pill beside the round trailer button', () => {
+    expect(detail).toContain("{watchlisted ? 'In Watchlist' : 'Watchlist'}")
+    expect(detail).toContain("class={themedOverlay ? 'flex h-12 items-center gap-2 rounded-full bg-white/15")
+    expect(detail.match(/class=\{themedOverlay \? 'grid h-12 w-12 place-items-center rounded-full bg-white\/15/g)).toHaveLength(1)
+    // An anime's overlay page draws its Watchlist the same pill, with a round More beside it.
+    expect(anime).toContain('toggleMediaInLocalList(full, WATCHLIST_ID))}\n                  class="flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white')
+    expect(anime).toContain('title="More options" aria-haspopup="dialog"\n                  class="grid h-12 w-12 place-items-center rounded-full')
   })
 })
 
@@ -67,7 +68,9 @@ describe('catalog title page follows the theme series page', () => {
     expect(detail).toContain('data-part="episode" data-variant="template"')
     expect(detail).toContain('<ThemeNode node={episodeCard} model={episodeModel(video)} />')
     expect(detail).toContain('<div data-slot="episodes.toolbar" data-variant="header"')
-    expect(detail).toContain('<SeasonPicker entries={seasonEntries} variant="dropdown" inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} />')
+    expect(detail).toContain("<SeasonPicker entries={seasonEntries} variant={detailTheme.episodes?.seasons === 'chips' ? 'chips' : 'dropdown'} inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} />")
+    // Chips (`detail.episodes.seasons: "chips"`) switch the season in place too.
+    expect(picker).toContain('onclick={onpick ? (event) => { event.preventDefault(); onpick(index) } : undefined}')
     expect(picker).toContain('onpick?: (index: number) => void')
     expect(picker).toContain('onclick={() => { onpick(index); close(true) }}')
   })
@@ -76,5 +79,16 @@ describe('catalog title page follows the theme series page', () => {
     expect(detail).toContain('{#if detailThemed}')
     expect(detail).toContain('<Carousel title="Recommendations">')
     expect(detail).toContain('<h2 data-part="detail.heading" class="mb-4 text-xl font-black">Cast & crew</h2>')
+  })
+})
+
+describe('the Watchlist button on a catalog title page', () => {
+  const detail = read('./CatalogMediaDetail.svelte')
+  it("saves to izumi's Watchlist and the source's own in one press, and never disables itself", () => {
+    expect(detail).toContain('setMediaInLocalList(media, WATCHLIST_ID, want)')
+    expect(detail).toContain('sourceListed = await setSourceWatchlist(watchlistUrl, want)')
+    expect(detail).toContain('sourceListed = before')
+    expect(detail).not.toMatch(/data-action="watchlist"[^>]*disabled=/)
+    expect(detail).not.toContain('data-action="save"')
   })
 })

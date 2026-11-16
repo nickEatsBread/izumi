@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition'
   import { listen } from '@tauri-apps/api/event'
   import { listenSafe } from '$lib/util/listen'
+  import { armTouchReveal, clearTouchReveal } from '$lib/player/touch-reveal'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import Controls from './Controls.svelte'
@@ -11,6 +12,8 @@
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
+  import NativeDrmSurface from './NativeDrmSurface.svelte'
+  import { nativeDrmSupported, usesNativeDrm } from '$lib/player/native-drm'
   import { playerCommand, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
@@ -59,11 +62,13 @@
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeLiveMenuOpen, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
   import { GM_THAW_DELAY_MS, captureFrozenFrame, framePainted, gmFrozenFrame, gmPanel, gmPanelOut, gmStage } from '$lib/player/gm-freeze'
+  import { readGmOsdTheme, type GmOsdTheme } from '$lib/player/theme-gm-osd'
   import { motion } from '$lib/motion/gm-motion'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
@@ -71,6 +76,7 @@
   import { isMobile, isWindows } from '$lib/platform'
   import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import { oskDismissedAt, playerStage, playerChromeVisible } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
@@ -129,7 +135,9 @@
     ? $desktopCastStatus?.state === 'paused'
     : paused)
 
-  let visible = $state(true)
+  // No chrome before the first frame (a title bar and buttons over black read as a broken player):
+  // the controls first show when the picture does, unless the viewer asks for them sooner.
+  let visible = $state(false)
   let hideT: ReturnType<typeof setTimeout>
   let quietPadSeek = $state(false)
   let quietPadSeekT: ReturnType<typeof setTimeout>
@@ -205,6 +213,7 @@
     // retain their ordinary touch/click behaviour.
     if (!gmMode || controlsVisible || get(commentsOpen) || get(playerMenuOpen) || get(trackMenuOpen) || subtitleEditorOpen) return false
     suppressTouchRevealClickUntil = performance.now() + 900
+    armTouchReveal()
     poke()
     return true
   }
@@ -223,6 +232,7 @@
         // touch's own click is a real press on whatever the reveal put there.
         suppressTouchRevealClickUntil = 0
         revealTouch = null
+        clearTouchReveal()
       } else {
         // Gamescope's native touch-begin armed the reveal a moment before this DOM start.
         revealTouch = { x: touch.clientX, y: touch.clientY }
@@ -246,6 +256,7 @@
     if (Math.hypot(touch.clientX - revealTouch.x, touch.clientY - revealTouch.y) > 12) {
       suppressTouchRevealClickUntil = 0
       revealTouch = null
+      clearTouchReveal()
     }
   }
 
@@ -254,6 +265,7 @@
     if (revealTouch && Math.hypot(e.clientX - revealTouch.x, e.clientY - revealTouch.y) > 24) return
     suppressTouchRevealClickUntil = 0
     revealTouch = null
+    clearTouchReveal()
     e.preventDefault()
     e.stopImmediatePropagation()
   }
@@ -319,9 +331,13 @@
     const t = setTimeout(() => { pausedIdle = true }, 5000)
     return () => clearTimeout(t)
   })
-  const controlsVisible = $derived(
-    visible || (!(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
-  )
+  // Set the moment the player starts closing (close()): no chrome comes up for the pause it makes.
+  let exiting = $state(false)
+  const controlsVisible = $derived(!exiting && (
+    // A new file starts out paused and loading: neither pins the chrome before there is a picture.
+    visible || (firstFrame && !(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen
+  ))
+  $effect(() => { if (firstFrame) untrack(poke) })
   // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
   // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
   let gmVideoHidden = $state(false)
@@ -358,7 +374,25 @@
     return () => clearTimeout(skipT)
   })
   const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsVisible))
+  // Where an episode follows, the source's credits button goes on to it the way the Next button does
+  // (the same aired gate as Controls); every other segment's button seeks past the segment.
+  const skipToNext = $derived(!!currentSeg?.credits && np.episode != null && np.airedTotal != null && np.episode < np.airedTotal)
+  const skipLabel = $derived(skipToNext ? 'Next episode' : `Skip ${currentSeg?.label ?? ''}`)
+  function skipSegment() {
+    if (skipToNext) playNext(undefined, !paused)
+    else if (currentSeg) seekTo(currentSeg.end + 0.5)
+  }
 
+  // WebKit also sends a mousemove when the page changes under a cursor that has not moved: the
+  // player appearing under the Deck's parked, hidden cursor brought its controls up over black.
+  // Only a pointer that really moved shows them.
+  let lastPointer = ''
+  function onPointerMove(event: MouseEvent) {
+    const at = `${event.screenX},${event.screenY}`
+    const moved = !!lastPointer && at !== lastPointer
+    lastPointer = at
+    if (moved) poke()
+  }
   function poke() {
     untrack(() => { inputTick++ })
     visible = true
@@ -367,6 +401,10 @@
     hideT = setTimeout(() => (visible = false), 3500)
   }
   const drmActive = $derived(!!$nowPlayingStream.drm)
+  // Linux plays protected streams in izumi's own mpv player: the mpv-side features (subtitle
+  // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
+  const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported))
+  const drmWebview = $derived(drmActive && !drmNative)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell
   // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
@@ -705,10 +743,42 @@
     return stop
   })
 
+  // The rating card a theme can ask for (`player.rating: "intro"`): the episode's age rating at the top
+  // right from when mpv has the file (its first frame may still be loading), held 3.6 s, as TV apps
+  // show theirs. Game mode draws it natively (gm_osd.rs rating card); elsewhere the page does.
+  const RATING_CARD_MS = 4_300
+  const ratingIntro = $derived($themePresentation?.player?.rating === 'intro')
+  const ratingLabel = $derived(ratingIntro ? ($nowPlayingStream.rating?.label ?? $nowPlayingMedia?.media?.sourceFacts?.rating ?? '') : '')
+  const ratingDetail = $derived(ratingIntro ? ($nowPlayingStream.rating?.descriptors ?? []).join(' · ') : '')
+  let ratingShownAt = $state(0)
+  let ratingOn = $state(false)
+  let ratingFor = ''
+  onMount(() => {
+    const off = listen<string>('player-file-loaded', () => {
+      if (!ratingLabel || ratingFor === loadedKey) return
+      ratingFor = loadedKey
+      ratingShownAt = Date.now()
+      scheduleGmDynamicOverlay()
+    })
+    return () => { void off.then((unlisten) => unlisten()) }
+  })
+  $effect(() => {
+    if (!ratingShownAt) return
+    const frame = requestAnimationFrame(() => (ratingOn = true))
+    const hide = setTimeout(() => (ratingOn = false), 3_600)
+    // One more state once the card is over, so the native layer can let it go.
+    const done = setTimeout(() => scheduleGmDynamicOverlay(), RATING_CARD_MS + 50)
+    return () => { cancelAnimationFrame(frame); clearTimeout(hide); clearTimeout(done); ratingOn = false }
+  })
+
   let closing = false
   async function close() {
     if (closing) return
     closing = true
+    // Answer the press at once. Putting the page back under the video takes a moment on the Deck,
+    // and a picture still playing meanwhile (with the controls up) read as B being ignored.
+    exiting = true
+    void invoke('player_command', { name: 'set', args: ['pause', 'yes'] }).catch(() => {})
     await exitFullscreen()
     await exitPictureInPicture()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
@@ -801,7 +871,10 @@
     // probe for a still-buffering torrent left the skip button missing even when AniSkip
     // already had the opening.
     const media = $nowPlayingMedia?.media
-    const segs = await getMediaSkipSegments(media, episode, length)
+    // The stream's own markers need no lookup, so they show while AniSkip and IntroDB are asked.
+    const own = $nowPlayingStream.skip ?? []
+    if (own.length) segments = own
+    const segs = await getMediaSkipSegments(media, episode, length, own)
     if (key !== loadedKey) return
     segments = mergeSkipSegments(segs, [])
     void invoke<string>('player_chapters')
@@ -838,6 +911,7 @@
     const key = `${$playerLoadId}|${np.title}|${np.episode}|${$spriteKey ?? ''}`
     if (key === loadedKey) return
     loadedKey = key
+    ratingShownAt = 0
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
     dpadVisualPos = null; clearTimeout(dpadVisualT)
     chapterStore.set([])
@@ -885,7 +959,7 @@
   let subtitlePolicyKey = ''
   $effect(() => {
     const key = loadedKey
-    if (drmActive || !firstFrame || !key || subtitlePolicyKey === key) return
+    if (drmWebview || !firstFrame || !key || subtitlePolicyKey === key) return
     subtitlePolicyKey = key
     void playerTracks()
       .then((raw) => {
@@ -935,7 +1009,7 @@
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
   // A menu, the source picker, the switching card or a prompt is up: the video pauses and those
   // surfaces render live over its frozen frame (gm-freeze.ts). Comments still unmap the video.
-  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmActive && !$commentsOpen && gameModeLiveMenuOpen({
+  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmWebview && !$commentsOpen && gameModeLiveMenuOpen({
     playerMenuOpen: $playerMenuOpen,
     trackMenuOpen: $trackMenuOpen,
     sourcePickerOpen: sourcePickerVisible,
@@ -1202,6 +1276,20 @@
   let gmScrubBasePos = $state(0)
   let gmScrubBaseBuffer = $state(0)
   let gmScrubWasActive = false
+  // The native OSD draws in the theme's colours. Read once the player opens, then whenever theme.ts
+  // rewrites <html>'s palette or theme mark, so a theme switch reaches an open player too.
+  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '' })
+  $effect(() => {
+    if (!gmBitmapMode) return
+    const read = () => {
+      const next = readGmOsdTheme()
+      if (next.themeAccent !== gmTheme.themeAccent || next.themeFocus !== gmTheme.themeFocus) gmTheme = next
+    }
+    untrack(read)
+    const observer = new MutationObserver(read)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-surface'] })
+    return () => observer.disconnect()
+  })
 
   $effect(() => {
     const active = gmBitmapMode && $scrub.active
@@ -1274,11 +1362,31 @@
     controlItems: [],
     timelineSegments: [],
     chapterMarks: [],
+    // The controls' native fade-out finishes after this, still in the theme's colours.
+    ...gmTheme,
   })
 
   function measureSeekBar() {
     const rect = document.querySelector('[aria-label="Seek"]')?.getBoundingClientRect()
     if (rect && rect.width > 0) lastBar = { x: rect.left, y: rect.top + rect.height / 2, w: rect.width }
+  }
+
+  /** A button named in words (`data-gm-text`, a theme's `player.trackButtons: "text"`) is drawn as that
+   *  word: its size is its own line box, as the title's is, since libass's size metric runs small. */
+  function gmTextOf(button: HTMLElement): { text?: string; textSize?: number; textWeight?: number } {
+    const text = button.dataset.gmText?.trim()
+    if (!text) return {}
+    const style = getComputedStyle(button)
+    const range = document.createRange()
+    range.selectNodeContents(button)
+    const line = range.getBoundingClientRect().height
+    const cssSize = Number.parseFloat(style.fontSize)
+    const weight = Number.parseInt(style.fontWeight, 10)
+    return {
+      text,
+      textSize: Math.max(Number.isFinite(cssSize) ? cssSize : 0, Number.isFinite(line) ? line : 0),
+      textWeight: Number.isFinite(weight) ? weight : 600,
+    }
   }
 
   function measureNativeChrome() {
@@ -1325,6 +1433,7 @@
               label: button.getAttribute('aria-label') ?? '',
               focused: document.activeElement === button,
               primary: button.classList.contains('gm-play'),
+              ...gmTextOf(button),
             }
           })
       : []
@@ -1348,10 +1457,11 @@
     const s = get(scrub)
     // The exact HTML pill is snapshotted in Game mode. Native text is fallback-only so we never
     // stack the simplified ASS chip over the polished button.
-    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
+    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? skipLabel : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
     const nativeControls = liveControls && gmNativeControls
-    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
+    const ratingShowing = ratingShownAt > 0 && Date.now() - ratingShownAt < RATING_CARD_MS
+    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText || ratingShowing)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -1367,7 +1477,9 @@
       measureSeekBar()
       if (lastBar.w > 0) lastBarLayoutKey = barLayoutKey
     }
-    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}`
+    // The words on the bar's text buttons come and go with the tracks, so they are part of the key.
+    const gmTexts = [...document.querySelectorAll<HTMLElement>('[data-gm-control-root] [data-gm-text]')].map((button) => button.dataset.gmText).join(',')
+    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}:${gmTexts}`
     const chrome = nativeControls
       ? (lastChrome.controlItems.length > 0 && lastChromeLayoutKey === chromeLayoutKey
           ? lastChrome
@@ -1408,7 +1520,11 @@
         kind: segment.type,
       })),
       chapterMarks: chapters.map((chapter) => chapter.time),
+      ratingLabel: ratingShowing ? ratingLabel : '',
+      ratingDetail: ratingShowing ? ratingDetail : '',
+      ratingShownAt: ratingShowing ? ratingShownAt : 0,
       ...chrome,
+      ...gmTheme,
     }
   }
 
@@ -1436,7 +1552,7 @@
   }
 
   $effect(() => {
-    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
+    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters; gmTheme; $playerOverlayRev
     scheduleGmDynamicOverlay()
   })
 
@@ -1604,7 +1720,7 @@
       }
       switch (e.payload.name) {
         case 'a':
-          if (showSkip && currentSeg) seekTo(currentSeg.end + 0.5)
+          if (showSkip && currentSeg) skipSegment()
           else togglePlayback()
           break
         case 'b':
@@ -1810,7 +1926,7 @@
         const t = nextChapterTarget(chapters, transportPos)
         if (t !== null) seekTo(t)
       }
-      else if (action === 'playerSkipSegment' && currentSeg) seekTo(currentSeg.end + 0.5)
+      else if (action === 'playerSkipSegment' && currentSeg) skipSegment()
       else if (action === 'playerVolumeUp') cmd('add', ['volume', '5'])
       else if (action === 'playerVolumeDown') cmd('add', ['volume', '-5'])
       else if (action === 'playerMute') cmd('cycle', ['mute'])
@@ -1896,7 +2012,6 @@
         })
         .finally(() => { recoveryBusy = false })
     }, 1_000)
-    poke()
     return () => {
       uns.forEach((u) => u.then((f) => f()))
       window.removeEventListener('pointerup', endStuckScrub)
@@ -1914,7 +2029,7 @@
      advances instead of looping a keyframe). Keys are handled by the CAPTURE-phase listener in
      onMount (above) — NOT here — so they never leak to the spatial nav and move focus. -->
 <!-- Keys and presses that poke() never sees (an unbound key, a click on the scrim) still count as input for the paused summary. -->
-<svelte:window onmousemove={poke} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
+<svelte:window onmousemove={onPointerMove} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
@@ -2018,7 +2133,18 @@
     </div>
   {/if}
 
-  {#if drmActive && $nowPlayingStream.drm}
+  {#if drmNative && $nowPlayingStream.drm}
+    <NativeDrmSurface
+      url={$nowPlayingStream.url}
+      drm={$nowPlayingStream.drm}
+      startSeconds={$nowPlayingStream.startSeconds ?? 0}
+      subtitles={$nowPlayingStream.subtitles}
+      audioLang={$nowPlayingStream.audioLang ?? ''}
+      audioChoices={$nowPlayingStream.audioTracks}
+      previewUrl={$nowPlayingStream.previewUrl ?? ''}
+      onclose={() => void close()}
+    />
+  {:else if drmActive && $nowPlayingStream.drm}
     <DrmSurface
       url={$nowPlayingStream.url}
       drm={$nowPlayingStream.drm}
@@ -2057,13 +2183,26 @@
       class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
       class:bg-black={!firstFrame}
     >
-      <!-- Game mode: stepped spin (8 frames/s) — a continuously-animating spinner makes every
-           overlay snapshot differ, so the unchanged-frame skip never fires exactly when the
-           device is busiest (buffering). Desktop keeps the smooth spin. -->
-      <div
-        class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"
-        style={gmMode ? 'animation-timing-function: steps(8)' : ''}
-      ></div>
+      <!-- One ring for every playback wait, the same as the connecting screen's and in the same
+           place, so starting playback shows one loader from the press to the picture. -->
+      <Spinner size="player" />
+    </div>
+  {:else if loading && !firstFrame && $gmFrozenFrame == null}
+    <!-- Game mode before mpv's window is up (a protected stream fetches its licence first): mpv's
+         own spinner cannot draw yet, so the page draws the same ring in the same place, colour and
+         turn (Spinner `player`) and the handover to it does not show. -->
+    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
+      <Spinner size="player" />
+    </div>
+  {/if}
+
+  {#if ratingShownAt && ratingLabel && !gmBitmapMode}
+    <div data-part="player.rating" class="izumi-hud pointer-events-none absolute right-10 top-8 flex items-center gap-3 transition-opacity duration-700 ease-out" style:opacity={ratingOn ? 1 : 0}>
+      <div class="text-right text-sm text-white/70">
+        <div class="font-semibold uppercase tracking-wide text-white/90">Rating</div>
+        {#if ratingDetail}<div>{ratingDetail}</div>{/if}
+      </div>
+      <div class="grid h-12 min-w-12 place-items-center rounded-md border-2 border-white/80 px-2 text-2xl font-black text-white">{ratingLabel}</div>
     </div>
   {/if}
 
@@ -2088,15 +2227,15 @@
   {#if showSkip && currentSeg}
     <button
       data-part="player.skip" data-kind={currentSeg.type}
-      data-focusable data-theme-unthemed={gmMode || undefined}
+      data-focusable data-theme-unthemed={gmMode || undefined} use:protectedSurface={gmMode}
       transition:fade={{ duration: gmMode ? 0 : 150 }}
       class="izumi-hud absolute z-10 font-bold
         {gmMode
           ? 'bottom-36 right-10 rounded-full bg-white px-8 py-3.5 text-2xl tracking-wide text-black shadow-[0_10px_32px_rgba(0,0,0,.45)]'
           : 'bottom-28 right-8 rounded-lg border border-white/20 bg-black/70 px-5 py-2.5 text-sm text-white transition hover:bg-black/90'}"
-      onclick={(e) => { e.stopPropagation(); seekTo(currentSeg.end + 0.5) }}
+      onclick={(e) => { e.stopPropagation(); skipSegment() }}
     >
-      Skip {currentSeg.label}
+      {skipLabel}
     </button>
   {/if}
 

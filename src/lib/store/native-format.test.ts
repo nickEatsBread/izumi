@@ -115,4 +115,24 @@ describe('native store index', () => {
     expect(skipped).toBe(2)
     expect(() => parseNativeStore(store([], { id: 'prototype' }), STORE_URL, 's')).toThrow('id or name')
   })
+
+  it('lists a native package only with a build for this device, and installs that build', () => {
+    const builds = {
+      'linux-x86_64': { url: 'https://x.test/linux.izumi-ext', sha256: HASH, bytes: 10 },
+      'windows-x86_64': { url: 'https://x.test/windows.izumi-ext', sha256: 'b'.repeat(64), bytes: 20 },
+    }
+    const doc = store([
+      { kind: 'source', sourceType: 'package', id: 'native-source', name: 'Native', version: '1.0.0', backend: 'izumi-service', builds },
+      { kind: 'source', sourceType: 'package', id: 'broken-builds', name: 'Broken', version: '1.0.0', builds: ['x'] },
+    ])
+    const linux = parseNativeStore(doc, STORE_URL, 's', 'linux-x86_64')
+    expect(linux.skipped).toBe(1)
+    const entry = linux.entries[0]
+    expect(entry.install.type === 'package' && entry.install.pkg).toMatchObject({ package: 'https://x.test/linux.izumi-ext', packageBytes: 10, backend: 'izumi-service' })
+    const windows = parseNativeStore(doc, STORE_URL, 's', 'windows-x86_64').entries[0]
+    expect(windows.install.type === 'package' && windows.install.pkg).toMatchObject({ package: 'https://x.test/windows.izumi-ext' })
+    const mac = parseNativeStore(doc, STORE_URL, 's', 'macos-aarch64')
+    expect(mac.entries).toEqual([])
+    expect(mac.skipped).toBe(1)
+  })
 })

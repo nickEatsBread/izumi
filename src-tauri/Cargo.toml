@@ -25,6 +25,8 @@ bench = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Builds the Linux Widevine host shim (native/widevine/host.cc); unused on other targets.
+cc = "1"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

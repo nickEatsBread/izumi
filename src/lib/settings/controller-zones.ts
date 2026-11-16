@@ -43,11 +43,14 @@ function pageKey(pathname: string): string {
 }
 
 /** Where Right or A lands in `pane`: the control last focused on page `path` while it is still
- *  there, else the pane's first control. null for an empty pane. */
+ *  there, else the control the page marks `data-pane-entry` (the current value, say), else the
+ *  pane's first control. null for an empty pane. */
 export function paneEntryTarget(pane: ParentNode, path: string = location.pathname): HTMLElement | null {
   const remembered = lastRows.get(pageKey(path))
   const hit = remembered ? resolveFocus(remembered, pane) : null
   if (hit && isNavigable(hit)) return hit
+  const entry = pane.querySelector<HTMLElement>('[data-pane-entry]')
+  if (entry && isNavigable(entry)) return entry
   return [...pane.querySelectorAll<HTMLElement>('[data-focusable]')].find(isNavigable) ?? null
 }
 

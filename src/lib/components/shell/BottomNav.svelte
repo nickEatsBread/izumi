@@ -19,6 +19,7 @@
     trakt: () => 'Trakt',
     letterboxd: () => 'Letterboxd',
     library: () => 'Library',
+    browse: () => 'Browse',
   }
 
   const bottom = $derived($effectiveNav.filter((c) => c.placement === 'bottom'))

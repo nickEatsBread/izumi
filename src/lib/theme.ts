@@ -23,11 +23,20 @@ const FONT_STACKS: Record<StudioTheme['font'], string> = {
 }
 
 const THEME_STYLE_ID = 'izumi-theme-css'
+/** Whether a stylesheet follows `style` in <head>. Only one can outrank it, and moving the theme's
+ *  stylesheet restyles the whole page (~0.35 s on the Deck's Home): every lazily loaded chunk appends
+ *  a modulepreload <link>, which must not cost that. */
+export function stylesheetAfter(style: Element): boolean {
+  for (let next = style.nextElementSibling; next; next = next.nextElementSibling) {
+    if (next instanceof HTMLStyleElement || (next instanceof HTMLLinkElement && next.rel.split(/\s+/).includes('stylesheet'))) return true
+  }
+  return false
+}
 /** Code-split routes and dev tooling append their own styles to <head> later; keep the theme's
- *  stylesheet last so an equally specific theme rule still wins. */
+ *  stylesheet after them so an equally specific theme rule still wins. */
 function keepThemeStyleLast(): void {
   const style = document.getElementById(THEME_STYLE_ID)
-  if (style && style !== document.head.lastElementChild) document.head.append(style)
+  if (style && stylesheetAfter(style)) document.head.append(style)
 }
 /** Whether the active theme's stylesheet is in effect; the Themes page shows rejections. */
 export const themeCssStatus = writable<{ state: 'off' | 'applied' | 'rejected'; reason?: string }>({ state: 'off' })
@@ -35,8 +44,10 @@ const TOKEN_NAMES = ['background', 'foreground', 'muted', 'muted-foreground', 'p
 
 function applyThemeCss(text: string | undefined): void {
   const existing = document.getElementById(THEME_STYLE_ID)
-  const scoped = scopeSupported()
-  if (!text || (!scoped && get(protectedSurfaceCount) > 0)) {
+  // Plain rules restyle far faster than `@scope`, so the scoped form that keeps the theme off protected
+  // surfaces is only used while one is mounted. Without `@scope` the stylesheet is removed instead.
+  const scoped = get(protectedSurfaceCount) > 0
+  if (!text || (scoped && !scopeSupported())) {
     existing?.remove()
     if (get(themeCssStatus).state !== 'off') themeCssStatus.set({ state: 'off' })
     return
@@ -57,9 +68,12 @@ function applyThemeCss(text: string | undefined): void {
   const style = existing ?? Object.assign(document.createElement('style'), { id: THEME_STYLE_ID })
   if (style.textContent !== content) style.textContent = content
   // Last in <head>, so an equally specific theme rule beats the app's own.
-  if (!existing || style !== document.head.lastElementChild) document.head.append(style)
+  if (!existing || stylesheetAfter(style)) document.head.append(style)
   if (get(themeCssStatus).state !== 'applied') themeCssStatus.set({ state: 'applied' })
 }
+
+/** The active theme's stylesheet text, as `apply()` last resolved it. */
+let themeCss: string | undefined
 
 /** The px a viewport unit is worth right now, for pinViewportUnits (Game mode only). */
 function syncViewportUnits(): void {
@@ -126,8 +140,9 @@ function apply() {
   if (customActive && get(tvSurface) && !get(isMobile)) root.dataset.surface = 'tv'
   else delete root.dataset.surface
   root.dataset.themeDensity = presentation?.density ?? 'comfortable'
-  // On an Android TV the rendered placement can differ from the theme's shared `shell.nav` (API 6).
-  root.dataset.themeNav = get(isTv) ? get(shellNav) : presentation?.shell?.nav ?? 'sidebar'
+  // The rendered placement, which can differ from the theme's shared `shell.nav`: an Android TV's (API 6),
+  // and Game mode's drawer when a theme names none. Phones keep the theme's own value.
+  root.dataset.themeNav = get(isTv) || !get(isMobile) ? get(shellNav) : presentation?.shell?.nav ?? 'sidebar'
   root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
   root.classList.toggle('theme-hide-labels', !!presentation?.hideCardLabels)
   root.classList.toggle('theme-shell-compact', !!presentation?.shell?.compact)
@@ -158,7 +173,8 @@ function apply() {
   root.classList.toggle('a11y-large-targets', get(largeInteractionTargets))
   root.classList.toggle('a11y-reduce-motion', get(motionPreference) === 'reduce')
   root.classList.toggle('a11y-full-motion', get(motionPreference) === 'full')
-  applyThemeCss(customActive ? studio.css : undefined)
+  themeCss = customActive ? studio.css : undefined
+  applyThemeCss(themeCss)
 }
 
 let started = false
@@ -168,8 +184,11 @@ export function startThemeSync(): () => void {
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
     effectiveThemePreset, highContrast, largeInteractionTargets, motionPreference,
-    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, protectedSurfaceCount, gameMode,
+    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, gameMode,
   ].map((store) => store.subscribe(apply))
+  // A surface opening or closing changes only the stylesheet's form, never <html>: Game mode's OSD colours
+  // watch <html> and open a surface to read them, which would otherwise feed back into themselves.
+  subscriptions.push(protectedSurfaceCount.subscribe(() => applyThemeCss(themeCss)))
   media.addEventListener('change', apply)
   // The Deck's page zoom changes the viewport (1:1 under the player), and so what a unit is worth.
   window.addEventListener('resize', syncViewportUnits)

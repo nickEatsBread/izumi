@@ -11,7 +11,7 @@ describe('TV surface wiring (API 6)', () => {
   it('derives the TV surface from Android TV or Game mode and resolves the TV block there', () => {
     expect(runtime).toContain("export const tvSurface = derived([isTv, gameMode], ([tv, gm]) => tv || gm)")
     expect(runtime).toContain('resolvePresentation(layout, mobile, tv)')
-    expect(runtime).toContain('shellNavFor(mobile, tv, layout, presentation)')
+    expect(runtime).toContain('shellNavFor(mobile, tv, layout, presentation, gm)')
   })
 
   it('publishes data-surface on the document only while a theme is active on a TV surface', () => {

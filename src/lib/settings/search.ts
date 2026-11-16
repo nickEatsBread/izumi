@@ -151,6 +151,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Adaptive source planner', category: 'Playback', section: 'playback', subcategory: 'advanced', advanced: true, href: '/app/settings/playback', keywords: 'learn local reliability preview shadow agent automatic ranking', key: 'adaptive-source-planner' },
   { title: 'Add-on sources', category: 'Sources and store', href: '/app/settings/sources/manage', section: 'sources', subcategory: 'my-sources', keywords: 'stremio manifest url torrent debrid add install' },
   { title: 'Mark best releases', category: 'Playback', section: 'playback', subcategory: 'advanced', advanced: true, href: '/app/settings/playback', keywords: 'seadex releases.moe curated encode quality badge recommended', key: 'mark-best-releases' },
+  { title: 'Protected video', category: 'Playback', section: 'playback', subcategory: 'advanced', advanced: true, href: '/app/settings/playback', keywords: 'widevine drm encrypted module licence google linux steam deck', key: 'protected-video-module', hideOn: ['lite'] },
   { title: 'Source priority', category: 'Sources and store', href: '/app/settings/sources', section: 'sources', subcategory: 'priority', keywords: 'order trust prefer strict addon extension provider first reorder', key: 'source-priority' },
   { title: 'Default discussion source', category: 'Sources and store', href: '/app/settings/sources', section: 'sources', subcategory: 'discussion', keywords: 'comments reddit anilist mal youtube disqus forum', key: 'default-discussion-source' },
 
@@ -174,6 +175,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Themes', category: 'Appearance', href: '/app/settings/themes', section: 'appearance', subcategory: 'theme', keywords: 'theme catalog gallery browse install link file folder community appearance layout izumi-themes' },
   { title: 'Theme Studio', category: 'Appearance', href: '/app/settings/theme-studio', section: 'appearance', subcategory: 'theme', keywords: 'custom theme colours palette typography font radius backdrop contrast import export appearance' },
   { title: 'Theme trailers', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'theme', keywords: 'video preview autoplay background banner hero series art muted motion', key: 'theme-trailers', desktopOnly: true },
+  { title: 'Startup intro', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'theme', keywords: 'animation intro boot splash video launch logo pack skip turn off disable', key: 'startup-animation' },
   { title: 'Motion', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'accessibility', keywords: 'animation reduce reduced motion transitions accessibility', key: 'motion' },
   { title: 'High contrast', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'accessibility', keywords: 'contrast wcag focus ring borders accessibility', key: 'high-contrast' },
   { title: 'Larger interaction targets', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'accessibility', keywords: 'large touch targets 44 accessibility', key: 'larger-interaction-targets' },
@@ -207,6 +209,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Save watch history on this device', category: 'Home and library', href: '/app/settings/library', section: 'library', subcategory: 'history', keywords: 'local progress privacy', key: 'save-watch-history-on-this-device' },
   { title: 'Incognito mode', category: 'Home and library', href: '/app/settings/library', section: 'library', subcategory: 'history', keywords: 'private browsing session ghost pause tracking sync anilist mal secret', key: 'incognito-mode' },
+  { title: 'Set up from a pack', category: 'Sources and store', href: '/app/settings/sources', section: 'sources', subcategory: 'store', keywords: 'pack bundle preset setup link install remove', key: 'packs-add' },
   { title: 'Store', category: 'Sources and store', href: '/app/settings/store', section: 'sources', subcategory: 'store', keywords: 'source store addons extensions themes marketplace discover install packages custom stores' },
   { title: 'Import & export history', category: 'Home and library', href: '/app/settings/library', section: 'library', subcategory: 'history', keywords: 'backup restore json xml', key: 'import-export-history' },
   { title: 'Clear watch history', category: 'Home and library', href: '/app/settings/library', section: 'library', subcategory: 'history', keywords: 'delete forget watched list', key: 'watched-history' },

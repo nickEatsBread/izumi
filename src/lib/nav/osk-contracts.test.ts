@@ -54,8 +54,9 @@ describe('the keyboard view (OnScreenKeyboard.svelte)', () => {
 describe('stacking', () => {
   const Z_LEVEL = /z-\[(\d+)\]|z-index:\s*(\d+)/g
   const levels = (file: string) => [...read(file).matchAll(Z_LEVEL)].map((match) => Number(match[1] ?? match[2]))
-  // Drawn above the keyboard on purpose: the first-run ident and the fatal error alert.
-  const ABOVE = ['lib/components/onboarding/IntroSequence.svelte', 'routes/+layout.svelte']
+  // Drawn above the keyboard on purpose: the first-run ident, a pack's startup animation and the
+  // fatal error alert.
+  const ABOVE = ['lib/components/onboarding/IntroSequence.svelte', 'lib/components/StartupAnimation.svelte', 'routes/+layout.svelte']
 
   it('puts the keyboard at 190, above every dialog, chooser and prompt', () => {
     expect(Math.max(...levels(KEYBOARD))).toBe(190)
@@ -65,7 +66,7 @@ describe('stacking', () => {
     expect(offenders).toEqual([])
   })
 
-  it('leaves only the intro ident and the fatal alert above it', () => {
+  it('leaves only the intro ident, the startup animation and the fatal alert above it', () => {
     for (const file of ABOVE) expect(Math.max(...levels(file)), file).toBe(200)
   })
 })
@@ -93,6 +94,7 @@ describe('outside-press closers', () => {
     'lib/nav/input.ts', // pointer modality; exempts a touch on the keys itself
     'lib/nav/osk.ts', // the keyboard's own outside-press close
     'lib/player/gm-touch-watchdog.ts', // Game-mode touch survival
+    'lib/util/image-warm.ts', // notes when the viewer pressed, so Home's background work waits; closes nothing
   ]
   const NINE = [
     'lib/components/catalog/CatalogSwitcher.svelte',

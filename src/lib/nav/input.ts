@@ -15,6 +15,14 @@ function leaveControllerMode() {
 }
 
 export function initInput() {
+  // WebKit counts a script's focus() as :focus-visible only after real key presses, and a
+  // controller's presses never reach it as keys: whatever a theme styles on :focus-visible showed
+  // izumi's plain white Game-mode ring under the pad instead (a white bar down the drawer). While
+  // the d-pad drives focus, every focus() is a visible one.
+  const focus = HTMLElement.prototype.focus
+  HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+    focus.call(this, get(inputType) === 'dpad' ? { focusVisible: true, ...options } : options)
+  }
   const usePointer = (event: PointerEvent) => {
     // A touch on the built-in keyboard is still the controller session that opened it (Game-mode
     // touch, a phone with a pad): keep controller mode so the rings and prompts stay. A mouse on the

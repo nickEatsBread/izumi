@@ -70,6 +70,13 @@ describe('Stremio catalog identity', () => {
     ])
   })
 
+  it('keeps a listing off Home, or offers only its plain row, when the add-on asks', () => {
+    const extra = [{ name: 'genre', options: ['Action', 'Comedy'] }]
+    expect(stremioCatalogVariants({ type: 'series', id: 'az', name: 'A-Z', extra, izumi: { home: false } })).toEqual([])
+    expect(stremioCatalogVariants({ type: 'series', id: 'top', name: 'Popular', extra, izumi: { homeFilters: false } })
+      .map(({ extra: filters, defaultEnabled }) => ({ filters, defaultEnabled }))).toEqual([{ filters: {}, defaultEnabled: true }])
+  })
+
   it('materializes required year catalogs but skips required history inputs it cannot invent', () => {
     expect(stremioCatalogVariants({
       type: 'series', id: 'year', name: 'New',
@@ -203,9 +210,22 @@ describe('Stremio catalog identity', () => {
       },
     }])
     expect(rows[0].id).toBe('continue')
+    // Every row keeps its own id: Home looks rows up by it.
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length)
     expect(rows.slice(1).map((row) => ({ title: row.title, group: row.group, defaultEnabled: row.defaultEnabled }))).toEqual([
       { title: 'Watchlist Movies', group: 'Trakt lists · Movies', defaultEnabled: false },
       { title: 'Recommendations TV', group: 'Trakt lists · TV', defaultEnabled: false },
     ])
+  })
+})
+
+describe('a source catalog title page', () => {
+  it('opens the details a source gives for its id, whatever title the card that opened it showed', async () => {
+    // A source's banner card read "… S3" while its meta names the series: the title check threw the
+    // details away and the page showed the card alone, with no episodes.
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const source = readFileSync(fileURLToPath(new URL('./stremio.ts', import.meta.url)), 'utf8')
+    expect(source).toContain('const expected: StremioIdentity = summary && !sourceAddonInfo ? {')
   })
 })
