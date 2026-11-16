@@ -24,6 +24,7 @@ src-tauri/gen/
 !/docs/drm-device-provisioning.md
 !/docs/recommendation-evaluation/
 !/docs/navigator-player-and-ai-jump.md
+!/docs/theme-api-8.md
 
 /distnet/
 
