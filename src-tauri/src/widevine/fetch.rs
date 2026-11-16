@@ -17,8 +17,18 @@ use std::path::{Path, PathBuf};
 
 const APP_ID: &str = "oimompecagnajdejgnnjijobebaeigek";
 const UPDATE_URL: &str = "https://update.googleapis.com/service/update2/json";
+
+// The module's file name and CRX sub-path differ by platform. The module itself is the same code
+// Google ships to its browsers; izumi only ever loads it, never bundles it.
+#[cfg(target_os = "windows")]
+const SO_ENTRY: &str = "_platform_specific/win_x64/widevinecdm.dll";
+#[cfg(target_os = "windows")]
+pub const SO_NAME: &str = "widevinecdm.dll";
+#[cfg(not(target_os = "windows"))]
 const SO_ENTRY: &str = "_platform_specific/linux_x64/libwidevinecdm.so";
+#[cfg(not(target_os = "windows"))]
 pub const SO_NAME: &str = "libwidevinecdm.so";
+
 const MAX_CRX_BYTES: u64 = 64 << 20;
 /// CDM module version and host interfaces the izumi host speaks.
 const MODULE_VERSION: &str = "4";
@@ -44,6 +54,12 @@ pub struct Installed {
     pub interface: i32,
 }
 
+/// The update-service platform name: the OS whose module build we want offered.
+#[cfg(target_os = "windows")]
+const PLATFORM: &str = "win";
+#[cfg(not(target_os = "windows"))]
+const PLATFORM: &str = "Linux";
+
 pub fn update_request() -> Value {
     json!({ "request": {
         // The service answers "error-inexpressible" unless the full format list is advertised; we
@@ -52,7 +68,7 @@ pub fn update_request() -> Value {
         // A deliberately old version makes the service offer a full download rather than a diff.
         "apps": [{ "appid": APP_ID, "installsource": "ondemand", "updatecheck": {}, "version": "1.0.0.0" }],
         "dedup": "cr", "ismachine": false, "arch": "x64",
-        "os": { "arch": "x64", "platform": "Linux" },
+        "os": { "arch": "x64", "platform": PLATFORM },
         "protocol": "4.0", "updaterversion": "151.0.7922.173"
     }})
 }
@@ -129,10 +145,23 @@ pub fn check_manifest(manifest: &[u8]) -> Result<(String, i32)> {
     Ok((version, interface.parse()?))
 }
 
-fn check_elf_x86_64(so: &[u8]) -> Result<()> {
+/// The module binary must be a 64-bit x86-64 object of the host's kind: an ELF .so elsewhere, a PE
+/// .dll on Windows. Only the header is read.
+#[cfg(not(target_os = "windows"))]
+fn check_module_x86_64(so: &[u8]) -> Result<()> {
     // e_ident: ELF magic, 64-bit, little-endian; e_machine at 18 = 0x3E (x86-64).
     ensure!(so.len() > 20 && &so[..4] == b"\x7fELF" && so[4] == 2 && so[5] == 1, "not a 64-bit ELF library");
     ensure!(u16::from_le_bytes([so[18], so[19]]) == 0x3e, "module is not built for x86-64");
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn check_module_x86_64(dll: &[u8]) -> Result<()> {
+    // MZ header, then the PE header offset at 0x3C, then "PE\0\0" and Machine 0x8664 (AMD64).
+    ensure!(dll.len() > 0x40 && &dll[..2] == b"MZ", "not a PE library");
+    let pe = u32::from_le_bytes([dll[0x3c], dll[0x3d], dll[0x3e], dll[0x3f]]) as usize;
+    ensure!(pe + 6 <= dll.len() && &dll[pe..pe + 4] == b"PE\0\0", "not a PE library");
+    ensure!(u16::from_le_bytes([dll[pe + 4], dll[pe + 5]]) == 0x8664, "module is not built for x86-64");
     Ok(())
 }
 
@@ -189,15 +218,22 @@ fn write_dir(dest: &Path, manifest: &[u8], license: Option<&[u8]>, so: &[u8]) ->
 }
 
 fn installed_at(dir: &Path) -> Result<Installed> {
-    let (version, interface) = check_manifest(&fs::read(dir.join("manifest.json"))?)?;
-    let library = dir.join(SO_NAME);
-    let mut head = [0u8; 64];
-    fs::File::open(&library)?.read_exact(&mut head)?;
-    check_elf_x86_64(&head)?;
-    Ok(Installed { version, dir: dir.to_owned(), library, interface })
+    installed_with_library(dir, &dir.join(SO_NAME))
 }
 
-/// Newest valid accepted module under `<data>/widevine/`, if any.
+/// Validates the manifest in `dir` and the module binary at `library` (which may sit in a
+/// platform-specific sub-folder, as a browser runtime lays it out).
+fn installed_with_library(dir: &Path, library: &Path) -> Result<Installed> {
+    let (version, interface) = check_manifest(&fs::read(dir.join("manifest.json"))?)?;
+    // Enough for an ELF e_machine and a PE header (whose offset can sit a few hundred bytes in).
+    let mut head = [0u8; 1024];
+    let read = fs::File::open(library)?.read(&mut head)?;
+    check_module_x86_64(&head[..read])?;
+    Ok(Installed { version, dir: dir.to_owned(), library: library.to_owned(), interface })
+}
+
+/// Newest valid accepted module under `<data>/widevine/`, if any. On Windows a copy that a browser
+/// runtime already ships is preferred over a download, so the user never has to fetch it.
 pub fn installed(data_dir: &Path) -> Option<Installed> {
     if !consented(data_dir) {
         return None;
@@ -210,7 +246,49 @@ pub fn installed(data_dir: &Path) -> Option<Installed> {
         .filter_map(|e| installed_at(&e.path()).ok())
         .collect();
     found.sort_by_key(|i| version_key(&i.version));
+    #[cfg(target_os = "windows")]
+    if let Some(system) = system_module() {
+        // Prefer whichever is newer: a downloaded module or the one a browser runtime ships.
+        if found.last().is_none_or(|f| version_key(&system.version) >= version_key(&f.version)) {
+            return Some(system);
+        }
+    }
     found.pop()
+}
+
+/// A `widevinecdm.dll` a Microsoft Edge WebView2 runtime, Edge or Chrome already ships, preferred in
+/// that order. WebView2 is the engine izumi's own webview uses, so it is the most reliable to find.
+/// `IZUMI_WIDEVINE_NO_SYSTEM=1` forces a downloaded module instead (diagnosis, and test isolation).
+#[cfg(target_os = "windows")]
+fn system_module() -> Option<Installed> {
+    if std::env::var_os("IZUMI_WIDEVINE_NO_SYSTEM").is_some() {
+        return None;
+    }
+    let roots = [
+        std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("Microsoft\\EdgeWebView\\Application")),
+        std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("Microsoft\\Edge\\Application")),
+        std::env::var_os("ProgramFiles").map(|p| PathBuf::from(p).join("Google\\Chrome\\Application")),
+        std::env::var_os("ProgramFiles(x86)").map(|p| PathBuf::from(p).join("Google\\Chrome\\Application")),
+        std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("Google\\Chrome\\Application")),
+    ];
+    let mut best: Option<Installed> = None;
+    for application in roots.into_iter().flatten().filter(|p| p.is_dir()) {
+        // Each browser version is a numbered folder; a WidevineCdm sits inside the newest that has one.
+        let Ok(entries) = fs::read_dir(&application) else { continue };
+        for version_dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+            let cdm = version_dir.join("WidevineCdm");
+            let dll = cdm.join("_platform_specific").join("win_x64").join(SO_NAME);
+            if !dll.is_file() {
+                continue;
+            }
+            if let Ok(found) = installed_with_library(&cdm, &dll) {
+                if best.as_ref().is_none_or(|b| version_key(&found.version) >= version_key(&b.version)) {
+                    best = Some(found);
+                }
+            }
+        }
+    }
+    best
 }
 
 pub fn consented(data_dir: &Path) -> bool {
@@ -228,7 +306,7 @@ fn unpack(offer: &Offer, crx: &[u8]) -> Result<(Vec<u8>, Option<Vec<u8>>, Vec<u8
     ensure!(version == offer.version, "package version {version} != offered {}", offer.version);
     let license = read_entry(&mut zip, "LICENSE").ok();
     let so = read_entry(&mut zip, SO_ENTRY)?;
-    check_elf_x86_64(&so)?;
+    check_module_x86_64(&so)?;
     Ok((manifest, license, so))
 }
 
@@ -327,7 +405,9 @@ pub fn remove(data_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Keeps `keep` and drops every other installed version (called once `keep` has loaded).
+/// Keeps `keep` and drops every other installed version (called once `keep` has loaded by the Linux
+/// streaming player).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn prune_old(data_dir: &Path, keep: &str) {
     let Ok(entries) = fs::read_dir(root(data_dir)) else { return };
     for e in entries.flatten() {
@@ -399,13 +479,26 @@ mod tests {
         assert!(check_manifest(&manifest("12")).is_err());
     }
 
-    fn fake_elf() -> Vec<u8> {
+    /// A minimal valid header of the host's module kind, so check_module_x86_64 accepts it.
+    #[cfg(not(target_os = "windows"))]
+    fn fake_module() -> Vec<u8> {
         let mut so = vec![0u8; 64];
         so[..4].copy_from_slice(b"\x7fELF");
         so[4] = 2;
         so[5] = 1;
         so[18] = 0x3e;
         so
+    }
+    #[cfg(target_os = "windows")]
+    fn fake_module() -> Vec<u8> {
+        // MZ, PE header at offset 0x80 with Machine 0x8664 (AMD64).
+        let pe = 0x80usize;
+        let mut dll = vec![0u8; pe + 8];
+        dll[..2].copy_from_slice(b"MZ");
+        dll[0x3c..0x40].copy_from_slice(&(pe as u32).to_le_bytes());
+        dll[pe..pe + 4].copy_from_slice(b"PE\0\0");
+        dll[pe + 4..pe + 6].copy_from_slice(&0x8664u16.to_le_bytes());
+        dll
     }
 
     fn fake_crx(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
@@ -427,12 +520,37 @@ mod tests {
         crx
     }
 
+    /// A CRX unpacks to exactly the three files we use, verifying the module header and hash. Pure
+    /// logic (no filesystem), so it runs on every platform.
     #[test]
-    fn stages_only_named_files_and_installs_after_acceptance() {
+    fn unpack_keeps_only_named_files_and_checks_hash() {
         let crx = fake_crx(&[
             ("manifest.json", manifest("10,11")),
             ("LICENSE", b"module licence text".to_vec()),
-            (SO_ENTRY, fake_elf()),
+            (SO_ENTRY, fake_module()),
+            ("../escape.txt", b"ignored".to_vec()),
+        ]);
+        let offer = Offer { version: "4.10.3112.0".into(), size: crx.len() as u64, sha256: sha256_hex(&crx), urls: vec!["https://x".into()] };
+        let (manifest, license, module) = unpack(&offer, &crx).unwrap();
+        assert_eq!(check_manifest(&manifest).unwrap(), ("4.10.3112.0".into(), 11));
+        assert_eq!(license.as_deref(), Some(b"module licence text".as_slice()));
+        assert!(check_module_x86_64(&module).is_ok());
+
+        let mut tampered = crx.clone();
+        *tampered.last_mut().unwrap() ^= 1;
+        assert!(unpack(&offer, &tampered).is_err(), "hash mismatch must be refused");
+    }
+
+    // The install flow writes to a temp dir; that round trip is exercised on Linux (identical code).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn stages_only_named_files_and_installs_after_acceptance() {
+        // A browser's system copy must not stand in for the fake download on Windows.
+        std::env::set_var("IZUMI_WIDEVINE_NO_SYSTEM", "1");
+        let crx = fake_crx(&[
+            ("manifest.json", manifest("10,11")),
+            ("LICENSE", b"module licence text".to_vec()),
+            (SO_ENTRY, fake_module()),
             ("../escape.txt", b"ignored".to_vec()),
         ]);
         let offer = Offer { version: "4.10.3112.0".into(), size: crx.len() as u64, sha256: sha256_hex(&crx), urls: vec!["https://x".into()] };
@@ -446,7 +564,7 @@ mod tests {
         let got = accept(&data, "4.10.3112.0", "user").unwrap();
         assert_eq!(got.version, "4.10.3112.0");
         assert_eq!(got.interface, 11);
-        assert!(got.library.ends_with("widevine/4.10.3112.0/libwidevinecdm.so"));
+        assert!(got.library.ends_with(Path::new("widevine").join("4.10.3112.0").join(SO_NAME)));
         let names: Vec<_> = fs::read_dir(&got.dir).unwrap().flatten().map(|e| e.file_name()).collect();
         assert_eq!(names.len(), 3, "manifest.json, LICENSE and the library only: {names:?}");
         assert!(!data.join("escape.txt").exists() && !data.join("widevine/escape.txt").exists());

@@ -2,7 +2,13 @@
 // Otherwise the second controller fails with ERROR_INVALID_STATE after Tauri has already
 // returned a window handle. Keep login windows in the same environment as the main window.
 // Restate wry's defaults when adding the video-composition options used by capture.
+#[cfg(not(debug_assertions))]
 pub(crate) const DESKTOP_WEBVIEW_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-direct-composition-video-overlays";
+// Debug builds also open the WebView2 DevTools port so tooling can drive the UI. The window always
+// passes these flags, which is why WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS alone does nothing. A dev
+// build is not the shipped surface, so the open port costs nothing.
+#[cfg(debug_assertions)]
+pub(crate) const DESKTOP_WEBVIEW_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-direct-composition-video-overlays --remote-debugging-port=9223 --remote-allow-origins=*";
 
 /// Stable WKWebsiteDataStore UUID for `com.nicho.izumi.dev`.
 ///

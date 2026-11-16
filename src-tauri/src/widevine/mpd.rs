@@ -192,7 +192,8 @@ impl Manifest {
             .or_else(|| pool.iter().copied().min_by_key(|r| (r.height, std::cmp::Reverse(r.bandwidth))))
     }
 
-    /// Every distinct video height, highest first.
+    /// Every distinct video height, highest first (the Linux player's quality menu).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn heights(&self, codec: Option<&str>) -> Vec<u32> {
         let mut h: Vec<u32> = self
             .representations
