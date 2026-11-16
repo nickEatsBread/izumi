@@ -39,10 +39,11 @@ export function osSearchParams(q: SubQuery): string {
     p.moviebytesize = String(q.moviebytesize)
   }
   if (q.type === 'series') {
-    if (parent && q.season != null && q.episode != null) {
+    const episode = q.seasonEpisode ?? q.episode
+    if (parent && q.season != null && episode != null) {
       p.parent_imdb_id = parent
       p.season_number = String(q.season)
-      p.episode_number = String(q.episode)
+      p.episode_number = String(episode)
     }
   } else if (own) {
     p.imdb_id = own

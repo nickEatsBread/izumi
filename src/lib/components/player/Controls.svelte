@@ -67,7 +67,7 @@
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
-  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
+  import { providerBadge, candidateKey, isCandidateLoaded, subtitleErrorNotice, downloadArgs } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
@@ -929,15 +929,7 @@
   async function addOnlineSub(c: SubtitleCandidate) {
     downloadingKey = candidateKey(c)
     try {
-      await invoke('player_add_subtitle', {
-        provider: c.provider,
-        url: candidateDownloadUrl(c),
-        fileId: c.download?.fileId,
-        lang: c.lang ?? 'und',
-        title: candidateTitle(c),
-        apiKey: candidateApiKey(c.provider),
-        token: get(openSubtitlesToken),
-      })
+      await invoke('player_add_subtitle', downloadArgs(c, get(openSubtitlesToken)))
       tracks = JSON.parse(await playerTracks()) as Track[]
       subtitleNotice.set('')
       if ($subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
