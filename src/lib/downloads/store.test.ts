@@ -26,6 +26,7 @@ vi.mock('$lib/anizip', () => ({ getEpisodeMeta: async () => ({}) }))
 const nativeDrm = { on: false }
 vi.mock('$lib/player/native-drm', () => ({
   NOT_INSTALLED: 'widevine-not-installed',
+  PROTECTED_SAVE_SETUP: "Protected episodes can't be saved on this device yet. Set up Protected video in Settings › Playback, then try again.",
   usesNativeDrm: (drm: { licenseUrl?: string } | undefined) => nativeDrm.on && !!drm?.licenseUrl,
 }))
 vi.mock('$lib/net/http', () => ({
@@ -275,6 +276,24 @@ describe('protected episodes on Linux, through the native Widevine module', () =
       sourceOriginId: 'example.source', quality: '1080p', bytes: 600,
     })
     await vi.waitFor(() => expect(calls('ext_fetch')[0]?.[1]).toMatchObject({ url: shaka.drm.releaseUrl, method: 'DELETE' }))
+  })
+
+  it('says where to set protected video up when the module is not set up, instead of the raw code', async () => {
+    nativeDrm.on = true
+    resolveDownloadUrl.mockResolvedValue(shaka)
+    invoke.mockImplementation(async (command: string) => {
+      if (command === 'widevine_save') throw new Error('widevine-not-installed')
+      return command === 'download_dir_default' ? '/downloads'
+        : command === 'widevine_save_folder' ? '/downloads/Test Anime - E2.protected'
+        : command === 'ext_fetch' ? { status: 200, body: '' } : undefined
+    })
+
+    enqueue(media, 2)
+    await vi.waitFor(() => expect(get(downloads)['7:2']?.status).toBe('error'))
+    const error = get(downloads)['7:2']?.error ?? ''
+    expect(error).toContain('Settings › Playback')
+    expect(error).not.toContain('widevine-not-installed')
+    expect(storeShakaOffline).not.toHaveBeenCalled()
   })
 
   it('pauses through the module and a cancel discards the folder', async () => {

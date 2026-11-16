@@ -23,7 +23,9 @@
   import { isAndroid, isAndroidTv, isWindows } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
   import { gameMode } from '$lib/player/session'
-  import { nativeDrmSupported } from '$lib/player/native-drm'
+  import { nativeDrmPlayback, nativeDrmSupported, type WidevineStatus } from '$lib/player/native-drm'
+  import WidevineConsentPanel from '$lib/components/player/WidevineConsentPanel.svelte'
+  import { navLayer } from '$lib/nav/overlay'
   import { modules, moduleOnItsWay, modulePercent, moduleProgressText, refreshModules, retryModules } from '$lib/modules/modules'
   import { invoke } from '@tauri-apps/api/core'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
@@ -47,26 +49,49 @@
   }
 
   let pendingAnime = $state(false) // shows the one-time shader consent
-  // Linux: Google's Widevine module, downloaded on the first protected stream after consent, or in
-  // the background when a pack asked for it.
+  // Google's Widevine module: plays protected streams on Linux and saves protected episodes on every
+  // desktop that builds the module host. Set up here (any platform), on the first protected stream
+  // (Linux), or in the background when a pack asked for it.
   let widevineBusy = $state(false)
+  let widevineSetup = $state(false) // the consent dialog, opened by "Set up"
+  let widevineOnDevice = $state<string | null>(null) // a browser's own copy: set up without a download
   const widevine = $derived($modules.widevine)
   const widevineVersion = $derived(widevine?.state === 'ready' ? widevine.version : null)
   const widevineLabel = $derived.by(() => {
-    if (!widevine) return 'Not installed'
     if (widevineVersion) return `Installed (${widevineVersion})`
-    if (moduleOnItsWay(widevine)) return `${moduleProgressText(widevine)}${widevine.state === 'downloading' ? ` (${modulePercent(widevine)}%)` : ''}`
+    if (widevine && moduleOnItsWay(widevine)) return `${moduleProgressText(widevine)}${widevine.state === 'downloading' ? ` (${modulePercent(widevine)}%)` : ''}`
+    if (widevineOnDevice) return 'Not set up (found on this device)'
     return 'Not installed'
   })
+  async function refreshWidevine() {
+    await refreshModules()
+    try {
+      widevineOnDevice = (await invoke<WidevineStatus>('widevine_status')).available ?? null
+    } catch { widevineOnDevice = null }
+  }
   $effect(() => {
-    if ($nativeDrmSupported) void refreshModules()
+    if ($nativeDrmSupported) void refreshWidevine()
   })
+  // The row serves saving everywhere and, on Linux, playback too; its copy says which.
+  const widevineCopy = $derived($nativeDrmPlayback
+    ? {
+        description: "Google's Widevine module, used to play encrypted streams and to download them for offline viewing.",
+        learnMore: "Set it up here, or it is offered the first time an encrypted stream plays; a pack you set up can also ask for it. You accept Google's licence first. Video is decrypted only in izumi's memory and decoded by the module, as in Chrome and Firefox on Linux. Downloads are saved decrypted, so they play offline with no licence. Removing it asks again next time.",
+      }
+    : {
+        description: "Google's Widevine module, used to download encrypted episodes for offline viewing.",
+        learnMore: "Set it up here, or a pack you set up can ask for it. You accept Google's licence first. When your browser already has the module, izumi uses that copy and downloads nothing; otherwise it downloads it from Google. Downloads are saved decrypted, so they play offline with no licence. Streaming encrypted video still plays in izumi's web player and does not use it. Removing it asks again next time.",
+      })
+  async function finishWidevineSetup() {
+    widevineSetup = false
+    await refreshWidevine()
+  }
   async function removeWidevine() {
     widevineBusy = true
     try {
       await invoke('widevine_remove')
     } catch { /* keep showing the installed version */ }
-    await refreshModules()
+    await refreshWidevine()
     widevineBusy = false
   }
   let qualityRow = $state<HTMLDivElement>()
@@ -473,7 +498,12 @@
       { value: 'off', label: 'Off' },
     ]} />
     {#if $nativeDrmSupported}
-      <SettingsRow settingKey="protected-video-module" title="Protected video" description="Google's Widevine module, used to play encrypted streams." learnMore="Downloaded from Google the first time an encrypted stream plays, after you accept Google's licence, or in the background when a pack you set up asks for it. Video is decrypted only in izumi's memory and decoded by the module, as in Chrome and Firefox on Linux. Removing it asks again next time.">
+      <SettingsRow
+        settingKey="protected-video-module"
+        title="Protected video"
+        description={widevineCopy.description}
+        learnMore={widevineCopy.learnMore}
+      >
         {#snippet control()}
           <span class="text-xs tabular-nums text-muted-foreground">{widevineLabel}</span>
           {#if widevine?.state === 'failed'}
@@ -481,9 +511,23 @@
           {/if}
           {#if widevineVersion || moduleOnItsWay(widevine)}
             <button type="button" data-focusable disabled={widevineBusy} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-60" onclick={() => void removeWidevine()}>Remove</button>
+          {:else}
+            <button type="button" data-focusable class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent" onclick={() => (widevineSetup = true)}>Set up</button>
           {/if}
         {/snippet}
       </SettingsRow>
+      {#if widevineSetup}
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Protected video"
+          tabindex="-1"
+          use:navLayer={{ kind: 'widevine-setup', onClose: () => void finishWidevineSetup() }}
+          class="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4"
+        >
+          <WidevineConsentPanel purpose="setup" localCopy={widevineOnDevice} onaccepted={() => void finishWidevineSetup()} ondeclined={() => void finishWidevineSetup()} />
+        </div>
+      {/if}
     {/if}
     <SettingsRow settingKey="mark-best-releases" title="Mark best releases" description="Badges the curated best release and lists it first at its resolution." learnMore="Checks a community-curated release list for the release its curators rate best for each title. It never picks a lower resolution than you would have got without it, and adds no source: it only annotates what your sources already found." onActivate={() => ($seadexAnnotations = !$seadexAnnotations)} pressed={$seadexAnnotations}>
       {#snippet control()}<SettingsSwitch value={$seadexAnnotations} onToggle={() => ($seadexAnnotations = !$seadexAnnotations)} label="Mark best releases" interactive={false} />{/snippet}

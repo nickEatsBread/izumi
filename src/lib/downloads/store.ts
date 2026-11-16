@@ -11,7 +11,7 @@ import { downloadTaskbarProgress } from './taskbar'
 import { formatBytes, formatSpeed } from '$lib/util/format'
 import type { Media } from '$lib/anilist/types'
 import { abortShakaOffline, removeShakaOffline, storeShakaOffline } from './shaka-offline'
-import { NOT_INSTALLED, usesNativeDrm } from '$lib/player/native-drm'
+import { NOT_INSTALLED, PROTECTED_SAVE_SETUP, usesNativeDrm } from '$lib/player/native-drm'
 import { invokeNativeHttp } from '$lib/net/http'
 import type { ResolvedDrmDownload, ResolvedShakaDownload } from '$lib/stremio/play'
 
@@ -210,9 +210,11 @@ async function runJob(item: DownloadItem) {
         await saveWithModule(item, r, dir)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
-        // The module is not installed on this machine (it is checked before any network or disk
-        // work, so nothing is left behind): decrypt with the bundled device instead.
-        if (r.kind !== 'drm' || !message.includes(NOT_INSTALLED)) throw e
+        if (!message.includes(NOT_INSTALLED)) throw e
+        // The module has not been set up here (checked before any network or disk work, so nothing is
+        // left behind). Only a `drm` source has another route, a Widevine device the user supplied
+        // themselves, and that route falls back again if there is none. Otherwise say where to fix it.
+        if (r.kind !== 'drm') throw new Error(PROTECTED_SAVE_SETUP)
         setItem(item.id, { kind: 'drm', path: undefined })
         await downloadWithDevice(item, r, dir)
       } finally {
