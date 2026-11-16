@@ -95,7 +95,17 @@ pub struct Representation {
     pub width: u32,
     pub height: u32,
     pub codecs: String,
+    /// The representation's (or its set's) mimeType, e.g. `audio/mp4`; empty when the manifest omits it.
+    pub mime: String,
     pub lang: Option<String>,
+}
+
+impl Representation {
+    /// An ISO-BMFF (MP4) file, the only container the protected path reads. A manifest that leaves
+    /// out mimeType is taken to be MP4, as the protected streams izumi handles always are.
+    pub fn is_mp4(&self) -> bool {
+        self.mime.is_empty() || self.mime.ends_with("/mp4")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +180,7 @@ pub fn parse(xml: &str, manifest_url: &str) -> Result<Manifest> {
                 width: num("width") as u32,
                 height: num("height") as u32,
                 codecs: rep.attr("codecs").or(set.attr("codecs")).unwrap_or("").to_string(),
+                mime: rep.attr("mimeType").or(set.attr("mimeType")).unwrap_or("").to_string(),
                 lang: set.attr("lang").or(rep.attr("lang")).map(str::to_string),
             });
         }
@@ -207,9 +218,11 @@ impl Manifest {
         h
     }
 
-    /// The audio representation in the preferred language when there is one, highest bitrate first.
+    /// The MP4 audio representation in the preferred language when there is one, highest bitrate first.
+    /// Other containers (a WebM/Opus rung beside the MP4 ones) are passed over: the protected path reads
+    /// only ISO-BMFF.
     pub fn audio(&self, lang: Option<&str>) -> Option<&Representation> {
-        let audio = || self.representations.iter().filter(|r| r.kind == Kind::Audio);
+        let audio = || self.representations.iter().filter(|r| r.kind == Kind::Audio && r.is_mp4());
         let wanted = lang.map(|l| l.to_ascii_lowercase());
         let matches = |r: &&Representation| {
             let Some(w) = wanted.as_deref() else { return false };
@@ -240,13 +253,16 @@ mod tests {
     <AdaptationSet contentType="audio" mimeType="audio/mp4" lang="ja-JP">
       <Representation id="a1" bandwidth="128000" codecs="mp4a.40.2"><BaseURL>cdn/a1.mp4</BaseURL><SegmentBase indexRange="1-2"/></Representation>
     </AdaptationSet>
+    <AdaptationSet contentType="audio" mimeType="audio/webm" lang="ja-JP">
+      <Representation id="a2" bandwidth="256000" codecs="opus"><BaseURL>cdn/a2.webm</BaseURL><SegmentBase indexRange="1-2"/></Representation>
+    </AdaptationSet>
   </Period>
 </MPD>"#;
 
     #[test]
     fn reads_on_demand_representations_and_pssh() {
         let m = parse(MPD, "http://127.0.0.1:8080/v/abc/manifest.mpd").unwrap();
-        assert_eq!(m.representations.len(), 4);
+        assert_eq!(m.representations.len(), 5);
         let best = m.video(None, Some("avc1")).unwrap();
         assert_eq!(best.id, "v1");
         assert_eq!(best.url, "http://127.0.0.1:8080/v/abc/cdn/v1.mp4?a=1&b=2");
@@ -255,6 +271,7 @@ mod tests {
         assert_eq!(m.heights(Some("avc1")), vec![1080, 720]);
         assert_eq!(m.audio(Some("jpn")).unwrap().id, "a1");
         assert_eq!(m.audio(Some("en")).unwrap().id, "a1", "falls back to any audio");
+        assert_eq!(m.audio(None).unwrap().id, "a1", "a higher-bitrate WebM rung is not MP4, so it is passed over");
         let pssh = m.pssh.unwrap();
         assert_eq!(&pssh[4..8], b"pssh");
     }
