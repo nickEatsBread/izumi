@@ -10,6 +10,7 @@
   import { preferredAudioLang, preferredSubLang } from '$lib/settings/ui'
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, waitForCatalog, withManifestQuery } from '$lib/player/preferred-drm'
   import { playerNotice } from '$lib/player/session'
+  import { assFontFamilies, fontsForFamilies, isAssSubtitle, parseSubtitleFonts, type SubtitleFont } from '$lib/player/ass-subtitles'
   import { langsEqual, normalizeLang } from '$lib/stremio/sublang'
   import { listenSafe } from '$lib/util/listen'
   import {
@@ -50,6 +51,7 @@
   let liveSubs: DrmSubtitle[] = []
   let liveAudio: DrmAudioChoice[] = []
   let liveAudioLang = ''
+  let subtitleFonts: SubtitleFont[] = []
   let previews: BifPreviews | null = null
   let activeManifest = ''
   let pos = 0
@@ -96,8 +98,10 @@
         subtitles?: Array<DrmSubtitle & { language?: string }>
         audioTracks?: Array<DrmAudioChoice & { language?: string }>
         previewUrl?: string
+        subtitleFonts?: unknown
       }
       if (typeof src.audioLang === 'string') liveAudioLang = src.audioLang
+      if (src.subtitleFonts !== undefined) subtitleFonts = parseSubtitleFonts(src.subtitleFonts)
       if (typeof src.previewUrl === 'string' && src.previewUrl) setPreviews(src.previewUrl)
       if (Array.isArray(src.subtitles)) {
         liveSubs = src.subtitles.map((t) => ({ url: t.url, lang: t.lang ?? t.language, title: t.title, isDefault: t.isDefault, kind: t.kind, switchUrl: t.switchUrl }))
@@ -106,6 +110,17 @@
         liveAudio = src.audioTracks.map((t) => ({ lang: t.lang ?? t.language, title: t.title, switchUrl: t.switchUrl }))
       }
     } catch { /* keep what the stream object carried */ }
+  }
+
+  /** mpv reads its font folder when a subtitle track opens, so the faces the source lists for these
+   *  scripts are put there first (see subtitle_fonts.rs). Files already kept are not fetched again. */
+  async function keepSubtitleFonts(urls: string[]): Promise<void> {
+    if (!subtitleFonts.length || !urls.length) return
+    const scripts = await Promise.all(urls.map((target) =>
+      fetch(target).then((res) => (res.ok ? res.text() : '')).catch(() => '')))
+    const families = scripts.filter((body, i) => isAssSubtitle(urls[i] ?? '', body)).flatMap(assFontFamilies)
+    const fonts = fontsForFamilies(subtitleFonts, families)
+    if (fonts.length) await invoke('subtitle_fonts_fetch', { urls: fonts.map((font) => font.url) })
   }
 
   function setPreviews(src: string) {
@@ -296,12 +311,15 @@
     },
   }
 
+  const FONT_WAIT_MS = 3_000
+
   async function load() {
     const gen = ++loadGen
     moduleOnly = false
     liveSubs = subtitles
     liveAudio = audioChoices
     liveAudioLang = audioLang
+    subtitleFonts = []
     activeManifest = ''
     heights = []
     activeHeight = 0
@@ -313,7 +331,7 @@
     // load is already the preferred presentation.
     await waitForCatalog(refreshCatalog(), DRM_CATALOG_WAIT_MS)
     if (gen !== loadGen) return
-    const initial = preferredDrmPresentation({
+    const pick = preferredDrmPresentation({
       url,
       audioLang: liveAudioLang || audioLang,
       subtitles: liveSubs,
@@ -321,7 +339,15 @@
       preferredAudio: get(preferredAudioLang),
       preferredSub: get(preferredSubLang),
       switchAudio: false,
-    }).url
+    })
+    const initial = pick.url
+    // The track that opens first gets its fonts before the stream starts (bounded); the others'
+    // arrive in the background, before anyone switches to them.
+    const first = pick.subtitles[0]?.url
+    const scripts = liveSubs.filter((t) => t.url && !t.switchUrl && t.kind !== 'captions').map((t) => t.url)
+    await waitForCatalog(keepSubtitleFonts(first && scripts.includes(first) ? [first] : []), FONT_WAIT_MS)
+    void keepSubtitleFonts(scripts.filter((target) => target !== first)).catch(() => {})
+    if (gen !== loadGen) return
     if (!(await embed(initial, startSeconds)) && gen === loadGen && initial !== url && new URL(initial).searchParams.get('hard')) {
       // A burned-in presentation that will not open falls back to the clean one.
       await embed(withManifestQuery(initial, { hard: undefined }), startSeconds)
