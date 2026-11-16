@@ -48,6 +48,11 @@ describe('direct P2P starvation stays buffering', () => {
     before(loaded, 'sidecar_gate.file_loaded()', 'attach_external_tracks(')
   })
 
+  it('desktop holds runtime subtitles until every file, not only a torrent, has loaded', () => {
+    // A sub-add during the file swap lands on the outgoing file or ahead of the new file's tracks.
+    expect(body(desktopPlayer, 'fn load_file(', '\n}\n')).toContain('sidecar_gate.begin_file(true)')
+  })
+
   it('desktop runtime subtitles wait for that restore', () => {
     for (const command of [
       body(desktopCommands, 'async fn player_attach_subtitle_url(', '\n}\n'),

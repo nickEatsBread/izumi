@@ -48,7 +48,7 @@
   import Cast from '@lucide/svelte/icons/cast'
   import { displayBinding, effectiveBinding, type HotkeyId } from '$lib/hotkeys'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, lateSubtitleRevision, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
@@ -781,11 +781,11 @@
     menuLevel = 'root'
     if (showTracks) await refreshTracks()
   }
-  // A sidecar can finish while this menu is already open. Refresh its live mpv snapshot after
-  // every successful sub-add so "Loading subtitles…" turns into selectable tracks in place. The
-  // settings sheet and the bar's Audio and Subtitles words read the same list.
+  // A sidecar or add-on subtitle can finish while this menu is already open. Refresh its live mpv
+  // snapshot after every successful sub-add so "Loading subtitles…" turns into selectable tracks in
+  // place. The settings sheet and the bar's Audio and Subtitles words read the same list.
   $effect(() => {
-    const revision = $torrentSubtitleState.revision
+    const revision = $torrentSubtitleState.revision + $lateSubtitleRevision
     if ((showTracks || showOptions || trackWords) && revision > 0) void refreshTracks()
   })
   // The words show only for a page that exists, so the bar needs the list as soon as it mounts.
