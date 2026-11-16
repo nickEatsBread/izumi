@@ -1,0 +1,256 @@
+name: macos-widevine
+
+# Proves izumi's own Widevine module host on macOS, through the app's code (src-tauri/src/widevine),
+# not a standalone harness: unit tests, then one live licence and one decrypted fragment against a
+# public test asset whose licence proxy needs no account. The arm64 job runs natively on Apple
+# silicon; the x86_64 job builds the Intel slice and runs it under Rosetta. Manual only; safe to rerun.
+#
+# Every cargo command runs from src-tauri (the crate root), as CI and release do.
+on:
+  # TEMPORARY: a workflow_dispatch workflow can only be dispatched once it is on the default branch,
+  # so the branch that adds it runs it on push. Removed before merge.
+  push:
+    branches: [feat/macos-widevine]
+  workflow_dispatch:
+    inputs:
+      manifest_url:
+        description: "Widevine DASH manifest (public test asset)"
+        required: false
+        default: "https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd"
+      license_url:
+        description: "Widevine licence server (public, no account)"
+        required: false
+        default: "https://cwip-shaka-proxy.appspot.com/no_auth"
+      full_save:
+        description: "Also run a whole save (decrypt audio, decode + re-encode video with ffmpeg) on arm64"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  IZUMI_LIVE_SAVE_MANIFEST: ${{ inputs.manifest_url || 'https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd' }}
+  IZUMI_LIVE_SAVE_LICENSE: ${{ inputs.license_url || 'https://cwip-shaka-proxy.appspot.com/no_auth' }}
+
+jobs:
+  arm64:
+    name: arm64 (native)
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Runner facts
+        run: |
+          uname -m; sw_vers
+          echo "proc_translated=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo n/a)"
+          csrutil status || true
+
+      - name: Google Chrome and its Widevine module
+        run: |
+          app="/Applications/Google Chrome.app"
+          [ -d "$app" ] || brew install --cask google-chrome
+          echo "Chrome $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          find "$app/Contents/Frameworks" -name libwidevinecdm.dylib | while IFS= read -r d; do
+            echo "$d [$(lipo -archs "$d")]"
+          done
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: macos-widevine-arm64
+
+      # libmpv2-sys links `-l mpv`; `cargo test` links, so Homebrew's libmpv must be on the linker
+      # path (same setup as release.yml). ffmpeg is the save's video re-encoder.
+      - name: libmpv + ffmpeg (Homebrew)
+        run: |
+          set -euo pipefail
+          brew install mpv ffmpeg || { brew link --overwrite openssl@3; brew install mpv ffmpeg; }
+          BREW="$(brew --prefix)"
+          echo "PKG_CONFIG_PATH=$BREW/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$BREW/lib" >> "$GITHUB_ENV"
+
+      - name: cargo check --lib
+        working-directory: src-tauri
+        run: cargo check --lib
+
+      - name: cargo test --lib widevine
+        working-directory: src-tauri
+        run: cargo test --lib widevine
+
+      - name: Set up the module through the app (Chrome's copy, no download)
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
+        run: cargo test --lib live_install_module -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/install-chrome.log"
+
+      - name: Live licence + decrypt through the app (Chrome's copy)
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
+        run: |
+          set -o pipefail
+          cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-chrome.log"
+
+      # The bundle's entitlements file, applied to the same test binary with the hardened runtime on (as
+      # a notarized build would be signed): codesign must accept the plist and the signed binary must
+      # still load Google's dylib and license. Hosted runners have SIP off, so library validation is
+      # not enforced here and this cannot show what happens WITHOUT the entitlement on a user's Mac.
+      - name: Live licence, hardened runtime + Entitlements.plist (ad-hoc)
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
+        run: |
+          set -euo pipefail
+          bin="$(cargo test --lib --no-run --message-format=json 2>/dev/null \
+            | python3 -c 'import sys,json
+          for l in sys.stdin:
+              m=json.loads(l)
+              if m.get("reason")=="compiler-artifact" and m.get("executable") and m["target"]["kind"]==["lib"]: print(m["executable"])' | tail -1)"
+          signed="$RUNNER_TEMP/izumi-lib-tests-hardened"
+          cp "$bin" "$signed"
+          codesign --force --sign - --options runtime --entitlements Entitlements.plist "$signed"
+          codesign -dv "$signed" 2>&1 | grep -E 'flags=|Signature='
+          codesign -d --entitlements - "$signed" 2>&1 | tail -n +1
+          "$signed" live_licence_keys_arrive --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-hardened.log"
+
+      - name: Set up the module through the app (downloaded from Google)
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-download
+          IZUMI_WIDEVINE_NO_SYSTEM: "1"
+        run: |
+          set -o pipefail
+          cargo test --lib live_install_module -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/install-download.log"
+          d="$(find "$RUNNER_TEMP/izumi-download/widevine" -name libwidevinecdm.dylib | head -1)"
+          echo "downloaded: $d [$(lipo -archs "$d")] sha256 $(shasum -a 256 "$d" | cut -d' ' -f1)"
+          c="$(find '/Applications/Google Chrome.app/Contents/Frameworks' -path '*mac_arm64/libwidevinecdm.dylib' | head -1)"
+          [ -n "$c" ] && echo "chrome:     $c sha256 $(shasum -a 256 "$c" | cut -d' ' -f1)"
+
+      - name: Live licence + decrypt through the app (downloaded module)
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-download
+          IZUMI_WIDEVINE_NO_SYSTEM: "1"
+        run: |
+          set -o pipefail
+          cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-download.log"
+
+      # The whole save path a user's download takes: audio decrypted, video decoded by the module and
+      # re-encoded by ffmpeg. Informational: a failure here is reported, not fatal.
+      - name: Whole save through the app (informational)
+        if: ${{ inputs.full_save != false }}
+        continue-on-error: true
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
+          IZUMI_LIVE_SAVE_OUT: ${{ runner.temp }}/saved.protected
+        run: |
+          set -o pipefail
+          cargo test --lib live_save_writes_a_clear_file -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/save.log"
+          for f in video audio; do
+            p="$IZUMI_LIVE_SAVE_OUT/$f.mp4"
+            echo "== $f.mp4 $(stat -f %z "$p") bytes"
+            ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames,duration -of compact "$p"
+            ffmpeg -v error -i "$p" -f null - && echo "decode clean: $f.mp4"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## macOS Widevine (arm64)'
+            echo '```'
+            grep -h '\[live\] set up module\|\[probe\] RESULT' "$RUNNER_TEMP"/install-*.log "$RUNNER_TEMP"/probe-*.log 2>/dev/null || echo '(no probe output)'
+            grep -h '\[live\] wrote\|decode clean' "$RUNNER_TEMP/save.log" 2>/dev/null || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  x86_64:
+    name: x86_64 (Rosetta)
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rosetta
+        run: |
+          arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+          arch -x86_64 /usr/bin/true && echo "Rosetta available"
+          find "/Applications/Google Chrome.app/Contents/Frameworks" -path '*mac_x64/libwidevinecdm.dylib' -exec lipo -archs {} \; -print
+
+      - name: Install Rust (+ x86_64-apple-darwin)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: macos-widevine-x86_64
+
+      # The Intel slice needs an x86_64 libmpv to link, which the Apple-silicon Homebrew does not
+      # have. The tests never call into mpv, so link against a stub exporting libmpv2-sys's symbols.
+      # This is for the test binary only; release builds link the real library.
+      - name: x86_64 libmpv link stub (tests only)
+        working-directory: src-tauri
+        run: |
+          set -euo pipefail
+          cargo fetch --target x86_64-apple-darwin
+          bindings="$(find "${CARGO_HOME:-$HOME/.cargo}/registry/src" -path '*libmpv2-sys-*/pregenerated_bindings.rs' | sort | tail -1)"
+          stub="$RUNNER_TEMP/mpv-stub"; mkdir -p "$stub"
+          grep -o 'pub fn mpv_[A-Za-z0-9_]*' "$bindings" | sed 's/pub fn //' | sort -u \
+            | sed 's/.*/void &(void) { __builtin_trap(); }/' > "$stub/stub.c"
+          echo "$(wc -l < "$stub/stub.c") symbols"
+          clang -arch x86_64 -dynamiclib -install_name "$stub/libmpv.dylib" -o "$stub/libmpv.dylib" "$stub/stub.c"
+          lipo -archs "$stub/libmpv.dylib"
+          echo "LIBRARY_PATH=$stub" >> "$GITHUB_ENV"
+
+      - name: cargo check --lib (x86_64)
+        working-directory: src-tauri
+        run: cargo check --lib --target x86_64-apple-darwin
+
+      # The test binary is x86_64, so it runs under Rosetta on this Apple-silicon runner.
+      - name: cargo test --lib widevine (x86_64 under Rosetta)
+        working-directory: src-tauri
+        run: cargo test --lib --target x86_64-apple-darwin widevine
+
+      - name: Set up the module through the app (Chrome's mac_x64 copy)
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
+        run: |
+          set -o pipefail
+          cargo test --lib --target x86_64-apple-darwin live_install_module -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/install-chrome.log"
+
+      - name: Live licence + decrypt through the app (Rosetta)
+        working-directory: src-tauri
+        env:
+          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
+        run: |
+          set -o pipefail
+          cargo test --lib --target x86_64-apple-darwin live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-chrome.log"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## macOS Widevine (x86_64 under Rosetta)'
+            echo '```'
+            grep -h '\[live\] set up module\|\[probe\] RESULT' "$RUNNER_TEMP"/install-*.log "$RUNNER_TEMP"/probe-*.log 2>/dev/null || echo '(no probe output)'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
