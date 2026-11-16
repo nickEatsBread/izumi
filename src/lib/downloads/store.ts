@@ -11,8 +11,9 @@ import { downloadTaskbarProgress } from './taskbar'
 import { formatBytes, formatSpeed } from '$lib/util/format'
 import type { Media } from '$lib/anilist/types'
 import { abortShakaOffline, removeShakaOffline, storeShakaOffline } from './shaka-offline'
-import { usesNativeDrm } from '$lib/player/native-drm'
+import { NOT_INSTALLED, usesNativeDrm } from '$lib/player/native-drm'
 import { invokeNativeHttp } from '$lib/net/http'
+import type { ResolvedDrmDownload, ResolvedShakaDownload } from '$lib/stremio/play'
 
 // Download queue + actions + event wiring. Reads data from ./state (which play.ts
 // also imports, cycle-free). Files stream to disk via the Rust `download_*` commands.
@@ -101,6 +102,81 @@ function pump() {
   }
 }
 
+// A decrypting DRM job whose device blob the licence server refuses (403) surfaces this prefix from
+// the native engine; the job then falls back to the Shaka offline path with the same source.
+const LICENSE_FORBIDDEN = 'licence-forbidden:'
+
+/** Save a protected episode through izumi's own Widevine module: it decrypts every fragment as it
+ *  arrives, so the saved folder is a clear fMP4 pair that plays with no module, licence or network.
+ *  The source's licence request (drm) is what obtains the content keys for the decrypt. */
+async function saveWithModule(item: DownloadItem, r: ResolvedShakaDownload | ResolvedDrmDownload, dir: string) {
+  const path = await invoke<string>('widevine_save_folder', { dir, name: r.filename })
+  setItem(item.id, { path })
+  const saved = await invoke<{ path: string; bytes: number; height: number }>('widevine_save', {
+    id: item.id, manifestUrl: r.url, dir, name: r.filename, maxHeight: r.preferredHeight ?? null, drm: r.drm,
+  })
+  setItem(item.id, {
+    status: 'done',
+    path: saved.path,
+    requiresOnlineLicense: false,
+    sourceOriginId: r.sourceOriginId,
+    preferences: { ...item.preferences, ...(r.sourceOriginId ? { sourceOriginId: r.sourceOriginId } : {}) },
+    quality: `${saved.height}p`,
+    downloaded: saved.bytes,
+    bytes: saved.bytes,
+    completedAt: Date.now(),
+  })
+  setSpeed(item.id, undefined)
+}
+
+/** Decrypting download with the bundled device: the native engine fetches the plan, gets the content
+ *  keys, decrypts each fragment and writes ONE clear local file. No offlineUri and no drmKeySystem are
+ *  stored on success, so offline playback can never be tempted to re-acquire a licence. Progress and
+ *  completion arrive via the shared download-* events (done sets status/path via event). A refused
+ *  device falls back to the Shaka offline path with the same source. */
+async function downloadWithDevice(item: DownloadItem, r: ResolvedDrmDownload, dir: string) {
+  try {
+    await invoke('drm_download_start', {
+      id: item.id, planUrl: r.planUrl, licenseUrl: r.licenseUrl, releaseUrl: r.releaseUrl,
+      dir, filename: r.filename,
+    })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    if (!message.includes(LICENSE_FORBIDDEN)) throw e
+    // The shipped device blob was refused — re-resolve the SAME source forcing the Shaka path
+    // so the download still succeeds (as encrypted segments plus a licence) instead of failing.
+    const { resolveDownloadUrl } = await import('$lib/stremio/play')
+    const shaka = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences, true)
+    if (shaka.kind !== 'shaka') throw e
+    setItem(item.id, { kind: 'shaka', filename: shaka.filename })
+    await storeShaka(item, shaka)
+  }
+}
+/** Store a Shaka offline item and finalize its DB entry (encrypted segments + optional licence). */
+async function storeShaka(item: DownloadItem, r: ResolvedShakaDownload) {
+  const stored = await storeShakaOffline(item.id, r, ({ downloaded, bytes, speed }) => {
+    const current = get(downloads)[item.id]?.downloaded ?? 0
+    if (downloaded < current) return
+    setItem(item.id, { downloaded, ...(bytes ? { bytes } : {}) })
+    setSpeed(item.id, speed)
+  })
+  setItem(item.id, {
+    status: 'done',
+    offlineUri: stored.offlineUri,
+    drmKeySystem: stored.drmKeySystem,
+    requiresOnlineLicense: !stored.persistentLicense,
+    sourceOriginId: r.sourceOriginId,
+    preferences: {
+      ...item.preferences,
+      ...(r.sourceOriginId ? { sourceOriginId: r.sourceOriginId } : {}),
+    },
+    downloaded: stored.bytes,
+    bytes: stored.bytes,
+    completedAt: Date.now(),
+  })
+  setSpeed(item.id, undefined)
+}
+
 async function runJob(item: DownloadItem) {
   running.add(item.id)
   try {
@@ -109,14 +185,15 @@ async function runJob(item: DownloadItem) {
     // it when a queued job actually runs, not whenever the app shell attaches download listeners.
     const { resolveDownloadUrl } = await import('$lib/stremio/play')
     const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences)
-    // Linux plays protected video through izumi's own Widevine module, and its webview has no EME
-    // for Shaka to store with: the module's encrypted files are saved instead (widevine/save.rs).
-    const native = r.kind === 'shaka' && usesNativeDrm(r.drm)
+    // izumi's own Widevine module saves protected episodes as clear files where it is built (Linux
+    // and Windows) and installed. Without it, a source with a decrypt plan falls back to the bundled
+    // device (one clear file); otherwise the Shaka offline store.
+    const native = (r.kind === 'shaka' || r.kind === 'drm') && usesNativeDrm(r.drm)
     setItem(item.id, {
       kind: native ? 'drm-local' : r.kind, url: r.kind === 'http' ? r.url : undefined,
       hls: r.kind === 'http' ? r.hls : undefined,
       filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality,
-      sourceOriginId: r.kind === 'shaka' ? r.sourceOriginId : item.sourceOriginId,
+      sourceOriginId: r.kind === 'shaka' || r.kind === 'drm' ? r.sourceOriginId : item.sourceOriginId,
     })
     // Both resolve when the file is fully written OR paused; progress/done come via events.
     // A torrent pick goes to the local P2P engine — the same one playback uses under Direct P2P —
@@ -128,51 +205,23 @@ async function runJob(item: DownloadItem) {
         episode: r.episode, absoluteEpisode: r.absoluteEpisode, season: r.season,
         ...torrentEngineNetworkOptions(),
       })
-    } else if (r.kind === 'shaka' && native) {
-      const path = await invoke<string>('widevine_save_folder', { dir, name: r.filename })
-      setItem(item.id, { path })
+    } else if ((r.kind === 'shaka' || r.kind === 'drm') && native) {
       try {
-        const saved = await invoke<{ path: string; bytes: number; height: number }>('widevine_save', {
-          id: item.id, manifestUrl: r.url, dir, name: r.filename, maxHeight: r.preferredHeight ?? null,
-        })
-        setItem(item.id, {
-          status: 'done',
-          path: saved.path,
-          requiresOnlineLicense: true,
-          sourceOriginId: r.sourceOriginId,
-          preferences: { ...item.preferences, ...(r.sourceOriginId ? { sourceOriginId: r.sourceOriginId } : {}) },
-          quality: `${saved.height}p`,
-          downloaded: saved.bytes,
-          bytes: saved.bytes,
-          completedAt: Date.now(),
-        })
-        setSpeed(item.id, undefined)
+        await saveWithModule(item, r, dir)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        // The module is not installed on this machine (it is checked before any network or disk
+        // work, so nothing is left behind): decrypt with the bundled device instead.
+        if (r.kind !== 'drm' || !message.includes(NOT_INSTALLED)) throw e
+        setItem(item.id, { kind: 'drm', path: undefined })
+        await downloadWithDevice(item, r, dir)
       } finally {
         // The source opened a playback session for the download; it is not needed any more.
         if (r.drm?.releaseUrl) void invokeNativeHttp('ext_fetch', { url: r.drm.releaseUrl, method: 'DELETE', headers: {} }, { timeoutMs: 10_000 }).catch(() => {})
       }
-    } else if (r.kind === 'shaka') {
-      const stored = await storeShakaOffline(item.id, r, ({ downloaded, bytes, speed }) => {
-        const current = get(downloads)[item.id]?.downloaded ?? 0
-        if (downloaded < current) return
-        setItem(item.id, { downloaded, ...(bytes ? { bytes } : {}) })
-        setSpeed(item.id, speed)
-      })
-      setItem(item.id, {
-        status: 'done',
-        offlineUri: stored.offlineUri,
-        drmKeySystem: stored.drmKeySystem,
-        requiresOnlineLicense: !stored.persistentLicense,
-        sourceOriginId: r.sourceOriginId,
-        preferences: {
-          ...item.preferences,
-          ...(r.sourceOriginId ? { sourceOriginId: r.sourceOriginId } : {}),
-        },
-        downloaded: stored.bytes,
-        bytes: stored.bytes,
-        completedAt: Date.now(),
-      })
-      setSpeed(item.id, undefined)
+    } else if (r.kind === 'drm') {
+      await downloadWithDevice(item, r, dir)    } else if (r.kind === 'shaka') {
+      await storeShaka(item, r)
     } else {
       await invoke('download_start', {
         id: item.id, url: r.url, dir, filename: r.filename, headers: r.headers,
@@ -202,6 +251,10 @@ async function stopJob(id: string, it: DownloadItem | undefined, discard: boolea
   }
   if (it?.kind === 'torrent') {
     await invoke('torrent_download_cancel', { id, deleteFiles: discard, dir: get(downloadDir) })
+    return
+  }
+  if (it?.kind === 'drm') {
+    await invoke('drm_download_cancel', { id, deletePart: discard, dir: get(downloadDir), filename: filenameOf(it) })
     return
   }
   await invoke('download_cancel', { id, deletePart: discard, dir: get(downloadDir), filename: filenameOf(it) })
@@ -336,6 +389,14 @@ export function attachDownloadEvents() {
     // the headless libmpv decoder at playback time (instant seeks on local) — no pre-gen.
   })
   listen<[string, number]>('download-paused', (e) => setSpeed(e.payload[0], undefined))
+  // The decrypting DRM engine reports a hard failure (missing key, decrypt failure, bad plan) via
+  // its own event so the queue surfaces the error; the clear output was already removed natively.
+  listen<[string, string]>('download-error', (e) => {
+    const [id, message] = e.payload
+    if (get(downloads)[id]?.status === 'paused') return // a pause is not a failure
+    setItem(id, { status: 'error', error: message })
+    setSpeed(id, undefined)
+  })
   // Resume-safe: requeue anything stuck 'downloading' from a PREVIOUS session (app
   // killed mid-download). Skip ids with a live stream this session so we never
   // launch a second concurrent download for the same file.
