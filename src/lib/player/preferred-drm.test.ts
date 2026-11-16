@@ -29,10 +29,10 @@ describe('offlineManifestUrl', () => {
 
 describe('downloadAudioLang', () => {
   it('maps the download dialog onto the player audio preference', () => {
-    expect(downloadAudioLang('dub', 'jpn')).toBe('eng')
-    expect(downloadAudioLang('sub', 'eng')).toBe('jpn')
-    expect(downloadAudioLang('any', 'eng')).toBe('eng')
-    expect(downloadAudioLang(undefined, 'jpn')).toBe('jpn')
+    expect(downloadAudioLang('dub', ['jpn'])).toEqual(['eng'])
+    expect(downloadAudioLang('sub', ['eng'])).toEqual(['jpn'])
+    expect(downloadAudioLang('any', ['eng', 'jpn'])).toEqual(['eng', 'jpn'])
+    expect(downloadAudioLang(undefined, ['jpn'])).toEqual(['jpn'])
   })
 })
 
@@ -42,8 +42,8 @@ describe('preferredDrmPresentation', () => {
       url,
       audioLang: 'ja-JP',
       subtitles: [englishSidecar, { ...englishSidecar, lang: 'de-DE', url: 'http://x/de.ass' }],
-      preferredAudio: 'jpn',
-      preferredSub: 'eng',
+      preferredAudio: ['jpn'],
+      preferredSub: ['eng'],
     })
     expect(picked.url).toBe(url)
     expect(picked.subtitles).toEqual([englishSidecar])
@@ -55,8 +55,8 @@ describe('preferredDrmPresentation', () => {
       url,
       audioLang: 'ja-JP',
       subtitles: [englishHard],
-      preferredAudio: 'jpn',
-      preferredSub: 'eng',
+      preferredAudio: ['jpn'],
+      preferredSub: ['eng'],
     })
     expect(picked.url).toContain('hard=en-US')
     expect(picked.subtitles).toEqual([])
@@ -68,12 +68,35 @@ describe('preferredDrmPresentation', () => {
       audioLang: 'ja-JP',
       audioTracks,
       subtitles: [englishSidecar],
-      preferredAudio: 'eng',
-      preferredSub: 'eng',
+      preferredAudio: ['eng'],
+      preferredSub: ['eng'],
     })
     expect(picked.url).toContain('audio=en-US')
     expect(picked.audioLang).toBe('en-US')
     expect(picked.subtitles).toEqual([])
+  })
+
+  it('keeps the current audio when it comes before any other wanted language', () => {
+    const picked = preferredDrmPresentation({
+      url,
+      audioLang: 'ja-JP',
+      audioTracks,
+      preferredAudio: ['jpn', 'eng'],
+      preferredSub: ['none'],
+    })
+    expect(picked.url).toBe(url)
+    expect(picked.audioLang).toBe('ja-JP')
+  })
+
+  it('switches to the first wanted audio the source has a manifest for', () => {
+    const picked = preferredDrmPresentation({
+      url,
+      audioLang: 'ja-JP',
+      audioTracks,
+      preferredAudio: ['fre', 'en-US', 'jpn'],
+      preferredSub: ['none'],
+    })
+    expect(picked.url).toContain('audio=en-US')
   })
 
   it('stores no text when the user turned subtitles off', () => {
@@ -81,8 +104,8 @@ describe('preferredDrmPresentation', () => {
       url,
       audioLang: 'ja-JP',
       subtitles: [englishSidecar, englishHard],
-      preferredAudio: 'jpn',
-      preferredSub: 'none',
+      preferredAudio: ['jpn'],
+      preferredSub: ['none'],
     })
     expect(picked.url).not.toContain('hard=')
     expect(picked.subtitles).toEqual([])
@@ -93,8 +116,8 @@ describe('preferredDrmPresentation', () => {
       url,
       audioLang: 'ja-JP',
       audioTracks,
-      preferredAudio: 'eng',
-      preferredSub: 'none',
+      preferredAudio: ['eng'],
+      preferredSub: ['none'],
       switchAudio: false,
     })
     expect(picked.url).not.toContain('audio=')
@@ -115,7 +138,7 @@ describe('selectOfflineTracks', () => {
     const picked = selectOfflineTracks(tracks, {
       preferredHeight: 480,
       audioLang: 'en-US',
-      preferredSubLang: 'eng',
+      preferredSubLang: ['eng'],
     })
     expect(picked).toEqual([
       { type: 'variant', height: 480, bandwidth: 2, language: 'en-US' },
@@ -124,7 +147,7 @@ describe('selectOfflineTracks', () => {
   })
 
   it('drops in-band text when subtitles are off', () => {
-    expect(selectOfflineTracks(tracks, { preferredSubLang: 'none' }).filter((track) => track.type === 'text')).toEqual([])
+    expect(selectOfflineTracks(tracks, { preferredSubLang: ['none'] }).filter((track) => track.type === 'text')).toEqual([])
   })
 })
 

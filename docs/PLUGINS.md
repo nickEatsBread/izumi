@@ -114,4 +114,5 @@ and the pack format (`src/lib/packs/format.ts`). Change the rule here first, the
 | Package origins | `src/lib/store/origins.ts` |
 | Pack format, review and setup | `src/lib/packs/`, `src/lib/components/packs/PackFlow.svelte`, `src/routes/app/pack/` |
 | Package installer and local services | `src-tauri/src/extension_package.rs`, `src-tauri/src/extension_service.rs` |
+| A source account's playback languages (service settings `languages` and `section`) | `src/lib/settings/catalog-languages.ts`, `src/lib/extensions/source-languages.ts`, [catalog-languages.md](catalog-languages.md) |
 | Store page | `src/routes/app/settings/store/+page.svelte` |

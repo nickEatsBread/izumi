@@ -21,11 +21,13 @@ export const sizeOnDisk = (d: DownloadItem) => (d.status === 'done' ? d.bytes : 
 export const seriesTitle = (d: DownloadItem) => d.title.replace(/\s+—\s+E\d+$/, '')
 
 /** Downloads by series, the series with the newest episode first, episodes in number order. A row
- *  only moves when its series gains an episode, never as its download progresses under focus. */
-export function groupDownloads(items: DownloadItem[], filter = ''): DownloadGroup[] {
+ *  only moves when its series gains an episode, never as its download progresses under focus.
+ *  Episodes taken off the list by Clear finished stay out unless `cleared` asks for them. */
+export function groupDownloads(items: DownloadItem[], filter = '', cleared = false): DownloadGroup[] {
   const query = filter.trim().toLowerCase()
   const groups = new Map<number, DownloadGroup>()
   for (const d of items) {
+    if (d.cleared && !cleared) continue
     if (query && !d.title.toLowerCase().includes(query)) continue
     let group = groups.get(d.mediaId)
     if (!group) groups.set(d.mediaId, (group = { mediaId: d.mediaId, title: seriesTitle(d), items: [], bytes: 0, latest: 0 }))
@@ -55,6 +57,21 @@ export function primaryActionOf(d: DownloadItem): PrimaryAction {
     case 'paused': return 'resume'
     case 'error': return 'retry'
     default: return 'options'
+  }
+}
+
+/** What each bulk action at the top of the page acts on, as ids in the order to act. Queued episodes
+ *  come first in Pause all and Cancel all pending, so none starts in the slot a running one frees. A
+ *  protected save that would start over keeps running under Pause all (it can only be cancelled). */
+export function bulkTargets(items: DownloadItem[]) {
+  const ids = (keep: (d: DownloadItem) => boolean) => items.filter(keep).map((d) => d.id)
+  const queued = (d: DownloadItem) => d.status === 'queued'
+  return {
+    pause: [...ids((d) => queued(d) && canPause(d)), ...ids((d) => d.status === 'downloading' && canPause(d))],
+    resume: ids((d) => d.status === 'paused'),
+    cancel: [...ids(queued), ...ids((d) => d.status !== 'done' && !queued(d))],
+    clear: ids((d) => d.status === 'done' && !d.cleared),
+    cleared: ids((d) => d.status === 'done' && !!d.cleared).length,
   }
 }
 

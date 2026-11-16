@@ -1,12 +1,16 @@
 <script lang="ts">
   import {
     preferredAudioLang, preferredSubLang, titleLanguage, providerAudio, providerLanguages, downloadAudio,
-    extensionUrls,
+    extensionUrls, disabledPlugins,
   } from '$lib/settings/ui'
   import { fetchExtensionInfo, installedExtensionPackages } from '$lib/extensions/manager'
   import { langName } from '$lib/player/track-label'
-  import { PLAYBACK_LANGUAGES } from '$lib/shared/languages'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
+  import { storedOrder, type LanguageCatalog } from '$lib/settings/catalog-languages'
+  import { catalogProviders } from '$lib/settings/catalog'
+  import { sourceCatalogs, sourceSelection } from '$lib/catalog/source-catalogs'
+  import LanguageOrderRow from '$lib/components/settings/LanguageOrderRow.svelte'
+  import CatalogLanguageRows from '$lib/components/settings/CatalogLanguageRows.svelte'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
@@ -18,11 +22,17 @@
   const locale = getLocale()
   const changeLocale = (value: string) => setLocale(value as Locale)
 
-  const subtitleLanguages = [
-    ...PLAYBACK_LANGUAGES.slice(0, 2),
-    { value: 'none', label: m.cast_subtitles_off() },
-    ...PLAYBACK_LANGUAGES.slice(2),
-  ]
+  // The global rows store an order as comma-separated codes; empty is Automatic.
+  const joined = (order: string[]) => (order.length ? order.join(',') : 'auto')
+  // Each catalog the user can play from: the anime catalog behind any anime platform, TMDB and
+  // Stremio when enabled, and every source catalog.
+  const languageCatalogs = $derived<Array<{ catalog: LanguageCatalog; name: string }>>([
+    ...($catalogProviders.some((provider) => ['auto', 'anilist', 'kitsu', 'jvm'].includes(provider)) ? [{ catalog: 'anime' as const, name: 'Anime' }] : []),
+    ...($catalogProviders.includes('tmdb') ? [{ catalog: 'tmdb' as const, name: 'TMDB' }] : []),
+    ...($catalogProviders.includes('stremio') ? [{ catalog: 'stremio' as const, name: 'Stremio add-ons' }] : []),
+    ...$sourceCatalogs.filter((source) => !$disabledPlugins.includes(source.packageId))
+      .map((source) => ({ catalog: sourceSelection(source.packageId), name: source.name })),
+  ])
 
   const langLabel = (code: string) => langName(code) ?? code.toUpperCase()
   // Languages the added sources declare sort first. They never limit the list: a source may declare
@@ -60,8 +70,14 @@
   </SettingsSubcategory>
 
   <SettingsSubcategory id="playback">
-    <SettingsChoiceRow settingKey="audio-language" title={m.player_audio_language()} value={$preferredAudioLang} onChange={(value) => ($preferredAudioLang = value as typeof $preferredAudioLang)} options={PLAYBACK_LANGUAGES} searchable />
-    <SettingsChoiceRow settingKey="subtitle-language" title={m.player_subtitle_language()} value={$preferredSubLang} onChange={(value) => ($preferredSubLang = value as typeof $preferredSubLang)} options={subtitleLanguages} searchable />
+    <LanguageOrderRow settingKey="audio-language" title={m.player_audio_language()} description="For every catalog without its own order" order={storedOrder($preferredAudioLang) ?? []} onChange={(order) => ($preferredAudioLang = joined(order))} unsetLabel="Automatic" />
+    <LanguageOrderRow settingKey="subtitle-language" title={m.player_subtitle_language()} description="Automatic: English for anime, your system language elsewhere" order={storedOrder($preferredSubLang) ?? []} onChange={(order) => ($preferredSubLang = joined(order))} unsetLabel="Automatic" allowOff />
+  </SettingsSubcategory>
+
+  <SettingsSubcategory id="catalogs">
+    {#each languageCatalogs as entry (entry.catalog)}
+      <CatalogLanguageRows catalog={entry.catalog} name={entry.name} />
+    {/each}
   </SettingsSubcategory>
 
   <SettingsSubcategory id="sources">

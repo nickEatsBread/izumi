@@ -7,9 +7,9 @@
   import { onDestroy, untrack } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { get } from 'svelte/store'
-  import { preferredAudioLang, preferredSubLang } from '$lib/settings/ui'
+  import { languagesForMedia, mpvLanguageList } from '$lib/settings/catalog-languages'
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, waitForCatalog, withManifestQuery } from '$lib/player/preferred-drm'
-  import { playerNotice } from '$lib/player/session'
+  import { nowPlayingMedia, playerNotice } from '$lib/player/session'
   import { assFontFamilies, fontsForFamilies, isAssSubtitle, parseSubtitleFonts, type SubtitleFont } from '$lib/player/ass-subtitles'
   import { langsEqual, normalizeLang } from '$lib/stremio/sublang'
   import { listenSafe } from '$lib/util/listen'
@@ -164,14 +164,14 @@
     embedding = true
     let hard = ''
     try { hard = new URL(manifest).searchParams.get('hard') ?? '' } catch { /* plain URL */ }
-    const preferredSub = get(preferredSubLang)
+    const languages = languagesForMedia(get(nowPlayingMedia)?.media)
     const pick = preferredDrmPresentation({
       url: manifest,
       audioLang: liveAudioLang || audioLang,
       subtitles: liveSubs,
       audioTracks: liveAudio,
-      preferredAudio: get(preferredAudioLang),
-      preferredSub,
+      preferredAudio: languages.audio,
+      preferredSub: languages.subtitle,
       switchAudio: false,
     })
     const chosen = hard ? undefined : pick.subtitles[0]?.url
@@ -187,9 +187,9 @@
         startSeconds: start > 0 ? start : undefined,
         autoplay: true,
         initialBufferSeconds: 0.5,
-        alang: get(preferredAudioLang),
+        alang: mpvLanguageList(languages.audio),
         // A burned-in presentation must not also show a soft track on top.
-        slang: hard ? 'none' : preferredSub,
+        slang: hard ? 'none' : mpvLanguageList(languages.subtitle),
         subtitles: soft.length ? soft : undefined,
         drm: {
           keySystem: drm.keySystem,
@@ -336,8 +336,8 @@
       audioLang: liveAudioLang || audioLang,
       subtitles: liveSubs,
       audioTracks: liveAudio,
-      preferredAudio: get(preferredAudioLang),
-      preferredSub: get(preferredSubLang),
+      preferredAudio: languagesForMedia(get(nowPlayingMedia)?.media).audio,
+      preferredSub: languagesForMedia(get(nowPlayingMedia)?.media).subtitle,
       switchAudio: false,
     })
     const initial = pick.url

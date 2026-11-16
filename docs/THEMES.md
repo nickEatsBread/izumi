@@ -733,6 +733,7 @@ State values:
 | `downloads.action` | part | The row's primary button; data-action is play, pause, resume, retry or options. |  |
 | `downloads.more` | part | The row's More button, which opens its options sheet. |  |
 | `downloads.toggle` | part | The Pause or Resume button beside Cancel on a row the pointer is over. |  |
+| `downloads.bulk` | part | The bulk actions over the list: Pause all, Resume all, Cancel all pending and Clear finished (each button's data-bulk names it). |  |
 | `downloads.progress` | part | A download's progress track; its child span is the fill. |  |
 | `downloads.empty` | part | The empty state shown when nothing is saved. |  |
 | `browse` | slot | The Browse screen; data-variant is anilist, catalog or source. |  |

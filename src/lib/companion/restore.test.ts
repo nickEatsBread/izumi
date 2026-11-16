@@ -491,7 +491,7 @@ describe('restore staging and profile isolation', () => {
     const profiles = await import('$lib/profiles/store')
     expect(get(ui.debridKey)).toBe('saved-secret')
     expect(get(ui.preferredQuality)).toBe('1080')
-    expect(get(ui.preferredAudioLang)).toBe('jpn')
+    expect(get(ui.preferredAudioLang)).toBe('auto')
     expect(get(ui.preferredStreamSort)).toBe('size')
     expect(get(catalog.catalogScreen)).toBe('merged')
     expect(get(catalog.tmdbReadToken)).toBe('catalog-secret')
