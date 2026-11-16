@@ -4,7 +4,8 @@
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import { SCOPE_TEXT, type PluginManifest, type PluginSetting } from '$lib/plugins/manifest'
   import { readSecrets, setPluginSecret, setPluginSetting, type InstalledPlugin, type PreparedPlugin } from '$lib/plugins/registry'
-  import { pluginLogs, pluginRuns } from '$lib/plugins/host'
+  import { openUrl } from '@tauri-apps/plugin-opener'
+  import { pluginAccounts, pluginLogs, pluginRuns, sendPluginEvent } from '$lib/plugins/host'
   import type { PluginEntry } from '$lib/plugins/sections'
 
   // A plugin's page, laid out like a theme's: what it is and what you can do, then what it may do
@@ -39,6 +40,8 @@
   const version = $derived(manifest?.version ?? listing?.version)
   const run = $derived(installed ? $pluginRuns.find((item) => item.id === installed.manifest.id) : undefined)
   const status = $derived(!installed ? '' : !enabledAll ? 'Plugins are off' : !installed.enabled ? 'Off' : run?.state === 'ready' ? 'Running' : run?.state === 'failed' ? `Stopped: ${run.error}` : 'Starting')
+  // Drawn from what the running plugin sends (ui.setAccount), like its player panel.
+  const account = $derived(installed && run?.state === 'ready' ? $pluginAccounts[installed.manifest.id] : undefined)
   let showLog = $state(false)
 
   const settingValue = (plugin: InstalledPlugin, setting: PluginSetting) =>
@@ -91,6 +94,20 @@
   </div>
 
   {#if installed}
+    {#if account && (account.text || account.buttons.length)}
+      <div class="block" data-plugin-account>
+        <h4>Account</h4>
+        {#if account.text}<p>{account.text}</p>{/if}
+        {#if account.buttons.length}
+          <div class="actions wrap">
+            {#each account.buttons as button (button.id)}
+              <button type="button" class="control" class:primary={button.primary} data-focusable
+                      onclick={() => sendPluginEvent(installed.manifest.id, 'account', { id: button.id })}>{button.label}</button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
     {#if installed.manifest.settings.length}
       <div class="block">
         <h4>Settings</h4>
@@ -98,6 +115,13 @@
           <label class="setting">
             <span class="label">{setting.label}</span>
             {#if setting.description}<span class="muted">{setting.description}</span>{/if}
+            {#if setting.links?.length}
+              <span class="links">
+                {#each setting.links as link, i (i)}
+                  <button type="button" class="link" data-focusable onclick={(e) => { e.preventDefault(); void openUrl(link.url) }}>{link.label}</button>
+                {/each}
+              </span>
+            {/if}
             {#if setting.type === 'toggle'}
               <input type="checkbox" data-focusable class="check" checked={!!installed.settings[setting.id]} onchange={(e) => writeSetting(installed, setting, e.currentTarget.checked)} />
             {:else if setting.type === 'select'}
@@ -150,6 +174,9 @@
   .label { font-weight: 800; }
   .field { width: 100%; min-height: 2.5rem; padding: .5rem .75rem; border-radius: .5rem; background: hsl(var(--input)); }
   .check { justify-self: start; margin-top: .25rem; }
+  .wrap { flex-wrap: wrap; }
+  .links { display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
+  .link { font-size: .75rem; font-weight: 700; color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: .15em; }
   pre { max-height: 12rem; overflow: auto; white-space: pre-wrap; padding: .5rem; border-radius: .5rem; background: hsl(var(--muted)); font-size: .75rem; }
   .actions .control, .back { flex: none; }
   /* Phones: the actions share a row under the name. */

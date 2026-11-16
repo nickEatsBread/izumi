@@ -1,12 +1,13 @@
 import { get, writable } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { nowPlaying, nowPlayingUrl, playerNotice } from '$lib/player/session'
 import { playerTracks } from '$lib/player/native'
 import { cleanText, parseSubtitle, subtitleText, type SubtitleCue, type SyncableTrack } from '$lib/player/subtitle-sync'
 import { checkPluginUrl } from './network'
 import type { PluginScope } from './manifest'
 import {
-  installedPlugins, loadPluginCode, pluginSettingValues, pluginStorage, pluginsEnabled, writePluginStorage,
+  installedPlugins, loadPluginCode, pluginSettingValues, pluginStorage, pluginsEnabled, readSecrets, setPluginSecret, writePluginStorage,
   type InstalledPlugin,
 } from './registry'
 import { createSandbox, runConformance } from './sandbox'
@@ -20,16 +21,20 @@ export interface PanelStep { label: string; icon?: PanelIcon; state: 'running' |
 export interface PanelTurn { id: string; question: string; steps: PanelStep[]; text?: string; seconds?: number }
 export interface PanelState { activity?: string; turns: PanelTurn[] }
 export interface PluginRun { id: string; name: string; panel?: { label: string; placeholder: string }; state: 'starting' | 'ready' | 'failed'; error?: string }
+/** The account block at the top of a plugin's settings: a line of text and buttons that send the
+ *  plugin an `account` event, such as "Continue with ChatGPT" or "Sign out". */
+export interface AccountState { text?: string; buttons: { id: string; label: string; primary?: boolean }[] }
 
 export const pluginRuns = writable<PluginRun[]>([])
 export const pluginPanels = writable<Record<string, PanelState>>({})
+export const pluginAccounts = writable<Record<string, AccountState>>({})
 /** The plugin whose player panel is open. */
 export const openPluginPanel = writable<string | null>(null)
 export const pluginLogs = writable<Record<string, string[]>>({})
 /** null until checked; `failed` lists every way out the sandbox did not block on this engine. */
 export const pluginConformance = writable<{ ok: boolean; failed: string[] } | null>(null)
 
-interface Live { plugin: InstalledPlugin; frame: HTMLIFrameElement; port: MessagePort; lastPong: number; heartbeat: ReturnType<typeof setInterval> }
+interface Live { plugin: InstalledPlugin; frame: HTMLIFrameElement; port: MessagePort; lastPong: number; heartbeat: ReturnType<typeof setInterval>; signinPort?: number }
 const live = new Map<string, Live>()
 
 const HEARTBEAT_MS = 10_000
@@ -76,6 +81,24 @@ function cleanPanel(value: unknown): PanelState {
     return [{ id, question, steps: Array.isArray(t.steps) ? t.steps.slice(0, 8).flatMap(step) : [], text: str(t.text, 1000), seconds }]
   }) : []
   return { activity: str(raw.activity, 80), turns }
+}
+
+export function cleanAccount(value: unknown): AccountState {
+  const raw = (value && typeof value === 'object' ? value : {}) as { text?: unknown; buttons?: unknown }
+  const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.slice(0, max) : undefined)
+  const buttons: AccountState['buttons'] = []
+  for (const b of Array.isArray(raw.buttons) ? raw.buttons.slice(0, 4) : []) {
+    const id = str(b?.id, 40), label = str(b?.label, 40)
+    // Ids key the buttons, so each is kept once.
+    if (id && label && !buttons.some((other) => other.id === id)) buttons.push({ id, label, primary: b.primary === true })
+  }
+  return { text: str(raw.text, 300), buttons }
+}
+
+/** Cancels a plugin's waiting browser sign-in, if any. */
+function cancelSignin(entry: Live) {
+  if (entry.signinPort !== undefined) void invoke('plugin_signin_cancel', { port: entry.signinPort }).catch(() => {})
+  entry.signinPort = undefined
 }
 
 async function playerProperty(name: string): Promise<string> {
@@ -159,8 +182,50 @@ async function handleCall(entry: Live, method: string, args: unknown[]): Promise
       await writePluginStorage(id, data)
       return null
     }
+    // Secrets (tokens, keys) sit with the viewer's secret settings: only this plugin reads them, and
+    // removing the plugin deletes them.
+    case 'secrets.get':
+      return readSecrets(id)[String(args[0])] ?? null
+    case 'secrets.set': {
+      const value = String(args[1] ?? '')
+      if (value.length > 16_384) throw new Error('a secret is limited to 16 KB')
+      setPluginSecret(id, String(args[0]).slice(0, 40), value)
+      return null
+    }
+    case 'secrets.delete':
+      setPluginSecret(id, String(args[0]).slice(0, 40), '')
+      return null
     case 'fetch':
       return pluginFetch(plugin, args[0], args[1])
+    case 'signin.listen': {
+      need(plugin, 'signin')
+      cancelSignin(entry)
+      entry.signinPort = await invoke<number>('plugin_signin_listen', { path: String(args[0] ?? '/callback') })
+      return { port: entry.signinPort }
+    }
+    case 'signin.open': {
+      need(plugin, 'signin')
+      const url = checkPluginUrl(String(args[0]), plugin.manifest.permissions.network?.domains ?? [])
+      if (url instanceof Error) throw url
+      await openUrl(url.href)
+      return null
+    }
+    case 'signin.wait': {
+      need(plugin, 'signin')
+      const port = entry.signinPort
+      if (port === undefined) throw new Error('call signin.listen first')
+      try {
+        return Object.fromEntries(new URLSearchParams(await invoke<string>('plugin_signin_wait', { port })))
+      } finally {
+        if (entry.signinPort === port) entry.signinPort = undefined
+      }
+    }
+    case 'signin.cancel':
+      cancelSignin(entry)
+      return null
+    case 'ui.setAccount':
+      pluginAccounts.update((accounts) => ({ ...accounts, [id]: cleanAccount(args[0]) }))
+      return null
     case 'player.status': {
       need(plugin, 'player.events')
       const np = get(nowPlaying)
@@ -202,6 +267,7 @@ export function sendPluginEvent(id: string, name: string, payload: unknown) {
 function stop(id: string, error?: string) {
   const entry = live.get(id)
   if (entry) {
+    cancelSignin(entry)
     clearInterval(entry.heartbeat)
     entry.port.close()
     entry.frame.remove()
@@ -210,6 +276,7 @@ function stop(id: string, error?: string) {
   if (error) setRun(id, { state: 'failed', error })
   else pluginRuns.update((runs) => runs.filter((run) => run.id !== id))
   pluginPanels.update(({ [id]: _, ...rest }) => rest)
+  pluginAccounts.update(({ [id]: _, ...rest }) => rest)
   if (get(openPluginPanel) === id && !error) openPluginPanel.set(null)
 }
 
