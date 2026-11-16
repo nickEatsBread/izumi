@@ -4,7 +4,7 @@ version = "0.1.74"
 description = "A native desktop anime client"
 authors = ["izumi contributors"]
 edition = "2021"
-license = "AGPL-3.0-or-later"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -112,7 +112,7 @@ futures-util = "0.3"
 # segments plus a persistent licence. `widevine` runs the L3 licence exchange (device/challenge/
 # keys); `aes`+`ctr`+`cipher` implement AES-CTR for CENC sample decryption; `data-encoding` decodes
 # the base64 pssh box. All pure Rust, so the Android target keeps cross-compiling (the command is
-# desktop-only at runtime). GPL-3.0 `widevine` is compatible with this crate's AGPL-3.0-or-later.
+# desktop-only at runtime). GPL-3.0 `widevine` is compatible with this crate's GPL-3.0-or-later.
 widevine = "0.1"
 aes = "0.8"
 ctr = "0.9"

@@ -447,7 +447,7 @@ Every new route ships behind a remote/local kill switch, reports its reason, and
 
 ## Licensing and distribution checkpoint
 
-Izumi is distributed under AGPL-3.0-or-later in the checked-out repository. That does not remove component-specific obligations or patent/trademark questions.
+Izumi is distributed under GPL-3.0-or-later in the checked-out repository. That does not remove component-specific obligations or patent/trademark questions.
 
 - mpv is GPLv2+ by default and can be built under LGPLv2.1+ only with the corresponding configuration/feature restrictions ([mpv repository](https://github.com/mpv-player/mpv)). Record the exact build configuration and provide required notices/source.
 - FFmpeg's licensing depends on build flags and linked libraries; its legal page explicitly separates license compliance from patent questions ([FFmpeg legal](https://ffmpeg.org/legal.html)).

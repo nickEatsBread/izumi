@@ -1,6 +1,6 @@
 # Third-party notices
 
-izumi itself is licensed under the [GNU AGPL-3.0-or-later](LICENSE). It links or bundles
+izumi itself is licensed under the [GNU GPL-3.0-or-later](LICENSE). It links or bundles
 the third-party components below; their own licenses apply to those components only.
 
 ## mpv / libmpv — LGPL-2.1-or-later
@@ -93,7 +93,7 @@ Deepbrid and Mega-Debrid marks are each service's own site icon, resized.
 ## ISO 639-2 language registry — MIT
 
 The playback language table is derived from wooorm/iso-639-2 (https://github.com/wooorm/iso-639-2).
-The recommendation engine and application remain AGPL; this notice applies only to the third-party language data.
+The recommendation engine and application remain GPL; this notice applies only to the third-party language data.
 
 ```
 (The MIT License)
