@@ -59,6 +59,13 @@ export type StreamPickerState = {
   // An in-place episode advance (next, previous, auto-advance): a docked mini-player stays docked
   // and simply changes episode, the way any music app's mini-player does.
   keepMini?: boolean
+  // The user is choosing which source to DOWNLOAD (Settings → Downloads → Choose the source): a
+  // pick is handed to `choose` instead of playing, and `suggest` is the row an automatic download
+  // would have saved, offered as the best one.
+  download?: {
+    choose: (stream: Stream) => void
+    suggest: (streams: Stream[]) => Stream | undefined
+  }
 }
 
 export const streamPicker = writable<StreamPickerState | null>(null)

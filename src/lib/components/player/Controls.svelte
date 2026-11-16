@@ -19,6 +19,10 @@
   import SkipBack from '@lucide/svelte/icons/skip-back'
   import SkipForward from '@lucide/svelte/icons/skip-forward'
   import Camera from '@lucide/svelte/icons/camera'
+  import Download from '@lucide/svelte/icons/download'
+  import { downloadOf, enqueue } from '$lib/downloads/store'
+  import { currentDownloadPreferences } from '$lib/downloads/rules'
+  import { savableStream } from '$lib/downloads/source'
   import Bookmark from '@lucide/svelte/icons/bookmark'
   import Gauge from '@lucide/svelte/icons/gauge'
   import Ratio from '@lucide/svelte/icons/ratio'
@@ -962,6 +966,15 @@
   let root = $state<HTMLElement>()
   let castButton = $state<{ toggle: () => void }>()
   const hint = (id: HotkeyId) => displayBinding(effectiveBinding(id, $hotkeyBindings, $isMacOS), $isMacOS)
+  // Download saves this episode from the source playing it. Not offered for a saved file or a
+  // search box release (no title to download by).
+  const downloadable = $derived(recovery && recovery.episode != null && !recovery.media.release ? savableStream(recovery.current) : undefined)
+  function downloadPlaying() {
+    if (!recovery || recovery.episode == null || !downloadable) return
+    const had = downloadOf(recovery.media.id, recovery.episode)
+    enqueue(recovery.media, recovery.episode, currentDownloadPreferences(), undefined, downloadable)
+    playerNotice.set(had && had.status !== 'error' ? 'This episode is already in Downloads' : `Downloading episode ${recovery.episode}`)
+  }
   const contextItems = $derived.by((): PlayerMenuItem[] => [
     { label: paused ? 'Play' : 'Pause', icon: paused ? Play : Pause, hint: hint('playerPlayPause'), run: togglePlay },
     ...(hasPrev ? [{ label: 'Previous episode', icon: SkipBack, hint: hint('playerPreviousEpisode'), run: () => playPrev(undefined, !paused) }] : []),
@@ -972,6 +985,7 @@
     // After the flush: the closing menu's playerMenuOpen write must not land after the Cast list's.
     { label: 'Cast', icon: Cast, run: () => void tick().then(() => castButton?.toggle()) },
     { label: 'Screenshot', icon: Camera, hint: hint('playerScreenshot'), divider: true, run: screenshot },
+    ...(downloadable ? [{ label: 'Download', icon: Download, run: downloadPlaying }] : []),
     { label: 'Miniplayer', icon: PictureInPicture, run: togglePictureInPicture },
     { label: $fullscreen ? 'Exit fullscreen' : 'Fullscreen', icon: $fullscreen ? Minimize : Maximize, hint: hint('playerFullscreen'), run: toggleFullscreen },
     { label: $playerStatsOpen ? 'Hide stats' : 'Show stats', icon: Activity, hint: hint('playerStats'), run: () => playerStatsOpen.update((value) => !value) },

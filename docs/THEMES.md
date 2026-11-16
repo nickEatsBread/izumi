@@ -562,6 +562,7 @@ State values:
 | `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge; data-variant player is the playback ring, in the player accent, from the press to the first frame, sized by `--theme-player-spinner-size` and `--theme-player-spinner-stroke` (48 and 4 px). |  |
 | `sources` | slot | The source picker; data-variant is dialog, phone or panel (the Game mode side panel), and data-state is loading while sources are being found. |  |
 | `sources.status` | part | The line under the picker title: a spinner and Finding sources, then the counts. |  |
+| `sources.download` | part | The line under the picker title when the pick is a source to download, not to play. |  |
 | `sources.list` | part | The scrolling list of sources. |  |
 | `sources.row` | part | One source; data-best marks the best pick, and placeholder rows have data-state loading with a skeleton inside. |  |
 | `sources.group` | part | One release and its routes: its first row, the N more toggle and the expanded rows. |  |
@@ -731,6 +732,7 @@ State values:
 | `downloads.item` | part | One episode row; data-state is its status (done, downloading, paused, queued, error). |  |
 | `downloads.action` | part | The row's primary button; data-action is play, pause, resume, retry or options. |  |
 | `downloads.more` | part | The row's More button, which opens its options sheet. |  |
+| `downloads.toggle` | part | The Pause or Resume button beside Cancel on a row the pointer is over. |  |
 | `downloads.progress` | part | A download's progress track; its child span is the fill. |  |
 | `downloads.empty` | part | The empty state shown when nothing is saved. |  |
 | `browse` | slot | The Browse screen; data-variant is anilist, catalog or source. |  |

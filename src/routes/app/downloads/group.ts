@@ -39,14 +39,19 @@ export function groupDownloads(items: DownloadItem[], filter = ''): DownloadGrou
   return list
 }
 
+/** A pause keeps what has arrived. A protected episode saved through the module or the Shaka store
+ *  would start over, so it is only cancelled. */
+export const canPause = (d: DownloadItem) => d.kind !== 'drm-local' && d.kind !== 'shaka'
+
 export type PrimaryAction = 'play' | 'pause' | 'resume' | 'retry' | 'options'
 export const PRIMARY_LABEL: Record<PrimaryAction, string> = { play: 'Play', pause: 'Pause', resume: 'Resume', retry: 'Retry', options: 'Options' }
 
-/** What A does on a row. A queued episode has nothing to start yet, so A opens its options (Cancel). */
+/** What A does on a row. A queued episode has nothing to start yet, so A opens its options (Cancel),
+ *  as does one downloading that cannot pause. */
 export function primaryActionOf(d: DownloadItem): PrimaryAction {
   switch (d.status) {
     case 'done': return 'play'
-    case 'downloading': return 'pause'
+    case 'downloading': return canPause(d) ? 'pause' : 'options'
     case 'paused': return 'resume'
     case 'error': return 'retry'
     default: return 'options'

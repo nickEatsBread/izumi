@@ -225,8 +225,10 @@
   const AUTO_MAX_TRIES = $derived(autoImmediate ? (directP2p ? 4 : 8) : 3)
   let autoTries = $state(0)
   let recoveryOrder = $state<StreamInfo['stream'][]>([])
-  const bestStream = $derived(
-    recoveryOrder.find((stream) => candidates.includes(stream) && !hasFailed(stream))
+  // Choosing a download: the best row is the one the download rules would have saved.
+  const bestStream = $derived(pick?.download
+    ? pick.download.suggest(visible.map((i) => i.stream))
+    : recoveryOrder.find((stream) => candidates.includes(stream) && !hasFailed(stream))
       ?? candidates.find((stream) => !hasFailed(stream)),
   )
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
@@ -555,6 +557,14 @@
     // peers via the magnet's trackers. We dim it as a hint but never block the click; sinking a
     // mislabeled source (see extToStream/dedupe) to unclickable was the actual complaint.
     if (busy || !pick) return
+    // Choosing what to download: hand the row over and close; nothing plays.
+    if (pick.download) {
+      const download = pick.download
+      cancelResolve(resolveSession)
+      pickerStore.set(null)
+      download.choose(info.stream)
+      return
+    }
     // Picking a source supersedes the in-flight resolve: stop it folding in more sources (and, for
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
     commitResolveSelection(resolveSession)
@@ -932,6 +942,7 @@
           {/if}
           <div class="min-w-0 flex-1">
             <h2 class="sp-title font-black leading-tight drop-shadow {$isMobile ? 'line-clamp-1 text-base' : 'line-clamp-2 text-xl'}">{title(pick.media)}</h2>
+            {#if pick.download}<p data-part="sources.download" class="mt-0.5 text-xs font-bold text-theme">Choose a source to download{pick.episode != null ? ` · Episode ${pick.episode}` : ''}</p>{/if}
             <p data-part="sources.status" data-state={resolving ? 'loading' : undefined} class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               {#if resolving}<Spinner size="xs" frame={$gameMode ? spinnerFrame : undefined} />{$jvmRuntimeState === 'starting' ? 'Starting extension runtime…' : 'Finding sources…'}{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>

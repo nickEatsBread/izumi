@@ -1915,6 +1915,13 @@
         else if (e.payload.action === 'setPosition') cmd('seek', [String(value), 'absolute+exact'])
       }),
     ]
+    // A saved file can finish loading before these listeners are live (the overlay mounts as playback
+    // starts), and its missed file-loaded event left it without scrub previews. Ask mpv instead.
+    void Promise.all(uns).then(async () => {
+      if (loadedUrl) return
+      const path = await playerGetProperty('path').catch(() => '')
+      if (!loadedUrl && path && path === get(nowPlayingStream).url) loadedUrl = path
+    })
     // Safety net: end any active scrub on a window-level pointer release. If a seekbar drag
     // runs off the element/screen edge, its own pointerup can be missed — leaving the scrub
     // "active" forever, which pins the controls at opacity-0 (they vanish). Ending it here

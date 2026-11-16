@@ -24,7 +24,7 @@
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
-  import { enqueueMany, downloads, keyFor } from '$lib/downloads/store'
+  import { startDownload, downloads, keyFor } from '$lib/downloads/store'
   import {
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
@@ -499,7 +499,7 @@
   function confirmDownload() {
     if (!selected.size && followNew === !!subscription) return
     if (selected.size) {
-      enqueueMany(media, [...selected].sort((a, b) => a - b), {
+      void startDownload(media, [...selected].sort((a, b) => a - b), {
         quality: batchQuality,
         cachedOnly: $downloadCachedOnly,
         audio: batchAudio,
