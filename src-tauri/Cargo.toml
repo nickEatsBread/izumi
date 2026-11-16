@@ -285,9 +285,7 @@ ashpd = { version = "0.13", default-features = false, features = ["tokio", "flat
 # yet. vendor/README.md explains how to update them. Edit upstream.json, not this block.
 [patch.crates-io]
 librqbit = { path = "vendor/librqbit" }
-librqbit-bencode = { path = "vendor/librqbit-bencode" }
-librqbit-dht = { path = "vendor/librqbit-dht" }
-librqbit-peer-protocol = { path = "vendor/librqbit-peer-protocol" }
+librqbit-lsd = { path = "vendor/librqbit-lsd" }
 librqbit-utp = { path = "vendor/librqbit-utp" }
 # END librqbit-vendor
 
