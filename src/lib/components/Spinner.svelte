@@ -7,8 +7,7 @@
   // `player` is playback's loading ring, from the press to the first frame and on later stalls: a copy
   // of the one mpv draws in Game mode (gm_osd.rs loading_overlay), which covers the page once mpv's
   // window is up. Every loading screen on the way mounts its own, so each matches mpv's colour,
-  // on-screen size, 24 steps a second and wall-clock turn (gm_osd.rs spinner_phase): no screen swap
-  // restarts or resizes it. On the Deck the old chain (card ring, bar, white ring, mpv's accent ring)
+  // on-screen size and wall-clock turn (gm_osd.rs spinner_phase): no screen swap restarts or resizes it. On the Deck the old chain (card ring, bar, white ring, mpv's accent ring)
   // read as four loaders. It turns on the compositor (will-change), so it keeps moving while source
   // and player setup hold the UI thread.
   import { gameMode, playing } from '$lib/player/session'
@@ -17,7 +16,7 @@
   import { themePresentation } from '$lib/themes/runtime'
 
   let { size = 'sm', label = '', inline = false, frame, class: className = '' }: {
-    /** 12, 16, 20 or 32 px, or `player`: mpv's loading ring, see above. */
+    /** 12, 16, 20 or 32 px, or `player`: mpv's loading ring (48 px unless the theme sets it), see above. */
     size?: 'xs' | 'sm' | 'md' | 'lg' | 'player'
     /** Announced to screen readers; leave empty when visible text beside it already says it. */
     label?: string
@@ -29,15 +28,13 @@
   } = $props()
 
   const SIZES = { xs: 'size-3', sm: 'size-4', md: 'size-5', lg: 'size-8' }
-  // mpv's ring in screen pixels (gm_osd.rs loading_overlay): 84 across with a 4.5 px stroke, a faint
-  // track and a quarter arc in the accent colour on top, one smooth turn a second. That is a 56 px ring
-  // with a 3 px border at the reference handheld app's 1.5 scale, where it read as big and calm.
-  const RING_PX = 84
-  const RING_STROKE_PX = 4.5
+  // mpv's ring in screen pixels (gm_osd.rs loading_overlay): a faint track and a quarter arc in the
+  // accent colour on top, one smooth turn a second. Its size and stroke are app.css's
+  // --theme-player-spinner-size and --theme-player-spinner-stroke (48 and 4 px), which a theme may set;
+  // theme-gm-osd.ts hands the same two to mpv.
   // A screen pixel is a CSS pixel at the player's 1:1 page zoom; the browse zoom that is still on while a
   // source connects would enlarge the ring, so it is drawn smaller by the same factor.
   const zoom = $derived($gameMode ? deckWebviewZoom($uiScale, $playing) : 1)
-  const ringPx = $derived(size === 'player' ? RING_PX / zoom : 0)
   // mpv's colour (readGmOsdTheme's choice) named as CSS for the browser to resolve: white without a
   // theme on the TV surface, else the theme's player.seekbarColor, else its primary. Reading the
   // computed colours here forced a whole-page style pass on every mount, as did asking for its animations.
@@ -59,9 +56,9 @@
     aria-label={label || undefined}
     aria-hidden={label ? undefined : 'true'}
     class="block shrink-0 animate-spin rounded-full will-change-transform {className}"
-    style:width="{ringPx}px"
-    style:height="{ringPx}px"
-    style:border="{RING_STROKE_PX / zoom}px solid rgb(255 255 255 / 0.15)"
+    style:width="calc(var(--theme-player-spinner-size) / {zoom})"
+    style:height="calc(var(--theme-player-spinner-size) / {zoom})"
+    style:border="calc(var(--theme-player-spinner-stroke) / {zoom}) solid rgb(255 255 255 / 0.15)"
     style:border-top-color={ringColor}
     style:animation-delay={turnDelay}
   ></span>
