@@ -418,7 +418,8 @@ pub struct Cdm {
 }
 
 impl Cdm {
-    /// Opens an instance on the default lane (single-instance playback and the Linux path).
+    /// Opens an instance on the default lane (the Linux streaming player's single instance).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn open(interface: i32, renewals: Renewals) -> Result<Cdm> {
         Self::open_on(0, interface, renewals)
     }

@@ -382,22 +382,26 @@ async fn save_inner(manifest_url: &str, dir: &Path, max_height: Option<u32>, lic
     }
     eprintln!("[widevine] lanes: audio {} + video {} (planned {} + {})", audio_cdms.len(), video_cdms.len(), plan.audio, plan.video);
     let started = Instant::now();
-    let (audio_done, video_done) = (std::cell::Cell::new(0u64), std::cell::Cell::new(0u64));
-    let last_report = std::cell::Cell::new(Instant::now() - Duration::from_secs(1));
+    // Both tracks report into one progress figure. Atomics and a mutex rather than cells: the save is
+    // a Tauri command future, which must be Send.
+    let (audio_done, video_done) = (std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0));
+    let last_report = Mutex::new(Instant::now() - Duration::from_secs(1));
     let emit = || {
-        let received = audio_done.get() + video_done.get();
-        if last_report.get().elapsed() < Duration::from_millis(250) && received < total {
+        let received = audio_done.load(Ordering::Relaxed) + video_done.load(Ordering::Relaxed);
+        let Ok(mut last) = last_report.lock() else { return };
+        if last.elapsed() < Duration::from_millis(250) && received < total {
             return;
         }
-        last_report.set(Instant::now());
+        *last = Instant::now();
+        drop(last);
         progress(received, total, received as f64 / started.elapsed().as_secs_f64().max(0.001));
     };
     let mut audio_report = |w: u64| {
-        audio_done.set(w);
+        audio_done.store(w, Ordering::Relaxed);
         emit();
     };
     let mut video_report = |w: u64| {
-        video_done.set(w);
+        video_done.store(w, Ordering::Relaxed);
         emit();
     };
     let audio_path = dir.join("audio.mp4");
