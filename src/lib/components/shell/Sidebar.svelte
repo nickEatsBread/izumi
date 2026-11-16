@@ -45,7 +45,7 @@
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
   import {
-    catalogLabel, catalogProvider, catalogScreen, catalogSwitcherPlacement, customScreens, enabledCatalogScreens, resolveCatalogSwitcherPlacement, selectCatalogScreen,
+    browseShown, catalogLabel, catalogProvider, catalogScreen, catalogSwitcherPlacement, customScreens, enabledCatalogScreens, resolveCatalogSwitcherPlacement, selectCatalogScreen,
   } from '$lib/settings/catalog'
   import { isSourceSelection, sourceAddon, sourcePackageOf } from '$lib/catalog/source-catalogs'
   import { listingHref, sourceMenus, type SourceMenu } from '$lib/catalog/source-menus'
@@ -96,9 +96,10 @@
     { id: 'library', href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
   ]
   const settingsItem = { id: 'settings', href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }
+  const listed = $derived($browseShown ? items : items.filter((it) => it.id !== 'browse'))
   // API 8 `layout.screens`: the theme's own screens follow the destinations (not in Search box mode).
   const screenItems = $derived($themeScreens.map(screenDestination))
-  const shown = $derived($interfaceMode === 'search' ? searchModeNav(items) : [...(searchField ? items.filter((it) => it.href !== '/app/search') : items), ...screenItems])
+  const shown = $derived($interfaceMode === 'search' ? searchModeNav(listed) : [...(searchField ? listed.filter((it) => it.href !== '/app/search') : listed), ...screenItems])
   // The drawer has room for Categories after Browse (the catalog's categories as a wall of chips);
   // the rail and the top bar keep their set.
   const categoriesItem = { id: 'categories', href: '/app/categories', icon: Shapes, label: 'Categories', anim: '' }

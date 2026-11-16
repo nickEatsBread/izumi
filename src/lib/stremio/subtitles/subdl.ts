@@ -19,7 +19,8 @@ export function subdlParams(q: SubQuery, apiKey: string): string {
   else if (q.tmdbId) { p.set('tmdb_id', q.tmdbId); p.set('type', q.type === 'movie' ? 'movie' : 'tv') }
   if (q.type === 'series') {
     if (q.season != null) p.set('season_number', String(q.season))
-    if (q.episode != null) p.set('episode_number', String(q.episode))
+    const episode = q.seasonEpisode ?? q.episode
+    if (episode != null) p.set('episode_number', String(episode))
   }
   const langs = [...q.languages].map((l) => l.toUpperCase()).sort()
   if (langs.length) p.set('languages', langs.join(','))
@@ -47,7 +48,7 @@ export function createSubDL(): SubtitleProvider {
             provider: 'subdl',
             lang: s.language,
             release: s.release_name,
-            download: { needsFetch: true, zipUrl: SUBDL_DL + s.url! },
+            download: { needsFetch: true, zipUrl: SUBDL_DL + s.url!, episode: q.seasonEpisode ?? q.episode },
           }))
       } catch {
         return []

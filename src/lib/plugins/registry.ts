@@ -8,7 +8,8 @@ export const pluginsEnabled = persisted<boolean>('plugins-enabled-v1', false)
 
 export interface InstalledPlugin {
   manifest: PluginManifest
-  /** Where it came from: an https plugin.json URL, or `file` for one picked from disk. */
+  /** Where it came from, and so where it updates from: a store's URL for a store install, an https
+   *  plugin.json URL, or `file` for one picked from disk. */
   origin: string
   enabled: boolean
   /** SHA-256 of the permissions the viewer approved (grantText). */
@@ -41,17 +42,36 @@ export async function preparePlugin(manifestText: string, code: string, origin: 
   return { manifest, code, origin, grantHash: await sha256Hex(grantText(manifest)) }
 }
 
-/** Fetches `plugin.json` and the file it names from the same https folder. */
-export async function preparePluginFromUrl(url: string, fetchText: (url: string) => Promise<string>): Promise<PreparedPlugin> {
+/** What a store listing pins: the exact plugin.json (size and SHA-256), which pins its code in turn. */
+export interface PluginListingPin { origin: string; sha256: string; bytes: number; id: string; version?: string }
+
+/** Fetches `plugin.json` and the file it names from the same https folder. From a store, plugin.json
+ *  must be the file the listing pins, and the origin is the store. */
+export async function preparePluginFromUrl(url: string, fetchText: (url: string) => Promise<string>, listing?: PluginListingPin): Promise<PreparedPlugin> {
   const base = new URL(url)
   if (base.protocol !== 'https:') throw new Error('Install plugins from an https address.')
   const manifestText = await fetchText(base.href)
-  const main = parseManifest(JSON.parse(manifestText)).main.path
-  return preparePlugin(manifestText, await fetchText(new URL(main, base).href), base.href)
+  if (listing && (new TextEncoder().encode(manifestText).length !== listing.bytes || await sha256Hex(manifestText) !== listing.sha256)) {
+    throw new Error('plugin.json does not match its store listing.')
+  }
+  let json: unknown
+  try { json = JSON.parse(manifestText) } catch { throw new Error('plugin.json is not valid JSON.') }
+  const manifest = parseManifest(json)
+  if (listing && (manifest.id !== listing.id || (listing.version && manifest.version !== listing.version))) {
+    throw new Error(`plugin.json is ${manifest.id} ${manifest.version}, not the ${listing.id} ${listing.version ?? ''} its store lists.`)
+  }
+  return preparePlugin(manifestText, await fetchText(new URL(manifest.main.path, base).href), listing?.origin ?? base.href)
+}
+
+/** Another install of the same plugin id, from somewhere else: it must be removed before this one
+ *  can replace it, so a store or link can never take over a plugin installed from elsewhere. */
+export function installedElsewhere(prepared: Pick<PreparedPlugin, 'manifest' | 'origin'>, list = storeGet(installedPlugins)): InstalledPlugin | undefined {
+  return list.find((p) => p.manifest.id === prepared.manifest.id && p.origin !== prepared.origin)
 }
 
 /** Installs (or updates) after the viewer approved its permissions. Keeps existing settings. */
 export async function installPlugin(prepared: PreparedPlugin): Promise<InstalledPlugin> {
+  if (installedElsewhere(prepared)) throw new Error(`${prepared.manifest.name} is already installed from somewhere else. Remove that copy first.`)
   await set(prepared.manifest.id, prepared.code, codeStore())
   const existing = storeGet(installedPlugins).find((p) => p.manifest.id === prepared.manifest.id)
   const defaults = Object.fromEntries(prepared.manifest.settings.filter((s) => s.type !== 'secret' && s.default !== undefined).map((s) => [s.id, s.default!]))

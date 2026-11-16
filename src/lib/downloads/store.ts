@@ -3,8 +3,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow, ProgressBarStatus } from '@tauri-apps/api/window'
 import { torrentEngineNetworkOptions } from '$lib/player/direct-torrent'
-import { downloadDir, downloadConcurrency } from '$lib/settings/ui'
+import { downloadDir, downloadConcurrency, downloadChooseSource } from '$lib/settings/ui'
 import { downloads, speeds, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
+import { releaseOf, savedSource } from './source'
+import type { Stream } from '$lib/stremio/parse'
 import { getEpisodeMeta } from '$lib/anizip'
 import { hasTauriRuntime, isAndroid } from '$lib/platform'
 import { downloadTaskbarProgress } from './taskbar'
@@ -38,18 +40,23 @@ export async function diskSpace(): Promise<DiskSpace | null> {
 const posterOf = (m: Media) => m.coverImage?.extraLarge ?? m.coverImage?.medium
 const filenameOf = (it?: DownloadItem) => it?.filename ?? `${it?.title ?? 'download'}.mkv`
 
-/** Queue one episode for download (no-op if already queued/downloading/done). */
-export function enqueue(media: Media, episode: number, preferences?: DownloadPreferences, ruleId?: string) {
+/** Queue one episode for download (no-op if already queued/downloading/done). `source` is the
+ *  stream to save (picked by the user, or playing); without one the download rules pick it. */
+export function enqueue(media: Media, episode: number, preferences?: DownloadPreferences, ruleId?: string, source?: Stream) {
   // A search box release has no title to resolve a download by (its toolbar hides Download).
   if (media.release) return
   const id = keyFor(media.id, episode)
   const cur = get(downloads)[id]
   if (cur && cur.status !== 'error') return
+  // A protected stream keeps the protected route as it is, narrowed to the source it came from.
+  const protectedOrigin = source?.__drm ? source.__origin?.id : undefined
   downloads.update((d) => ({ ...d, [id]: {
     id, mediaId: media.id, episode,
     title: `${media.title.userPreferred ?? media.title.romaji ?? 'Anime'} — E${episode}`,
     poster: posterOf(media), bytes: 0, downloaded: 0, status: 'queued', addedAt: Date.now(),
-    preferences, ruleId,
+    preferences: protectedOrigin ? { ...preferences, sourceOriginId: protectedOrigin } : preferences,
+    ruleId,
+    source: source && !source.__drm ? savedSource(source) : undefined,
   } }))
   // Cache the series info for OFFLINE use: a media snapshot (persisted) + the AniZip
   // episode metadata (idb-cached) so the downloads page + offline playback show titles
@@ -62,10 +69,39 @@ export function enqueueMany(media: Media, episodes: number[], preferences?: Down
   for (const ep of episodes) enqueue(media, ep, preferences)
 }
 
+/** Downloads the user asked for: queued at once, or, with Settings → Downloads → "Choose the source"
+ *  on, once they pick the first episode's source in the source picker (the rules' pick suggested).
+ *  The other episodes then follow that release. Automatic downloads go straight to `enqueue`. */
+export async function startDownload(media: Media, episodes: number | number[], preferences?: DownloadPreferences) {
+  const wanted = [episodes].flat().filter((ep) => {
+    const cur = get(downloads)[keyFor(media.id, ep)]
+    return !cur || cur.status === 'error'
+  })
+  if (!wanted.length) return
+  if (!get(downloadChooseSource) || media.release) return enqueueMany(media, wanted, preferences)
+  const [first, ...rest] = wanted
+  const { playEpisode, pickDownloadStream } = await import('$lib/stremio/play')
+  await playEpisode(media, first, () => {}, {
+    // Nothing starts on its own, and whatever is playing keeps playing.
+    forceManual: true,
+    remoteOnly: true,
+    download: {
+      choose: (stream) => {
+        enqueue(media, first, preferences, undefined, stream)
+        enqueueMany(media, rest, { ...preferences, release: releaseOf(stream) })
+      },
+      suggest: (streams) => pickDownloadStream(streams, media, undefined, preferences),
+    },
+  })
+}
+
 // Ids with a live download_start this session. Used so the startup requeue never
 // re-launches an already-running stream (which would double-write the .part and
 // make the progress bar yank).
 const running = new Set<string>()
+// HTTP jobs just (re)started: their engine first reports where it really starts, which is lower
+// than the bar when the server made it start over. That one report may move the bar back.
+const restarting = new Set<string>()
 
 // Android 13+ hides ordinary foreground-service notifications from the notification drawer until
 // POST_NOTIFICATIONS is granted. Ask at the moment the user starts/resumes a download, then keep
@@ -184,15 +220,17 @@ async function runJob(item: DownloadItem) {
     // Playback resolution is substantial and downloads are the only boot-mounted consumer. Load
     // it when a queued job actually runs, not whenever the app shell attaches download listeners.
     const { resolveDownloadUrl } = await import('$lib/stremio/play')
-    const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences)
+    const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences, false, item.source)
+    // Paused or cancelled while the source resolved: start nothing.
+    if (get(downloads)[item.id]?.status !== 'downloading') return
     // izumi's own Widevine module saves protected episodes as clear files where it is built (Linux
     // and Windows) and installed. Without it, a source with a decrypt plan falls back to the bundled
     // device (one clear file); otherwise the Shaka offline store.
     const native = (r.kind === 'shaka' || r.kind === 'drm') && usesNativeDrm(r.drm)
     setItem(item.id, {
       kind: native ? 'drm-local' : r.kind, url: r.kind === 'http' ? r.url : undefined,
-      hls: r.kind === 'http' ? r.hls : undefined,
       filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality,
+      source: r.source ?? item.source,
       sourceOriginId: r.kind === 'shaka' || r.kind === 'drm' ? r.sourceOriginId : item.sourceOriginId,
     })
     // Both resolve when the file is fully written OR paused; progress/done come via events.
@@ -225,6 +263,7 @@ async function runJob(item: DownloadItem) {
       await downloadWithDevice(item, r, dir)    } else if (r.kind === 'shaka') {
       await storeShaka(item, r)
     } else {
+      restarting.add(item.id)
       await invoke('download_start', {
         id: item.id, url: r.url, dir, filename: r.filename, headers: r.headers,
         hls: r.hls, preferredHeight: r.preferredHeight,
@@ -235,6 +274,7 @@ async function runJob(item: DownloadItem) {
     setItem(item.id, { status: 'error', error: e instanceof Error ? e.message : String(e) })
   } finally {
     running.delete(item.id)
+    restarting.delete(item.id)
   }
 }
 
@@ -267,14 +307,19 @@ export async function pauseDownload(id: string) {
   await stopJob(id, it, false)
   setItem(id, { status: 'paused' }); setSpeed(id, undefined)
 }
+/** Queue a paused (or failed) download again, with the same source. HTTP, HLS, torrent and
+ *  decrypting downloads continue from what is on disk; see `canPause` for the ones that cannot. */
 export function resumeDownload(id: string) {
-  const item = get(downloads)[id]
-  setItem(id, { status: 'queued', ...(item?.hls ? { downloaded: 0, bytes: 0 } : {}) })
+  setItem(id, { status: 'queued' })
   startPump()
 }
 export async function cancelDownload(id: string) {
   await stopJob(id, get(downloads)[id], true)
   removeItem(id); setSpeed(id, undefined)
+}
+/** Clear finished: take saved episodes off the Downloads list, leaving their files on this device. */
+export function clearFromList(ids: string[]) {
+  for (const id of ids) setItem(id, { cleared: true })
 }
 export async function deleteDownload(id: string) {
   const it = get(downloads)[id]
@@ -377,9 +422,10 @@ export function attachDownloadEvents() {
   listen<[string, number, number, number]>('download-progress', (e) => {
     const [id, received, total, speed] = e.payload
     // Monotonic: ignore any backward value (a stray/duplicate stream) so the bar
-    // only ever advances.
+    // only ever advances — except the starting point a restarted HTTP job reports.
     const cur = get(downloads)[id]?.downloaded ?? 0
-    if (received < cur) return
+    if (received < cur && !restarting.has(id)) return
+    restarting.delete(id)
     setItem(id, { downloaded: received, ...(total ? { bytes: total } : {}) })
     setSpeed(id, speed)
   })

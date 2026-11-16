@@ -48,7 +48,8 @@ describe('series page trailers (API 6 detail.preview: "trailer")', () => {
 
   it('the card preview takes its trailer id from the shared helper', () => {
     expect(preview).toContain("import { youtubeTrailerId } from './youtube-embed'")
-    expect(preview).toContain('const trailerId = $derived(youtubeTrailerId(media.trailer))')
+    // A card without the trailer field falls back to the looked-up one (anilist/trailer.ts).
+    expect(preview).toContain('const trailerId = $derived(youtubeTrailerId(media.trailer ?? (looked?.id === media.id ? looked.trailer : undefined)))')
     expect(preview).not.toContain("toLowerCase() === 'youtube'")
   })
 })

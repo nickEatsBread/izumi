@@ -246,7 +246,7 @@ pub struct PlayerHandle {
     current_url: Mutex<Option<String>>,
     /// Sidecar audio/subtitle tracks queued until mpv has actually loaded their stream.
     pending_external_tracks: Arc<Mutex<Option<PendingExternalTracks>>>,
-    /// Holds runtime `sub-add`s while a direct-P2P video opens without a read timeout.
+    /// Holds runtime `sub-add`s until their video has loaded.
     sidecar_gate: SidecarGate,
     /// Scrub-preview thumbnail jobs, keyed by stream cache key (infoHash or
     /// media-episode). Holds the url + geometry so tiles can be produced on demand.
@@ -1378,9 +1378,9 @@ impl PlayerHandle {
     }
 
     /// Resolves once a subtitle URL may be added to the current video, or errors if that video is
-    /// replaced first. Await it before `add_subtitle*` with a URL: a direct-P2P video opens with
-    /// mpv's read timeout disabled until FileLoaded (see `load_file`), and a `sub-add` opened in
-    /// that window would inherit it while holding the player lock.
+    /// replaced first. Await it before `add_subtitle*` with a URL: until FileLoaded a `sub-add` can
+    /// land on the outgoing file, and a direct-P2P video opens with mpv's read timeout disabled
+    /// (see `load_file`), which a `sub-add` opened in that window would inherit.
     pub fn sidecars_ready(
         &self,
     ) -> impl std::future::Future<Output = Result<(), String>> + Send + 'static {
@@ -1794,10 +1794,12 @@ fn load_file(
     let _ = mpv.set_property("http-header-fields", hdr.as_str());
     // mpv reads this when it opens a stream, so the video keeps it for its whole life, reconnects
     // and seeks included. The event loop restores the normal value at FileLoaded; until then the
-    // gate holds runtime subtitles, which would otherwise open with it too.
+    // gate holds runtime subtitles, which would otherwise open with it too. Every file holds them:
+    // a `sub-add` while mpv is still swapping files lands on the old file (and is dropped with it)
+    // or ahead of the new file's own tracks.
     let network_timeout = network_timeout_for(url);
     let _ = mpv.set_property("network-timeout", network_timeout);
-    sidecar_gate.begin_file(network_timeout != NETWORK_TIMEOUT_SECONDS);
+    sidecar_gate.begin_file(true);
 
     *pending_external_tracks.lock().map_err(|e| e.to_string())? = Some(PendingExternalTracks {
         url: url.to_string(),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, candidateApiKey, candidateDownloadUrl } from './online-subs'
+import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, candidateApiKey, candidateDownloadUrl, downloadArgs } from './online-subs'
 import { subtitleErrorNotice } from './online-subs'
 import { subDlApiKey, jimakuApiKey } from '$lib/settings/ui'
 import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
@@ -21,6 +21,17 @@ describe('candidateApiKey', () => {
     expect(candidateApiKey('subdl')).toBe('SKEY')
     expect(candidateApiKey('jimaku')).toBe('JKEY')
     expect(candidateApiKey('opensubtitles')).toBe(OPEN_SUBS_API_KEY)
+  })
+})
+
+describe('downloadArgs', () => {
+  it('hands Rust the episode a season archive must yield', () => {
+    subDlApiKey.set('SKEY')
+    const c: SubtitleCandidate = { provider: 'subdl', lang: 'EN', release: 'Show.S01', download: { needsFetch: true, zipUrl: 'https://dl/z.zip', episode: 14 } }
+    expect(downloadArgs(c, 'TOKEN')).toEqual({
+      provider: 'subdl', url: 'https://dl/z.zip', fileId: undefined, episode: 14,
+      lang: 'EN', title: 'EN · Show.S01', apiKey: 'SKEY', token: 'TOKEN',
+    })
   })
 })
 

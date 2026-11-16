@@ -1,6 +1,8 @@
 import { persisted } from 'svelte-persisted-store'
 import { writable, get } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
+import type { Stream } from '$lib/stremio/parse'
+import type { ContinueHint } from '$lib/stremio/play'
 
 // Downloads data + read accessors ONLY (no play.ts import) so play.ts can check for
 // a local file without a circular import. The queue/actions live in store.ts.
@@ -13,6 +15,9 @@ export interface DownloadPreferences {
   codec?: 'any' | 'h264' | 'h265' | 'av1'
   /** Internal: reacquire a temporary DRM license from the same source as the saved media. */
   sourceOriginId?: string
+  /** The release the user chose for the first episode of a multi-episode download; the others
+   *  follow it (its pack, release group or source) the way a binge does. */
+  release?: ContinueHint
 }
 export interface DownloadItem {
   id: string
@@ -29,9 +34,6 @@ export interface DownloadItem {
    *  clear files. `drm`: protected segments decrypted with a bundled device into one clear local
    *  file. Neither needs a CDM or a licence at playback. */
   kind?: 'http' | 'torrent' | 'shaka' | 'drm-local' | 'drm'
-  /** The HTTP engine is assembling an adaptive playlist. Its raw partial restarts from segment 1
-   * on resume, so the visible byte counter must restart with it. */
-  hls?: boolean
   /** Shaka's IndexedDB manifest URI for adaptive/DRM offline playback. */
   offlineUri?: string
   drmKeySystem?: string
@@ -48,6 +50,12 @@ export interface DownloadItem {
   completedAt?: number
   preferences?: DownloadPreferences
   ruleId?: string
+  /** The stream this download saves: the one the user chose, else the one its first run picked.
+   *  A resume, retry or restart fetches it again, so the partial data on disk stays one file. */
+  source?: Stream
+  /** Taken off the Downloads list by Clear finished. The file stays on this device: it still plays
+   *  offline and shows in the offline library. */
+  cleared?: boolean
 }
 
 /** Persisted map keyed by `<mediaId>:<episode>`. */

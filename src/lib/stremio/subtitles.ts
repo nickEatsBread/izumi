@@ -7,7 +7,10 @@ import { kitsuIdFromLinks } from './kitsu'
 import { anilistIdOf, externalIdsOf, kitsuIdOf as catalogKitsuId } from '$lib/catalog/identity'
 import { buildStreamIds } from './stream-ids'
 import { addonResourceUrl } from './resource-url'
-import { preferredSubLang, enabledSubtitleProviders } from '$lib/settings/ui'
+import { enabledSubtitleProviders } from '$lib/settings/ui'
+import { languagesForMedia } from '$lib/settings/catalog-languages'
+import { LANGUAGE_DATA } from '$lib/shared/languages'
+import { normalizeLang } from './sublang'
 import { createOpenSubtitles } from './subtitles/opensubtitles'
 import { createSubDL } from './subtitles/subdl'
 import { createJimaku } from './subtitles/jimaku'
@@ -55,13 +58,12 @@ async function kitsuIdOf(media: Media): Promise<number | undefined> {
   } catch { return undefined }
 }
 
-/** preferredSubLang is an ISO-639-2 audio/sub code ('eng'/'jpn'/'none'); the subtitle REST APIs want
- *  ISO-639-1. Map it and always include English as a fallback so a match still surfaces when the
- *  preferred language has none (external candidates are manually picked, so extra rows are harmless). */
-const ISO1: Record<string, string> = { eng: 'en', jpn: 'ja' }
-function queryLanguages(): string[] {
-  const code = ISO1[get(preferredSubLang)]
-  return !code || code === 'en' ? ['en'] : [code, 'en']
+/** The catalog's subtitle order holds ISO-639-2 codes or BCP-47 tags; the subtitle REST APIs want
+ *  ISO-639-1. Map them and always include English as a fallback so a match still surfaces when the
+ *  preferred languages have none (external candidates are manually picked, so extra rows are harmless). */
+export function queryLanguages(order: readonly string[]): string[] {
+  const codes = order.map((tag) => LANGUAGE_DATA.find((row) => row.code === normalizeLang(tag))?.iso1)
+  return [...new Set([...codes.filter((code): code is string => !!code), 'en'])]
 }
 
 /** Resolve the ids for one episode into the shared SubQuery each provider consumes. */
@@ -107,25 +109,28 @@ async function buildSubQuery(media: Media, episode: number | undefined, filename
   // Same ids as play.ts's stream request: primaryStreamIds + the aligned-imdb wave (mediaExtensionIds).
   const v = episode == null ? media.videos?.[0] : media.videos?.find((x) => x.number === episode) ?? media.videos?.[episode - 1]
   const native = media.catalog?.provider === 'stremio' ? media.catalog.resourceType?.trim() : ''
+  // A TMDB/Stremio catalog title has no AniList mapping; its own ids are the only ones there are.
+  const catalogIds = externalIdsOf(media)
+  const imdbId = ids.imdbId ?? catalogIds.imdb
+  const season = v?.season ?? ids.season
   return {
     type,
-    imdbId: ids.imdbId,
-    parentImdbId: ids.imdbId,
-    tmdbId: ids.tmdbId,
+    imdbId,
+    parentImdbId: imdbId,
+    tmdbId: ids.tmdbId ?? (catalogIds.tmdb ? String(catalogIds.tmdb) : undefined),
     kitsuId: kitsu != null ? String(kitsu) : undefined,
-    anilistId: media.id,
-    season: ids.season,
+    anilistId,
+    season,
+    // IMDb-keyed services count within the season: a split cour's AniList episode 1 is their E13.
+    seasonEpisode: season != null ? v?.episode ?? ids.episodeNumber : undefined,
     episode,
     filename,
     moviehash,
     moviebytesize: moviehash ? video?.size : undefined,
-    languages: queryLanguages(),
+    languages: queryLanguages(languagesForMedia(media).subtitle),
     metaType: native && /^[A-Za-z0-9._-]{1,80}$/.test(native) ? native : type,
     directVid: media.catalog?.provider === 'stremio' ? v?.id : undefined,
-    imdbVid: buildStreamIds({
-      type, imdb: ids.imdbId ?? externalIdsOf(media).imdb,
-      season: v?.season ?? ids.season, imdbEpisode: v?.episode ?? ids.episodeNumber,
-    })[0],
+    imdbVid: buildStreamIds({ type, imdb: imdbId, season, imdbEpisode: v?.episode ?? ids.episodeNumber })[0],
     kitsuVid: buildStreamIds({ type, kitsu, episode })[0],
     videoSize: Number.isSafeInteger(video?.size) && video!.size! > 0 ? video!.size : undefined,
   }

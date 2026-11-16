@@ -31,8 +31,8 @@ describe('catalog title page options menu', () => {
 
   it('only queues episodes this device does not have yet', () => {
     // With the Settings → Downloads defaults (quality, audio), as every other download button.
-    expect(detail).toContain('enqueueMany(media, saveable(all).map((video) => video.number), currentDownloadPreferences())')
-    expect(detail).toContain('enqueue(media, episode.number, currentDownloadPreferences())')
+    expect(detail).toContain('startDownload(media, saveable(all).map((video) => video.number), currentDownloadPreferences())')
+    expect(detail).toContain('startDownload(media, episode.number, currentDownloadPreferences())')
     expect(detail).toContain("const saveable = (list: MediaVideo[]) => list.filter((video) => !downloadState(video) || downloadState(video) === 'error')")
   })
 

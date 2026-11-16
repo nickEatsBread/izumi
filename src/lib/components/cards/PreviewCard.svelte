@@ -14,6 +14,8 @@
   import { WATCHLIST_ID, localLibrary, mediaIsInLocalList, toggleMediaInLocalList } from '$lib/library/local-lists'
   import YoutubeTrailer from './YoutubeTrailer.svelte'
   import { youtubeTrailerId } from './youtube-embed'
+  import { anilist } from '$lib/anilist/client'
+  import { lacksTrailerField, MEDIA_TRAILER_QUERY } from '$lib/anilist/trailer'
   import Play from '@lucide/svelte/icons/play'
   import Heart from '@lucide/svelte/icons/heart'
   import Bookmark from '@lucide/svelte/icons/bookmark'
@@ -39,7 +41,18 @@
 
   // YouTube trailers only. The iframe stays transparent until the video plays and a failed embed
   // removes it (YoutubeTrailer's dead state), so the artwork shows whenever the trailer cannot.
-  const trailerId = $derived(youtubeTrailerId(media.trailer))
+  // A card whose data came without the trailer field (a MyAnimeList list row) asks AniList for it.
+  let looked = $state<{ id: number; trailer: Media['trailer'] }>()
+  $effect(() => {
+    const target = media
+    if (!lacksTrailerField(target)) return
+    let live = true
+    anilist.query(MEDIA_TRAILER_QUERY, { id: target.id }).toPromise()
+      .then((result) => { if (live) looked = { id: target.id, trailer: result.data?.Media?.trailer ?? null } })
+      .catch(() => {})
+    return () => { live = false }
+  })
+  const trailerId = $derived(youtubeTrailerId(media.trailer ?? (looked?.id === media.id ? looked.trailer : undefined)))
 
   // Favourite is AniList-only. Watchlist saving is device-local and never requires an account.
   const canFavourite = $derived(!!$anilistToken)

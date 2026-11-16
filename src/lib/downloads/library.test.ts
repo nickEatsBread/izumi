@@ -17,6 +17,10 @@ describe('seriesTitle', () => {
 })
 
 describe('groupDownloads', () => {
+  it('keeps an episode cleared from the Downloads list in the offline library', () => {
+    expect(groupDownloads({ '1:1': item({ mediaId: 1, episode: 1, cleared: true }) }, {})).toMatchObject([{ mediaId: 1, episodeCount: 1 }])
+  })
+
   it('groups done items by mediaId and counts episodes', () => {
     const dl = {
       '1:1': item({ mediaId: 1, episode: 1 }),

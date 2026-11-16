@@ -89,8 +89,10 @@ describe('Home blocks wiring', () => {
   it('follows the active theme layout without touching the user layout', () => {
     for (const file of RENDERERS) {
       const source = read(file)
-      // A custom screen ignores it (MergedCatalogHome reads it through `themeLayout`).
-      expect(source, file).toMatch(/\$activeThemeLayout\?\.home|const themeLayout = \$derived\(isCustomScreen\(target\) \? null : \$activeThemeLayout\)/)
+      // A custom screen ignores it unless a theme screen (API 8) draws its own entries there (MergedCatalogHome
+      // reads it through `themeLayout`); every host reads the layout through `homeLayoutFor`.
+      expect(source, file).toMatch(/\$activeThemeLayout\?\.home|const themeLayout = \$derived\(isCustomScreen\(target\) && !themeScreen \? null : \$homeLayout\)/)
+      expect(source, file).toContain('homeLayoutFor(')
       expect(source, file).toContain('resolveThemeHome(')
       expect(source, file).toContain('locked={!!themeHome}')
     }

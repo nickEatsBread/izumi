@@ -59,6 +59,13 @@ export type StreamPickerState = {
   // An in-place episode advance (next, previous, auto-advance): a docked mini-player stays docked
   // and simply changes episode, the way any music app's mini-player does.
   keepMini?: boolean
+  // The user is choosing which source to DOWNLOAD (Settings → Downloads → Choose the source): a
+  // pick is handed to `choose` instead of playing, and `suggest` is the row an automatic download
+  // would have saved, offered as the best one.
+  download?: {
+    choose: (stream: Stream) => void
+    suggest: (streams: Stream[]) => Stream | undefined
+  }
 }
 
 export const streamPicker = writable<StreamPickerState | null>(null)
@@ -309,6 +316,11 @@ export const torrentSubtitleState = writable<{
   total: number
   revision: number
 }>({ playbackId: null, status: 'idle', loaded: 0, total: 0, revision: 0 })
+
+// Bumped each time a subtitle track reaches the playing file after it opened (add-on results,
+// debrid and torrent sidecars). mpv never selects such a track itself, so the overlay re-runs its
+// subtitle choice on every bump.
+export const lateSubtitleRevision = writable(0)
 
 // Cache key (infoHash, else `<mediaId>-<episode>`) of the stream now playing, used
 // by the seekbar to request/poll its scrub-preview sprite sheet. null = no sprite.

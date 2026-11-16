@@ -90,12 +90,14 @@ export const WORKER_PRELUDE = `self.onmessage = async (event) => {
   const izumi = Object.freeze({
     settings: Object.freeze({ get: () => call('settings.get') }),
     storage: Object.freeze({ get: (key) => call('storage.get', key), set: (key, value) => call('storage.set', key, value), delete: (key) => call('storage.delete', key) }),
+    secrets: Object.freeze({ get: (key) => call('secrets.get', key), set: (key, value) => call('secrets.set', key, value), delete: (key) => call('secrets.delete', key) }),
+    signin: Object.freeze({ listen: (path) => call('signin.listen', path), open: (url) => call('signin.open', String(url)), wait: () => call('signin.wait'), cancel: () => call('signin.cancel') }),
     fetch: async (url, init = {}) => {
       const r = await call('fetch', String(url), { method: init.method, headers: init.headers, body: init.body })
       return { status: r.status, ok: r.status >= 200 && r.status < 300, headers: r.headers, text: async () => r.body, json: async () => JSON.parse(r.body) }
     },
     player: Object.freeze({ status: () => call('player.status'), subtitles: () => call('player.subtitles'), seek: (seconds) => call('player.seek', seconds) }),
-    ui: Object.freeze({ setPanel: (state) => call('ui.setPanel', state), notice: (text) => call('ui.notice', text) }),
+    ui: Object.freeze({ setPanel: (state) => call('ui.setPanel', state), setAccount: (state) => call('ui.setAccount', state), notice: (text) => call('ui.notice', text) }),
     log: (...parts) => call('log', 'info', parts.map(String).join(' ')),
     on: (name, handler) => { handlers[name] = handler },
   })

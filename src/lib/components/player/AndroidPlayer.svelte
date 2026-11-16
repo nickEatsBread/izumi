@@ -67,7 +67,8 @@
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerLoadId, streamPicker, connecting, debridCaching, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
-  import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import { pickSubtitleTrackId, selectedAudioLang } from '$lib/player/track-policy'
+  import { languagesForMedia } from '$lib/settings/catalog-languages'
   import { audioFilter } from '$lib/player/enhancements'
   import { activeChapterIndex, chapterRowLabel, sortChapters } from '$lib/player/chapters'
   import type { Chapter } from '$lib/player/chapter-skip'
@@ -77,7 +78,7 @@
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
-    preferredAudioLang, preferredSubLang, audioProcessing, sceneBookmarksEnabled,
+    audioProcessing, sceneBookmarksEnabled,
     autoSelectSource, autoSelectCountdown, hideSpoilers,
   } from '$lib/settings/ui'
   import { banner, cover } from '$lib/anilist/media'
@@ -98,7 +99,7 @@
   import { serverSiblings, variantLabel, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
-  import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
+  import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, downloadArgs } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { castSourceDecision, castSubtitleFormat, castSubtitleTitle, castTrackPreferences, tvCastSource } from '$lib/player/android-cast'
   import { castSkipSegments, companionMedia } from '$lib/companion/protocol'
@@ -425,7 +426,8 @@
       const rememberedSub = matchRememberedTrack(list.filter((track) => track.type === 'sub'), subPref)
       if (rememberedSub === null) return setSubTrack('no')
       if (rememberedSub) return setSubTrack(rememberedSub.id)
-      const id = pickSubtitleTrackId(list, get(preferredAudioLang), get(preferredSubLang))
+      const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+      const id = pickSubtitleTrackId(list, selectedAudioLang(list) ?? languages.audio[0], languages.subtitle)
       if (id !== undefined) return setSubTrack(id)
     }).catch(() => {})
     const af = audioFilter(get(audioProcessing))
@@ -1708,15 +1710,7 @@
     const key = candidateKey(candidate)
     downloadingSubtitle = key
     try {
-      const path = await invoke<string>('player_add_subtitle', {
-        provider: candidate.provider,
-        url: candidateDownloadUrl(candidate),
-        fileId: candidate.download?.fileId,
-        lang: candidate.lang ?? 'und',
-        title: candidateTitle(candidate),
-        apiKey: candidateApiKey(candidate.provider),
-        token: $openSubtitlesToken,
-      })
+      const path = await invoke<string>('player_add_subtitle', downloadArgs(candidate, $openSubtitlesToken))
       await mpvCommand([
         'sub-add',
         path,

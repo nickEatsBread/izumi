@@ -50,6 +50,23 @@ A native anime library manager for browsing, tracking, and playing from the sour
   every participant resolves their own source while the host controls play, pause, and seeking.
 - **Settings** — interface (UI scale, episode layout), sources, extensions, network, accounts,
   downloads.
+- **Store** — browse sources, themes, plugins and packs from izumi's stores or any store you add.
+  Nothing is installed until you choose it.
+
+## Make themes and plugins
+
+- **Themes** are JSON packages that restyle izumi without running code. Build one with the
+  [theme guide](https://github.com/nickEatsBread/izumi-themes/blob/main/docs/building-a-theme.md) and
+  submit it to [izumi-themes](https://github.com/nickEatsBread/izumi-themes#submitting-a-theme).
+- **Plugins** add features and run in izumi's plugin sandbox (beta), **sources** are packaged as
+  signed `.izumi-ext` files, and **packs** set izumi up with sources, a theme and a startup video in
+  one link. Build them with the
+  [plugin](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/building-a-plugin.md),
+  [source](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/building-a-source.md) and
+  [pack](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/building-a-pack.md) guides and
+  submit them to [izumi-plugins](https://github.com/nickEatsBread/izumi-plugins), or
+  [run a marketplace of your own](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/running-a-marketplace.md).
+- How the client handles them: [plugins, sources, packs and stores](docs/PLUGINS.md) and [themes](docs/THEMES.md).
 
 ## Supported sources
 

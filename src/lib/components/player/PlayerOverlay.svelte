@@ -40,7 +40,7 @@
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
-    preferredAudioLang, preferredSubLang, scrubThumbnails,
+    scrubThumbnails,
   } from '$lib/settings/ui'
   import { registerThumbTiles } from '$lib/player/thumb-tiles'
   import { get } from 'svelte/store'
@@ -54,7 +54,8 @@
   import { reportWatchPlayback, watchParty } from '$lib/watch-together/client'
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, reportDirectTorrentFirstFrame, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
-  import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import { pickSubtitleTrackId, selectedAudioLang } from '$lib/player/track-policy'
+  import { languagesForMedia } from '$lib/settings/catalog-languages'
   import type { Track } from '$lib/player/track-label'
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { sessionSubtitleStyle, sessionSubtitleAdjustments, effectiveSubtitleStyle, resetSubtitleSession } from '$lib/settings/subtitle-presets'
@@ -79,7 +80,7 @@
   import { episodeLoadingModel } from '$lib/themes/host-model'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { protectedSurface } from '$lib/themes/safe-mode'
-  import { oskDismissedAt, playerStage, playerChromeVisible } from '$lib/player/session'
+  import { oskDismissedAt, playerStage, playerChromeVisible, lateSubtitleRevision } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import DockEpisodes from './DockEpisodes.svelte'
@@ -1015,19 +1016,28 @@
   })
 
   // Re-select once the file is actually loaded. A per-series semantic preference (language,
-  // title, codec) wins; global language policy remains the fallback for unseen shows.
+  // title, codec) wins; global language policy remains the fallback for unseen shows. A subtitle
+  // that arrives later runs the choice again, but may only switch subtitles on: never away from a
+  // track already showing, which may be the viewer's own pick.
   let subtitlePolicyKey = ''
+  let subtitlePolicyRevision = 0
   $effect(() => {
     const key = loadedKey
-    if (drmWebview || !firstFrame || !key || subtitlePolicyKey === key) return
+    const revision = $lateSubtitleRevision
+    if (drmWebview || !firstFrame || !key || (subtitlePolicyKey === key && subtitlePolicyRevision === revision)) return
+    const late = subtitlePolicyKey === key
     subtitlePolicyKey = key
+    subtitlePolicyRevision = revision
     void playerTracks()
       .then((raw) => {
         if (key !== loadedKey) return
         const tracks = JSON.parse(raw) as Track[]
-        const audioPref = rememberedSeriesTrack(np.id, 'audio')
-        const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
-        if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        if (late && tracks.some((track) => (track.type === 'sub' || track.type === 'caption') && track.selected)) return
+        if (!late) {
+          const audioPref = rememberedSeriesTrack(np.id, 'audio')
+          const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
+          if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        }
 
         const subPref = rememberedSeriesTrack(np.id, 'subtitle')
         const rememberedSub = matchRememberedTrack(
@@ -1036,7 +1046,8 @@
         )
         if (rememberedSub === null) { cmd('set', ['sid', 'no']); return }
         if (rememberedSub) { cmd('set', [rememberedSub.type === 'caption' ? 'ccid' : 'sid', String(rememberedSub.id)]); return }
-        const id = pickSubtitleTrackId(tracks, get(preferredAudioLang), get(preferredSubLang))
+        const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+        const id = pickSubtitleTrackId(tracks, selectedAudioLang(tracks) ?? languages.audio[0], languages.subtitle)
         if (id !== undefined) cmd('set', ['sid', String(id)])
       })
       .catch(() => {})
@@ -1922,6 +1933,13 @@
         else if (e.payload.action === 'setPosition') cmd('seek', [String(value), 'absolute+exact'])
       }),
     ]
+    // A saved file can finish loading before these listeners are live (the overlay mounts as playback
+    // starts), and its missed file-loaded event left it without scrub previews. Ask mpv instead.
+    void Promise.all(uns).then(async () => {
+      if (loadedUrl) return
+      const path = await playerGetProperty('path').catch(() => '')
+      if (!loadedUrl && path && path === get(nowPlayingStream).url) loadedUrl = path
+    })
     // Safety net: end any active scrub on a window-level pointer release. If a seekbar drag
     // runs off the element/screen edge, its own pointerup can be missed — leaving the scrub
     // "active" forever, which pins the controls at opacity-0 (they vanish). Ending it here

@@ -213,6 +213,31 @@ describe('resolveDownloadUrl source preference', () => {
     expect(resolveHash).not.toHaveBeenCalled()
   })
 
+  // A download keeps the stream it saves, so a resume appends to the same file.
+  const OTHER = '00112233445566778899aabbccddeeff00112233'
+  const otherRow = { infoHash: OTHER, name: 'Addon', title: '[Other] Test Anime - 02 (720p) 👤 3', behaviorHints: { filename: '[Other] Test Anime - 02 [720p].mkv' } }
+
+  it('records the stream it saves, and fetches that one again even when another ranks higher', async () => {
+    answer([torrentRow, otherRow])
+    const first = await resolveDownloadUrl(1, 2)
+    expect(first.source).toMatchObject({ infoHash: HASH })
+
+    const again = await resolveDownloadUrl(1, 2, undefined, false, { ...otherRow })
+    expect(again).toMatchObject({ kind: 'torrent', infoHash: OTHER })
+  })
+
+  it('fetches the saved stream itself when no source lists it any more', async () => {
+    answer([])
+    const resolved = await resolveDownloadUrl(1, 2, undefined, false, { url: 'https://host/ep.mkv', name: 'Gone', title: 'Test Anime 02' })
+    expect(resolved).toMatchObject({ kind: 'http', url: 'https://host/ep.mkv' })
+  })
+
+  it('follows the release chosen for the first episode of a multi-episode download', async () => {
+    answer([torrentRow, otherRow])
+    const resolved = await resolveDownloadUrl(1, 2, { quality: '1080', release: { group: 'Other' } })
+    expect(resolved).toMatchObject({ infoHash: OTHER })
+  })
+
   it('routes JVM HLS wrappers through segment assembly instead of saving the playlist', async () => {
     answer([])
     resolveOnlineStreams.mockResolvedValueOnce([{
@@ -285,7 +310,7 @@ describe('resolveDownloadUrl source preference', () => {
     expect(resolved).toMatchObject({
       kind: 'shaka',
       audioLang: 'ja-JP',
-      preferredSubLang: 'eng',
+      preferredSubLang: ['eng'],
       subtitles: [english],
     })
   })
@@ -363,11 +388,12 @@ describe('a protected episode saved on this device', () => {
   it('plays an already-clear saved folder with no DRM, as a video+audio file pair', async () => {
     const { clearProtectedStream } = await import('./play')
     const stream = clearProtectedStream('/downloads/Test Anime - E2.protected')
-    expect(stream.url).toBe('file:///downloads/Test%20Anime%20-%20E2.protected/video.mp4')
-    expect(stream.__audioTracks).toEqual([{ url: 'file:///downloads/Test%20Anime%20-%20E2.protected/audio.mp4' }])
+    // Plain paths, like every other download: mpv reports a file:// URL back as a path, and the audio
+    // track and seek-bar previews wait for the exact URL that was loaded.
+    expect(stream.url).toBe('/downloads/Test Anime - E2.protected/video.mp4')
+    expect(stream.__audioTracks).toEqual([{ url: '/downloads/Test Anime - E2.protected/audio.mp4' }])
     expect(stream.__drm).toBeUndefined()
-    // A name with URL-special characters is encoded so the path stays intact.
-    expect(clearProtectedStream('/downloads/Q&A #1? 100%.protected').url).toBe('file:///downloads/Q%26A%20%231%3F%20100%25.protected/video.mp4')
+    expect(clearProtectedStream('C:\\dl\\Q&A #1? 100%.protected\\').url).toBe('C:\\dl\\Q&A #1? 100%.protected\\video.mp4')
   })
 
   it('plays a clear protected download offline, without re-licensing', async () => {

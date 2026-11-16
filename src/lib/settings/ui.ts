@@ -76,12 +76,22 @@ export const skipPreviews = persisted<boolean>('player-skip-previews', false)
  *  always *marked* in the episode list; this controls whether auto-advance skips it. */
 export const skipFiller = persisted<boolean>('player-skip-filler', false)
 
-// --- Playback language preferences (mpv alang/slang auto-selection) ---
-// ISO 639-2 codes. Default JP audio + EN subs.
-export type AudioLang = 'jpn' | 'eng'
-export type SubLang = 'eng' | 'jpn' | 'none'
-export const preferredAudioLang = persisted<AudioLang>('preferred-audio-lang', 'jpn')
-export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
+// --- Playback language preferences: the global order (see catalog-languages.ts) ---
+// Comma-separated ISO 639-2 codes, most wanted first, or `auto`: each catalog then uses its own
+// default (Japanese audio and English subtitles for anime, the system language elsewhere).
+// Subtitles may also be `none` (off).
+export type AudioLang = string
+export type SubLang = string
+if (typeof localStorage !== 'undefined' && localStorage.getItem('playback-languages-auto-r1') == null) {
+  // Setup used to store the old built-in pair (Japanese audio, English subtitles) as if chosen, which
+  // would now force Japanese audio on films too. Move those two values to Automatic once (anime's
+  // default is the same pair); any other stored choice is the user's own and stays.
+  if (localStorage.getItem('preferred-audio-lang') === '"jpn"') localStorage.setItem('preferred-audio-lang', '"auto"')
+  if (localStorage.getItem('preferred-sub-lang') === '"eng"') localStorage.setItem('preferred-sub-lang', '"auto"')
+  localStorage.setItem('playback-languages-auto-r1', 'true')
+}
+export const preferredAudioLang = persisted<AudioLang>('preferred-audio-lang', 'auto')
+export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'auto')
 
 // --- Subtitle presentation + synchronization ---
 /** Apply Izumi's subtitle appearance instead of leaving styling entirely to the subtitle file. */
@@ -528,6 +538,9 @@ export const downloadCachedOnly = persisted<boolean>('download-cached-only', tru
 export const downloadQuality = persisted<Quality>('download-quality', '1080')
 export const downloadAudio = persisted<'any' | 'sub' | 'dub'>('download-audio', 'sub')
 export const downloadCodec = persisted<'any' | 'h264' | 'h265' | 'av1'>('download-codec', 'any')
+/** Starting one episode's download opens the source picker instead of saving the source the rules
+ *  above pick. Bulk and automatic downloads still choose by the rules. */
+export const downloadChooseSource = persisted<boolean>('download-choose-source', false)
 /** Wait after the scheduled air time so release/indexing providers can catch up. */
 export const autoDownloadDelayMinutes = persisted<number>('auto-download-delay-minutes', 15)
 

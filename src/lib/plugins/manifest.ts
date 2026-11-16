@@ -1,16 +1,18 @@
-/** Plugin package format, API 1 (docs/navigator-player-and-ai-jump.md, "Plugin runtime"). A plugin is
- *  `plugin.json` plus one `main.js` module whose SHA-256 the manifest pins. */
+/** Plugin package format, API 2 (docs/navigator-player-and-ai-jump.md, "Plugin runtime"). A plugin is
+ *  `plugin.json` plus one `main.js` module whose SHA-256 the manifest pins. API 2 added the `signin`
+ *  permission, plugin secrets, the settings account block and setting links; API 1 plugins still run. */
 
-export const PLUGIN_API = 1
+export const PLUGIN_API = 2
 export const MAX_MANIFEST_BYTES = 64 * 1024
 export const MAX_MAIN_BYTES = 2 * 1024 * 1024
 
 /** Scopes a plugin can ask for. Everything else (its own panel, settings, storage, timers) needs none. */
-export const PLUGIN_SCOPES = ['network', 'player.events', 'player.control', 'player.subtitles', 'player.panel'] as const
+export const PLUGIN_SCOPES = ['network', 'signin', 'player.events', 'player.control', 'player.subtitles', 'player.panel'] as const
 export type PluginScope = (typeof PLUGIN_SCOPES)[number]
 
 export const SCOPE_TEXT: Record<PluginScope, string> = {
   network: 'Connect to the internet (only the addresses listed below)',
+  signin: 'Open your browser to sign in at the addresses listed below, and receive the sign-in',
   'player.events': 'See what is playing and where you are in it',
   'player.control': 'Seek the player',
   'player.subtitles': 'Read the text of the subtitle track you have on',
@@ -26,6 +28,8 @@ export interface PluginSetting {
   placeholder?: string
   default?: string | number | boolean
   options?: { value: string; label: string }[]
+  /** Pages izumi opens in the browser, such as where to get an API key. https only. */
+  links?: { label: string; url: string }[]
 }
 
 export interface PluginManifest {
@@ -77,6 +81,15 @@ function parseSetting(value: unknown): PluginSetting {
       return { value: text(o.value, 'option value', 100), label: text(o.label, 'option label', 100) }
     })
   }
+  if (raw.links !== undefined) {
+    if (!Array.isArray(raw.links) || raw.links.length > 4) throw new Error(`Plugin setting ${id} has too many links.`)
+    setting.links = raw.links.map((link) => {
+      const l = record(link, 'setting link')
+      const url = text(l.url, 'link url', 300)
+      if (!url.startsWith('https://') || !URL.canParse(url)) throw new Error(`Plugin setting ${id} links must be https.`)
+      return { label: text(l.label, 'link label', 40), url }
+    })
+  }
   if (raw.default !== undefined) {
     if (type === 'secret') throw new Error(`Plugin secret ${id} cannot have a default.`)
     if (!['string', 'number', 'boolean'].includes(typeof raw.default)) throw new Error(`Plugin setting ${id} has an invalid default.`)
@@ -89,7 +102,7 @@ function parseSetting(value: unknown): PluginSetting {
 export function parseManifest(value: unknown): PluginManifest {
   const raw = record(value, 'manifest')
   if (raw.app !== 'izumi' || raw.kind !== 'plugin' || raw.schemaVersion !== 1) throw new Error('This is not an izumi plugin.')
-  if (raw.pluginApi !== PLUGIN_API) throw new Error('This plugin needs a different version of izumi.')
+  if (!Number.isInteger(raw.pluginApi) || (raw.pluginApi as number) < 1 || (raw.pluginApi as number) > PLUGIN_API) throw new Error('This plugin needs a different version of izumi.')
   const id = text(raw.id, 'id', 100)
   if (!ID.test(id)) throw new Error('Plugin id must look like "com.example.name".')
   const version = text(raw.version, 'version', 20)
@@ -132,6 +145,8 @@ export function parseManifest(value: unknown): PluginManifest {
   } else if (scopes.includes('network')) {
     throw new Error('The "network" permission needs permissions.network.')
   }
+  // The browser only opens the fixed addresses the viewer approved.
+  if (scopes.includes('signin') && !manifest.permissions.network?.domains.length) throw new Error('The "signin" permission needs network domains to sign in to.')
   if (raw.panel !== undefined) {
     if (!scopes.includes('player.panel')) throw new Error('A player panel needs the "player.panel" permission.')
     const panel = record(raw.panel, 'panel')

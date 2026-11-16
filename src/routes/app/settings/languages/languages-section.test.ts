@@ -18,7 +18,7 @@ describe('Languages section', () => {
 
   it('renders the registry subcategories in order, with no folded Advanced', () => {
     const subcategories = subcategoriesOf(file)
-    expect(subcategories.map((sub) => sub.id)).toEqual(['app', 'playback', 'sources', 'downloads'])
+    expect(subcategories.map((sub) => sub.id)).toEqual(['app', 'playback', 'catalogs', 'sources', 'downloads'])
     expect(subcategories.map((sub) => sub.id)).toEqual(settingsSection('languages').subcategories.map((sub) => sub.id))
     expect(subcategories.filter((sub) => sub.collapsible || sub.summary !== undefined)).toEqual([])
   })
@@ -39,8 +39,13 @@ describe('Languages section', () => {
       expect(page).toContain(`(${store} = `)
     }
     expect(page).toContain('onChange={changeLocale}')
-    expect(page).toContain("{ value: 'none', label: m.cast_subtitles_off() }")
     expect(page).toContain('<MultiSelect label="Languages" options={langOptions}')
+  })
+
+  it('lists every playable catalog with its own languages', () => {
+    expect(page).toContain('<CatalogLanguageRows catalog={entry.catalog} name={entry.name} />')
+    expect(page).toContain("{ catalog: 'anime' as const, name: 'Anime' }")
+    expect(page).toContain('sourceSelection(source.packageId)')
   })
 
   it('keeps row descriptions to one line', () => {

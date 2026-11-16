@@ -632,6 +632,7 @@ State values:
 | `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge; data-variant player is the playback ring, in the player accent, from the press to the first frame, sized by `--theme-player-spinner-size` and `--theme-player-spinner-stroke` (48 and 4 px). |  |
 | `sources` | slot | The source picker; data-variant is dialog, phone or panel (the Game mode side panel), and data-state is loading while sources are being found. |  |
 | `sources.status` | part | The line under the picker title: a spinner and Finding sources, then the counts. |  |
+| `sources.download` | part | The line under the picker title when the pick is a source to download, not to play. |  |
 | `sources.list` | part | The scrolling list of sources. |  |
 | `sources.row` | part | One source; data-best marks the best pick, and placeholder rows have data-state loading with a skeleton inside. |  |
 | `sources.group` | part | One release and its routes: its first row, the N more toggle and the expanded rows. |  |
@@ -830,6 +831,8 @@ State values:
 | `downloads.item` | part | One episode row; data-state is its status (done, downloading, paused, queued, error). |  |
 | `downloads.action` | part | The row's primary button; data-action is play, pause, resume, retry or options. |  |
 | `downloads.more` | part | The row's More button, which opens its options sheet. |  |
+| `downloads.toggle` | part | The Pause or Resume button beside Cancel on a row the pointer is over. |  |
+| `downloads.bulk` | part | The bulk actions over the list: Pause all, Resume all, Cancel all pending and Clear finished (each button's data-bulk names it). |  |
 | `downloads.progress` | part | A download's progress track; its child span is the fill. |  |
 | `downloads.empty` | part | The empty state shown when nothing is saved. |  |
 | `browse` | slot | The Browse screen; data-variant is anilist, catalog or source. |  |
@@ -910,7 +913,7 @@ Style values are a bounded allowlist. There are no arbitrary selectors, URLs, HT
 
 1. The gallery fetches a versioned catalog document from the separate GitHub repository. It caches the last valid listing for offline browsing. Refreshing a listing does not update an installed theme.
 2. Catalog packages and release-descriptor links must match the listed byte size, SHA-256, ID and version before preview or installation. Direct package links and local files receive the same schema validation but have no independent listing checksum. These checks establish consistency with the selected listing, not an author's cryptographic identity.
-3. HTTPS downloads have a 20-second timeout and a streamed size limit: 256 KB per package and 1 MB for the catalog. Native clients use the existing bounded HTTP transport. Requests use its background lane; the browser path omits credentials and referrers.
+3. HTTPS downloads have a 20-second timeout and a streamed size limit: 512 KB per package and 1 MB for the catalog. Native clients use the existing bounded HTTP transport. Requests use its background lane; the browser path omits credentials and referrers.
 4. Preview changes in-memory appearance only. Cancel restores the previously applied appearance. Reloading also ends the preview. Opening Theme Studio cancels an installation preview before starting an editable draft. Preview controls are hidden during playback and return when playback closes.
 5. Installation records the normalized author package, origin and associated editable Theme Studio design. Installed designs work offline. A same-ID package from another origin cannot replace an installation without removing it first.
 6. **Check update** checks the catalog or a release-descriptor link. A newer package opens for review; applying it performs a three-way merge against the prior author design. Unmodified values take the update; personal edits and explicit deletions remain. Arrays, including a template's child order, are treated as whole personal edits.

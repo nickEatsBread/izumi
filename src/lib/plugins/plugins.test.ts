@@ -1,32 +1,39 @@
-import { readFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { grantText, parseManifest } from './manifest'
 import { checkPluginUrl, isLocalHost } from './network'
 import { classifyStorageKey } from '$lib/storage/key-policy'
 
-// Loaded by URL so the type checker leaves the plugin's plain JavaScript alone.
-const pluginPath = '../../../plugins/jump-to-moment/main.js'
-const { parseMatches, pickLines } = (await import(/* @vite-ignore */ pluginPath)) as {
-  parseMatches: (content: string) => { line: number; reason?: string }[]
-  pickLines: (cues: { start: number; end: number; text: string }[], query: string) => number[]
-}
-
-const exampleDir = new URL('../../../plugins/jump-to-moment/', import.meta.url)
-const example = () => JSON.parse(readFileSync(new URL('plugin.json', exampleDir), 'utf8'))
+// A plugin shaped like Jump to a moment (now published in the plugin marketplace): a panel, the
+// subtitles, seeking, and a network grant taken from a url setting.
+const example = () => ({
+  app: 'izumi', kind: 'plugin', schemaVersion: 1, pluginApi: 1,
+  id: 'watch.izumi.jump-to-moment', name: 'Jump to a moment', version: '1.0.0', author: 'Izumi',
+  description: 'Describe a scene and the player jumps to it.',
+  main: { path: 'main.js', sha256: 'a'.repeat(64) },
+  permissions: {
+    scopes: ['network', 'player.events', 'player.subtitles', 'player.control', 'player.panel'],
+    network: { domains: [], fromSetting: 'endpoint', reason: 'Sends your question to the model address you enter.' },
+  },
+  settings: [
+    { id: 'endpoint', type: 'url', label: 'Model address', placeholder: 'http://localhost:11434/v1' },
+    { id: 'apiKey', type: 'secret', label: 'API key' },
+    { id: 'watchedOnly', type: 'toggle', label: "Only search what I've watched", default: false },
+  ],
+  panel: { label: 'Jump to a moment', placeholder: 'Describe a moment…' },
+})
 
 describe('plugin manifest', () => {
-  it('accepts the example plugin and pins its code', () => {
+  it('accepts a plugin with a panel and a network grant from a setting', () => {
     const manifest = parseManifest(example())
     expect(manifest.permissions.network).toMatchObject({ domains: [], fromSetting: 'endpoint' })
     expect(manifest.panel?.label).toBe('Jump to a moment')
-    const code = readFileSync(new URL(manifest.main.path, exampleDir), 'utf8')
-    expect(createHash('sha256').update(code, 'utf8').digest('hex')).toBe(manifest.main.sha256)
+    expect(manifest.settings.map((setting) => setting.id)).toEqual(['endpoint', 'apiKey', 'watchedOnly'])
   })
 
   it('refuses what izumi would not run', () => {
     const base = example()
-    expect(() => parseManifest({ ...base, pluginApi: 2 })).toThrow('different version')
+    expect(() => parseManifest({ ...base, pluginApi: 3 })).toThrow('different version')
+    expect(() => parseManifest({ ...base, pluginApi: 0 })).toThrow('different version')
     expect(() => parseManifest({ ...base, id: 'Bad Id' })).toThrow('id')
     expect(() => parseManifest({ ...base, permissions: { scopes: ['library.write'] } })).toThrow('Unknown plugin permission')
     expect(() => parseManifest({ ...base, permissions: { ...base.permissions, scopes: ['player.panel'] } })).toThrow('network')
@@ -34,6 +41,19 @@ describe('plugin manifest', () => {
     expect(() => parseManifest({ ...base, permissions: { scopes: ['network'], network: { domains: ['http://x'], reason: 'x' } } })).toThrow('not a domain')
     expect(() => parseManifest({ ...base, settings: [...base.settings, { id: 'k', type: 'secret', label: 'K', default: 'x' }] })).toThrow('default')
     expect(() => parseManifest({ ...base, panel: { label: 'x', placeholder: 'y' }, permissions: { scopes: [] } })).toThrow('player.panel')
+  })
+
+  it('takes API 2 browser sign-in only with fixed domains, and https key links', () => {
+    const signin = { ...example(), pluginApi: 2, permissions: {
+      scopes: ['network', 'signin', 'player.panel'],
+      network: { domains: ['auth.openai.com', 'api.openai.com'], fromSetting: 'endpoint', reason: 'Sign-in and questions.' },
+    } }
+    expect(parseManifest(signin).permissions.scopes).toContain('signin')
+    expect(() => parseManifest({ ...signin, permissions: { ...signin.permissions, network: { domains: [], fromSetting: 'endpoint', reason: 'x' } } })).toThrow('signin')
+    const key = (links: unknown) => ({ ...signin, settings: [signin.settings[0], { id: 'apiKey', type: 'secret', label: 'API key', links }] })
+    expect(parseManifest(key([{ label: 'OpenAI keys', url: 'https://platform.openai.com/api-keys' }])).settings[1].links).toEqual([{ label: 'OpenAI keys', url: 'https://platform.openai.com/api-keys' }])
+    expect(() => parseManifest(key([{ label: 'x', url: 'http://example.com/' }]))).toThrow('https')
+    expect(() => parseManifest(key([{ label: 'x', url: 'javascript:alert(1)' }]))).toThrow('https')
   })
 
   it('hashes the grant independently of order, so only a real permission change asks again', () => {
@@ -70,20 +90,5 @@ describe('plugin network guard', () => {
     expect(classifyStorageKey('plugin-secret-watch.izumi.jump-to-moment')).toBe('secret')
     expect(classifyStorageKey('installed-plugins-v1')).toBe('device')
     expect(classifyStorageKey('plugins-enabled-v1')).toBe('device')
-  })
-})
-
-describe('jump to a moment', () => {
-  const cues = Array.from({ length: 60 }, (_, i) => ({ start: i * 10, end: i * 10 + 5, text: i === 30 ? 'This soup tastes incredible!' : `line ${i}` }))
-
-  it('sends the windows around keyword hits, or everything when nothing matches', () => {
-    expect(pickLines(cues, 'where he tastes the soup')).toEqual(Array.from({ length: 11 }, (_, i) => 25 + i))
-    expect(pickLines(cues, 'the quiet bit')).toHaveLength(60)
-  })
-
-  it('reads line numbers out of a reply and drops anything else', () => {
-    expect(parseMatches('```json\n{"matches":[{"line":31,"reason":"he tastes it"},{"line":"x"}]}\n```')).toEqual([{ line: 31, reason: 'he tastes it' }])
-    expect(parseMatches('no idea')).toEqual([])
-    expect(parseMatches('{"matches": []}')).toEqual([])
   })
 })
