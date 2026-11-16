@@ -7,10 +7,6 @@ name: macos-widevine
 #
 # Every cargo command runs from src-tauri (the crate root), as CI and release do.
 on:
-  # TEMPORARY: a workflow_dispatch workflow can only be dispatched once it is on the default branch,
-  # so the branch that adds it runs it on push. Removed before merge.
-  push:
-    branches: [feat/macos-widevine]
   workflow_dispatch:
     inputs:
       manifest_url:
