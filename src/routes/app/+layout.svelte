@@ -57,7 +57,7 @@
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
-  import { controllerMode, focusByNav, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
+  import { controllerMode, focusByNav, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { installSystemBack } from '$lib/nav/system-back'
   import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from '$lib/nav/layers'
@@ -73,7 +73,6 @@
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { bottomBarRoom, bottomNavSuppressed, sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import { resetScrollChrome, startScrollChrome } from '$lib/components/shell/scroll-chrome'
-  import { trackFocusProgress } from '$lib/motion/tween'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -103,9 +102,6 @@
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
   import { instantScrollUntil, rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
-  import { initGmTouchWatchdog, restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
-  import { startGmCssMotion } from '$lib/motion/gm-css-motion'
-  import { startFocusMirror } from '$lib/themes/focus-mirror'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { globalSearchOpen, closeGlobalSearch, openGlobalSearch } from '$lib/search/global-search'
   import { trailerPopup } from '$lib/stores/trailer'
@@ -213,34 +209,10 @@
   let webviewZoomChain: Promise<unknown> = Promise.resolve()
   $effect(() => {
     if (!$gameModeResolved) return
-    if (!$gameMode) return
-    // Gamescope touch survival: gesture-aware keepalive hold + stuck-pointer recovery (a lost
-    // touch-up strands the pointer forever on this WebKitGTK — no pointercancel exists there).
-    return initGmTouchWatchdog()
-  })
-  // WebKitGTK blinks an element as its CSS animation or transition ends; Game mode replays them from script.
-  $effect(() => { if ($gameModeResolved && $gameMode) return startGmCssMotion() })
-  // A theme reads focus from attributes in Game mode, which WebKitGTK restyles far more cheaply (focus-mirror.ts).
-  $effect(() => { if ($gameModeResolved && $gameMode) return startFocusMirror() })
-  // WebKitGTK decodes an image only when it first paints, and paints it blank until then: a theme's wide
-  // art, loaded hidden and shown on focus, left the focused tile empty for two frames. Decode hidden
-  // images as they load so they are ready; visible ones decode with their first paint as before.
-  $effect(() => {
-    if (!$gameModeResolved || !$gameMode) return
-    const decodeHidden = (event: Event) => {
-      const img = event.target
-      if (img instanceof HTMLImageElement && img.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) === false) img.decode().catch(() => {})
-    }
-    document.addEventListener('load', decodeHidden, true)
-    return () => document.removeEventListener('load', decodeHidden, true)
-  })
-  $effect(() => {
-    if (!$gameModeResolved) return
     const stop = startGamepadNav()
     if ($gameMode) {
       suppressNativeTooltips() // no native `title` hover popups under controller/touch
-      suppressNativeContextMenus() // held presses must not open WebKit's desktop link menu
-      suppressPinchZoom() // WebKitGTK's pinch gesture ignores the viewport user-scalable=no meta
+      suppressNativeContextMenus() // held presses must not open the desktop link menu
       invoke('gamepad_start').catch(() => {})
       return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
     }
@@ -473,7 +445,7 @@
       // Mobile never applies the desktop/Deck UI-scale (a persisted value would zoom the whole page).
       rootStyle.zoom = '1'
     } else if ($gameMode) {
-      // Native WebKit page zoom (compositor-scrolled) rather than CSS `zoom` on the scroll
+      // Native page zoom (compositor-scrolled) rather than CSS `zoom` on the scroll
       // root — CSS zoom re-rasterizes the whole page on every scroll, which is what made
       // vertical scrolling crawl on the Deck. Native zoom scrolls like a zoomed desktop page.
       rootStyle.zoom = '1'
@@ -492,14 +464,6 @@
     document.documentElement.classList.toggle('gamemode', $gameMode)
   })
 
-  // Closing playback does not navigate, so afterNavigate cannot repair a touch release swallowed
-  // by a comments iframe. Reset native routing as the browse surface becomes active again.
-  let playerWasOpen = false
-  $effect(() => {
-    const open = $playing
-    if ($gameMode && playerWasOpen && !open) restoreGmTouchAfterTransition()
-    playerWasOpen = open
-  })
   // The page is display: none under the player, which drops its focus and scroll position: a d-pad
   // user closing the player was back at the top with nothing focused. Remember both as playback
   // starts (the store emits before the page hides) and put them back when it ends, unless a
@@ -520,7 +484,7 @@
       if (get(navInFlight) || get(playing)) return
       window.scrollTo({ top: back.y, behavior: 'instant' })
       if (document.activeElement && document.activeElement !== document.body) return
-      const focus = (el: HTMLElement) => { focusByNav(el, false, true); focusByNav(el, true, true) }
+      const focus = (el: HTMLElement) => focusByNav(el, true, true)
       // A page can name where a return from its episode lands (a series page: its Continue button).
       const landing = document.querySelector<HTMLElement>('[data-nav-player-return]')
       if (landing && focusRestoreAllowed()) focus(landing)
@@ -599,13 +563,9 @@
       playing.set(false)
     }
   })
-  // Gamescope may switch the XWayland touch mode while a controller action changes screens. The
-  // gamepad-side restore runs shortly after the button press; this second restore runs after Svelte
-  // has completed the navigation, so touch scrolling remains available on the destination screen.
   afterNavigate(({ to }) => {
     navInFlight.set(false)
     if (to?.url && !$playing) restoreScroll(to.url)
-    if (get(gameMode)) invoke('restore_native_touch').catch(() => {})
     requestAnimationFrame(() => requestAnimationFrame(() => markClientPerformance(
       'izumi:route-painted',
       { path: to?.url.pathname ?? location.pathname },
@@ -628,8 +588,8 @@
           signal: controller.signal,
           // Home adds its rows a frame at a time: the remembered card's row can take a moment.
           timeoutMs: 3000,
-          // The nav engine's own reveal, instantly: the card's row first, then the page.
-          focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) },
+          // The nav engine's own reveal, instantly.
+          focus: (el) => focusByNav(el, true, true),
         })
       }
     }
@@ -650,9 +610,6 @@
     dock: androidMiniPlayer,
   }))
   afterNavigate(() => resetScrollChrome())
-  // `--izumi-focus` on the focused control, for themes to tween their focus look from (Game mode cannot
-  // use CSS transitions: WebKitGTK blinks when one ends).
-  onMount(() => trackFocusProgress())
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />

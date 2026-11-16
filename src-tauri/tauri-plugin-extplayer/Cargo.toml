@@ -6,9 +6,9 @@ description = "Launch an external Android video player via ACTION_VIEW (izumi Ph
 links = "tauri-plugin-extplayer"
 
 [dependencies]
-tauri = { version = "2" }
+tauri = { version = "=3.0.0-alpha.6" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 
 [build-dependencies]
-tauri-plugin = { version = "2", features = ["build"] }
+tauri-plugin = { version = "=3.0.0-alpha.4", features = ["build"] }

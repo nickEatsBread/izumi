@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { focusNearestFocusable, revealAboveKeyboard } from './index'
 import { oskDismissedAt, oskOpen } from '$lib/player/session'
 import { isNavigable } from './focusable'
@@ -22,21 +21,18 @@ const paneScrolls: Array<{ el: Element; options: ScrollToOptions }> = []
 let windowMoves: ReturnType<typeof vi.fn<(options: ScrollToOptions) => void>>
 
 beforeEach(() => {
-  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return extent(this, 0) } })
   Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get() { return extent(this, 1) } })
   paneScrolls.length = 0
-  HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {
-    const move = asMove(this, options as ScrollToOptions)
-    if (move) paneScrolls.push({ el: this, options: move })
-  } as HTMLElement['scrollTo']
+  // The keyboard lift is one native scrollBy: each call is a move.
+  const asMove = (options: ScrollToOptions): ScrollToOptions => ({ top: options.top ?? 0, left: options.left ?? 0, behavior: options.behavior })
+  HTMLElement.prototype.scrollBy = function (this: HTMLElement, options?: ScrollToOptions | number) {
+    paneScrolls.push({ el: this, options: asMove(options as ScrollToOptions) })
+  } as HTMLElement['scrollBy']
   windowMoves = vi.fn()
-  window.scrollTo = ((options: ScrollToOptions) => {
-    const move = asMove(window, options)
-    if (move) windowMoves(move)
-  }) as unknown as typeof window.scrollTo
+  window.scrollBy = ((options: ScrollToOptions) => windowMoves(asMove(options))) as unknown as typeof window.scrollBy
 })
 
 afterEach(() => {

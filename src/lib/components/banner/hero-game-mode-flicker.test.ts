@@ -4,28 +4,9 @@ import { describe, expect, it } from 'vitest'
 
 const hero = readFileSync(fileURLToPath(new URL('./Hero.svelte', import.meta.url)), 'utf8')
 
-/** Every declaration Hero.svelte applies to `selector` under `html.gamemode`, grouped rules included. */
-function gameMode(selector: string): string {
-  let declarations = ''
-  for (const [, selectors, body] of hero.matchAll(/((?::global\(html\.gamemode\) [^,{}]+,\s*)*:global\(html\.gamemode\) [^,{}]+?)\s*\{([^}]*)\}/g)) {
-    const list = selectors.split(',').map((s) => s.trim().replace(/^:global\(html\.gamemode\) /, ''))
-    if (list.includes(selector)) declarations += body
-  }
-  return declarations
-}
-
-/** The body of `@keyframes <name>`. */
-function keyframes(name: string): string {
-  const match = hero.match(new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n  \\}`))
-  expect(match, `@keyframes ${name}`).toBeTruthy()
-  return match![1]
-}
-
-// Deck (Gamescope) featured-banner flicker. Two halves, both must stay:
-//  1. the slide swap waits for decoded artwork, so the first paint of a slide is never a skeleton;
-//  2. every Game-mode hero tween runs on a compositor layer that lives exactly as long as its
-//     element. WebKitGTK 2.52 composites without waiting for tile painting, so a layer dropped when
-//     a tween ends can present a frame without its content: the blink. The animations stay.
+// The featured banner never pops a skeleton between slides: the slide swap waits for decoded
+// artwork, so the first paint of a slide is the image. Its motion is plain CSS on every engine,
+// Game mode included (the Deck runs Chromium).
 describe('Steam Deck featured banner flicker', () => {
   it('decodes the incoming artwork before committing the slide', () => {
     expect(hero).toContain("import { createSlideScheduler } from './hero-slides'")
@@ -36,9 +17,9 @@ describe('Steam Deck featured banner flicker', () => {
     expect(hero).toContain('go(((slides.pending() ?? i) + direction + n) % n, direction, now)')
   })
 
-  it('moves at once for a finger swipe off the Deck, where waiting on the artwork only lagged', () => {
+  it('moves at once for a finger swipe, where waiting on the artwork only lagged', () => {
     expect(hero).toContain('if (now) { slides.cancel(); commitSlide(n, direction ?? (n > i ? 1 : -1), slides.ready(slideArtwork(medias[n]))); return }')
-    expect(hero).toContain('step(dx < 0 ? 1 : -1, !$gameMode)')
+    expect(hero).toContain('step(dx < 0 ? 1 : -1, true)')
   })
 
   it('keeps the neighbouring slides warm so the next step is instant', () => {
@@ -46,75 +27,12 @@ describe('Steam Deck featured banner flicker', () => {
     expect(hero).toContain('const artworkSettled = () => { loadedArtworkId = current.id; scheduleWarm() }')
   })
 
-  it('animates the Home carousel in Game mode, in both directions', () => {
-    // Only the Home carousel is marked; a detail banner is a single slide and stays static.
-    expect(hero).toContain('class:hero-carousel-slide={showOverlay}')
-    expect(gameMode('.hero-slide-in'), 'no Game-mode rule may stop every slide').toBe('')
-    // The motion is scripted in Game mode (gm-motion), so the CSS animations are off there.
-    expect(gameMode('.hero-carousel-slide')).toContain('animation: none')
-    expect(gameMode('.hero-copy')).toContain('animation: none')
-    expect(hero).toContain('in:motion={slideIn(showOverlay, .7)} out:motion={slideOut(showOverlay, .7)}>')
-    expect(hero).toContain('in:motion={slideIn(true, 1)} out:motion={slideOut(true, 1)}>')
-    expect(hero).toContain('in:motion={copyIn()}>')
-    // The direction still comes from the step: L1/R1, a swipe or the auto-advance.
-    expect(hero).toContain('xPercent: [navDirection * 3, 0], scale: [1.015, 1], duration: 480')
-    expect(hero).toContain('xPercent: [navDirection * 1.5, 0], y: [8, 0], duration: 360')
-    // The outgoing slide fades under the incoming one: a crossfade, never a dip to the page colour.
-    expect(hero).toContain('duration: carousel && !fadeTransition ? 480 : 0')
-  })
-
-  it('runs Game-mode hero motion from script on a layer that outlives it', () => {
-    // Even element-lifetime layers blinked when their keyframes ended (one frame without the artwork
-    // ~480 ms after each step on WebKitGTK 2.52), so no Game-mode hero keyframes remain at all.
-    for (const selector of ['.hero-carousel-slide', '.hero-copy']) {
-      expect(gameMode(selector), selector).toContain('transform: translateZ(0)')
-    }
-    expect(hero).not.toContain('@keyframes hero-slide-in-layer')
-    expect(hero).not.toContain('@keyframes hero-copy-in-layer')
-    expect(hero).toContain("import { motion, type MotionParams } from '$lib/motion/gm-motion'")
-  })
-
-  it('keeps detail banners, the late-artwork fade and the scroll dim static in Game mode', () => {
-    expect(gameMode('.hero-slide-in:not(.hero-carousel-slide)')).toContain('animation: none')
-    // The series page keeps one hero from its loading state to its loaded one, so no second,
-    // shorter reveal is needed for artwork a skeleton already painted.
-    expect(hero).not.toContain('detail-hero-reveal')
-    expect(gameMode('.hero-artwork')).toContain('transition: none')
-    expect(gameMode('.hero-root')).toContain('transition: none')
-    // Without the animation's fill the artwork would jump to full opacity: the rest state is static.
+  it('keeps the CSS slide, copy and progress-bar motion in Game mode, with no scripted fallback', () => {
+    expect(hero).not.toContain('html.gamemode')
+    expect(hero).not.toContain('gameModeOnly')
+    expect(hero).not.toContain('requestAnimationFrame(paint)')
     expect(hero).toContain('.hero-slide-in { opacity: var(--hero-final-opacity, 1); animation: hero-slide-in')
-    expect(hero.match(/class="hero-artwork /g)?.length).toBe(3)
-    expect(hero).toContain('class="hero-root relative mb-6')
-  })
-
-  it('fills the rotation progress bar smoothly in Game mode without a 60 Hz tween', () => {
-    const rule = gameMode('.hero-progress')
-    // The bar keeps a layer for its whole life, so a write to `translate` never drops it.
-    expect(rule).toContain('transform: translateZ(0)')
-    // On WebKitGTK a running tween composited the whole screen every frame (nearly all of Home's idle
-    // cost); CSS steps() did not help, since WebKitGTK still composited at the display rate.
-    expect(hero).toContain(':global(html.gamemode.webkitgtk) .hero-progress { animation: none; translate: -100% 0; }')
-    expect(rule).not.toMatch(/steps\(|animation-timing-function/)
-    // Chromium (CEF, WebView2, Android) keeps the scaleX keyframe on its compositor even in Game mode:
-    // the script below repainted the fill on the main thread every frame there.
-    expect(rule).not.toContain('animation: none')
-    expect(hero).toContain('const scriptedBar = isWebKitGtk()')
-    expect(hero).toContain('if (!$gameMode || !scriptedBar || !medias.length')
-    const platform = readFileSync(fileURLToPath(new URL('../../platform.ts', import.meta.url)), 'utf8')
-    expect(platform).toContain("document.documentElement.classList.toggle('webkitgtk', isWebKitGtk())")
-    expect(hero).not.toContain('hero-progress-steps')
-    expect(hero).not.toContain('@keyframes hero-progress-fill-layer')
-    // A script steps it from the slide clock instead, on display frames (a 15 fps timer jittered on
-    // the Deck), restarted with the slide.
-    expect(hero).toContain('const progress = Math.min(1, (performance.now() - start) / DURATION)')
-    expect(hero).toContain('frame = progress < 1 ? requestAnimationFrame(paint) : 0')
-    expect(hero).not.toContain('setInterval(paint')
-    expect(hero).toContain('const stopPlaying = playing.subscribe(restart)')
-    // A scaled or translated layer's edge lands on whole pixels (a stutter); the fill is a gradient
-    // with a one-pixel soft edge, drawn between pixels, written on quarter-pixel changes only.
-    expect(hero).toContain('const edge = Math.round(progress * bar.offsetWidth * 4) / 4')
-    expect(hero).toContain('if (painted.get(bar) === edge) continue')
-    expect(hero).toContain('linear-gradient(90deg, ${colors.get(bar)} ${edge}px, transparent ${edge + 1}px)')
-    expect(hero).not.toContain('bar.style.scale')
+    expect(hero).toContain('animation: hero-progress-fill var(--theme-hero-interval, 15s) linear forwards;')
+    expect(hero).toContain('<div class="hero-fade-out" class:hero-fade-pending={!fadeFrom.shown} aria-hidden="true" inert class:running={fadeFrom.running}>')
   })
 })

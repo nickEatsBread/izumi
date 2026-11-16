@@ -10,9 +10,7 @@
 //! Why it exists: the embedded libmpv paths cannot reliably reset SteamOS's own idle timer.
 //! We inhibit per-OS instead:
 //!
-//!   * **Linux Wayland** — a `zwp_idle_inhibit_manager_v1` inhibitor on the app's toplevel
-//!     surface. Bound/toggled on GTK's main thread, where its Wayland connection lives.
-//!   * **Linux X11 / Steam Deck Game mode** — first request the sandbox-safe XDG Inhibit
+//!   * **Linux** (the CEF runtime is always X11) — first request the sandbox-safe XDG Inhibit
 //!     portal, then periodically reset the X11 screensaver timer while playback is active.
 //!     SteamOS's gamescope portal currently lacks Inhibit, so the heartbeat is the important
 //!     Game-mode path. A held `systemd-inhibit` child is retained as a final best-effort
@@ -124,26 +122,12 @@ mod mac {
 // ================================ Linux ================================
 #[cfg(target_os = "linux")]
 mod linux {
-    use tauri::{AppHandle, Manager};
+    use tauri::AppHandle;
 
-    pub fn set(app: &AppHandle, on: bool) {
-        // GTK's Wayland connection lives on the main thread — touch Wayland objects there,
-        // exactly like the embed does.
-        let app_main = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            if let Some(win) = app_main.get_webview_window("main") {
-                if wayland::try_set(&win, on) {
-                    // Defensive release in case a session changed from the X11 fallback to a
-                    // native-Wayland window without restarting the process.
-                    fallback::set(false);
-                    return; // handled by the compositor-honored Wayland path
-                }
-            }
-            // Steam Deck Game mode is deliberately XWayland, so the wl_surface path above
-            // cannot apply. The worker owns all fallback resources and serializes rapid
-            // play/pause transitions.
-            fallback::set(on);
-        });
+    /// The CEF runtime always runs on X11 (XWayland under Wayland desktops and Gamescope). The
+    /// worker owns all inhibit resources and serializes rapid play/pause transitions.
+    pub fn set(_app: &AppHandle, on: bool) {
+        fallback::set(on);
     }
 
     mod fallback {
@@ -343,134 +327,6 @@ mod linux {
             if let Some(mut process) = child.take() {
                 let _ = process.kill();
                 let _ = process.wait();
-            }
-        }
-    }
-
-    /// Wayland `zwp_idle_inhibit_manager_v1` on GTK's toplevel surface. Only ever called on
-    /// the GTK main thread (via `run_on_main_thread`).
-    mod wayland {
-        use raw_window_handle::{
-            HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
-        };
-        use std::sync::{Mutex, OnceLock};
-        use tauri::WebviewWindow;
-        use wayland_client::{
-            backend::{Backend, ObjectId},
-            globals::{registry_queue_init, GlobalListContents},
-            protocol::{wl_registry::WlRegistry, wl_surface::WlSurface},
-            Connection, Dispatch, EventQueue, Proxy, QueueHandle,
-        };
-        use wayland_protocols::wp::idle_inhibit::zv1::client::{
-            zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1,
-            zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1,
-        };
-
-        // Private registry queue; idle-inhibit carries no events, so every dispatch is a noop.
-        struct D;
-        impl Dispatch<WlRegistry, GlobalListContents> for D {
-            fn event(
-                _: &mut Self,
-                _: &WlRegistry,
-                _: wayland_client::protocol::wl_registry::Event,
-                _: &GlobalListContents,
-                _: &Connection,
-                _: &QueueHandle<Self>,
-            ) {
-            }
-        }
-        wayland_client::delegate_noop!(D: ignore ZwpIdleInhibitManagerV1);
-        wayland_client::delegate_noop!(D: ignore ZwpIdleInhibitorV1);
-        wayland_client::delegate_noop!(D: ignore WlSurface);
-
-        struct Idle {
-            conn: Connection,
-            qh: QueueHandle<D>,
-            mgr: ZwpIdleInhibitManagerV1,
-            surface: WlSurface,
-            inhibitor: Option<ZwpIdleInhibitorV1>,
-            _queue: EventQueue<D>,
-        }
-
-        enum State {
-            Uninit,
-            Unavailable,
-            Active(Idle),
-        }
-
-        fn state() -> &'static Mutex<State> {
-            static S: OnceLock<Mutex<State>> = OnceLock::new();
-            S.get_or_init(|| Mutex::new(State::Uninit))
-        }
-
-        /// Returns true if the Wayland idle-inhibit path handled this call (so the caller skips
-        /// the `systemd-inhibit` fallback); false when this isn't a Wayland session or the
-        /// compositor lacks `zwp_idle_inhibit_manager_v1`.
-        pub fn try_set(window: &WebviewWindow, on: bool) -> bool {
-            let mut st = state().lock().unwrap();
-            if matches!(*st, State::Uninit) {
-                *st = match Idle::new(window) {
-                    Some(idle) => State::Active(idle),
-                    None => State::Unavailable,
-                };
-            }
-            if let State::Active(idle) = &mut *st {
-                idle.set(on);
-                true
-            } else {
-                false
-            }
-        }
-
-        impl Idle {
-            fn new(window: &WebviewWindow) -> Option<Self> {
-                // Toplevel wl_surface + wl_display straight off the Tauri window — the same GTK
-                // connection the embed uses. Non-Wayland → None so the caller falls back.
-                let RawWindowHandle::Wayland(w) = window.window_handle().ok()?.as_raw() else {
-                    return None;
-                };
-                let RawDisplayHandle::Wayland(d) = window.display_handle().ok()?.as_raw() else {
-                    return None;
-                };
-                let surface_ptr = w.surface.as_ptr();
-                let display_ptr = d.display.as_ptr();
-
-                // SAFETY: GTK's live wl_display; from_foreign_display only bumps a refcount.
-                let backend = unsafe { Backend::from_foreign_display(display_ptr as *mut _) };
-                let conn = Connection::from_backend(backend);
-                let (globals, queue) = registry_queue_init::<D>(&conn).ok()?;
-                let qh = queue.handle();
-                // v1 only; absent on X11 / ancient compositors → None → systemd-inhibit fallback.
-                let mgr: ZwpIdleInhibitManagerV1 = globals.bind(&qh, 1..=1, ()).ok()?;
-
-                // Proxy GTK's toplevel surface onto our connection (shared fd + object namespace).
-                // SAFETY: valid wl_surface* on the same connection.
-                let id =
-                    unsafe { ObjectId::from_ptr(WlSurface::interface(), surface_ptr as *mut _) }
-                        .ok()?;
-                let surface = WlSurface::from_id(&conn, id).ok()?;
-
-                Some(Idle {
-                    conn,
-                    qh,
-                    mgr,
-                    surface,
-                    inhibitor: None,
-                    _queue: queue,
-                })
-            }
-
-            fn set(&mut self, on: bool) {
-                if on {
-                    if self.inhibitor.is_none() {
-                        self.inhibitor =
-                            Some(self.mgr.create_inhibitor(&self.surface, &self.qh, ()));
-                        let _ = self.conn.flush();
-                    }
-                } else if let Some(inhibitor) = self.inhibitor.take() {
-                    inhibitor.destroy();
-                    let _ = self.conn.flush();
-                }
             }
         }
     }

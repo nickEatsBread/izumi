@@ -97,8 +97,8 @@ describe('SettingsSection on desktop', () => {
     expect(source).toContain('.settings-sticky { padding-top: calc(var(--theme-shell-top, 2rem) + 0.625rem);')
     // Game mode and TV have no titlebar, so a side or bottom nav leaves no band: the bar drops the empty strip.
     expect(source).toContain(":global(html:is(.gamemode, .tv-mode):not([data-theme-nav='top'])) .settings-sticky { padding-top: 0.625rem; }")
-    // Game mode: a CSS transition's end blinks on WebKitGTK and the tween softens the bar's text.
-    expect(source).toContain(':global(html.gamemode) .settings-sticky { transition: none; }')
+    // The bar fades on every engine, Game mode included (Chromium has no layer-drop blink).
+    expect(source).not.toContain(':global(html.gamemode) .settings-sticky { transition: none; }')
     expect(source).toContain(':global(.settings-child) [data-settings-section-header] { display: none; }')
     // Never IntersectionObserver: CSS zoom makes it misreport (util/near-viewport.ts).
     expect(source).not.toContain('IntersectionObserver')

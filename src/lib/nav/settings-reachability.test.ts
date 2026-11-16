@@ -280,7 +280,7 @@ function inModalLayer(el: MarkupElement): boolean {
 }
 
 /** A capped list inside the page moves only itself, so when it runs below the fold the window must
- *  also reveal the item (the "nested" window pass in revealFocused). Inside a modal layer, fixed to
+ *  also reveal the item (scrollIntoView moves every scroller that hides it). Inside a modal layer, fixed to
  *  the viewport, a window scroll would only move the page behind the modal. */
 function ruleR4b(scan: Scan, modalOnly = false): string[] {
   const problems: string[] = []

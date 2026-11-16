@@ -1,19 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectAndroidTvUserAgent, isAndroidUiPreview, isAndroidUiPreviewShortcut, isWebKitGtk, resolveAndroidTv } from './platform'
-
-describe('isWebKitGtk', () => {
-  it('matches the Linux WebKitGTK webview only, never a Chromium engine', () => {
-    // The Steam Deck's izumi (GNOME 50 runtime), read from the device.
-    expect(isWebKitGtk('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15')).toBe(true)
-    // CEF on Linux, WebView2 on Windows, Android WebView.
-    expect(isWebKitGtk('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36')).toBe(false)
-    expect(isWebKitGtk('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0')).toBe(false)
-    expect(isWebKitGtk('Mozilla/5.0 (Linux; Android 14; Pixel 9; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/142.0.0.0 Mobile Safari/537.36')).toBe(false)
-    // macOS WKWebView is WebKit but not WebKitGTK.
-    expect(isWebKitGtk('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)')).toBe(false)
-    expect(isWebKitGtk('')).toBe(false)
-  })
-})
+import { detectAndroidTvUserAgent, isAndroidUiPreview, isAndroidUiPreviewShortcut, resolveAndroidTv } from './platform'
 
 describe('Android UI preview', () => {
   it('only accepts the explicit Android preview in development', () => {

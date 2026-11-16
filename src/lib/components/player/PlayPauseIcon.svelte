@@ -2,7 +2,7 @@
   import Play from '@lucide/svelte/icons/play'
   import Pause from '@lucide/svelte/icons/pause'
   import { sineOut } from 'svelte/easing'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
 
   let { paused, size = 24, class: className = '', playClass = '' }: { paused: boolean; size?: number; class?: string; playClass?: string } = $props()
 

@@ -32,13 +32,6 @@ export function detectAndroidTvUserAgent(userAgent: string): boolean {
   return /IzumiTV\/|Android TV|GoogleTV|BRAVIA|SHIELD Android TV|SMART-TV|\bAFT[A-Z0-9]+\b/i.test(userAgent)
 }
 
-/** The Linux WebKitGTK webview. Every Chromium engine (WebView2, Android WebView, CEF) carries
- *  `Chrome/` in its user agent; WebKitGTK reports `AppleWebKit` on Linux without it. Gates the
- *  Game-mode rendering workarounds only WebKitGTK needs; they go with the Linux CEF port. */
-export function isWebKitGtk(userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent): boolean {
-  return /AppleWebKit\//.test(userAgent) && /Linux/.test(userAgent) && !/Chrom(e|ium)\//.test(userAgent)
-}
-
 export function hasTauriRuntime(): boolean {
   return typeof window !== 'undefined'
     && !!(window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
@@ -134,8 +127,6 @@ export function initPlatform() {
     /* not running under Tauri (web/SSR) — stays false */
   }
   if (typeof window !== 'undefined') {
-    // For CSS that must target WebKitGTK alone (the Hero's scripted progress bar).
-    document.documentElement.classList.toggle('webkitgtk', isWebKitGtk())
     androidUiPreview.set(isAndroidUiPreview(window.location.search))
     tvPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === 'tv'
     mobileQuery = window.matchMedia('(max-width: 640px)')

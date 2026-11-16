@@ -1,13 +1,12 @@
 <script lang="ts">
   // Categories: the active catalog's categories as a wall of chips, each opening Browse narrowed to
-  // it. A source that gives its categories artwork shows the focused one's behind the wall, faded in
-  // from script in Game mode (a CSS fade blinks as it ends on WebKitGTK).
+  // it. A source that gives its categories artwork shows the focused one's behind the wall, faded in.
   import { getContextClient } from '@urql/svelte'
   import Spinner from '$lib/components/Spinner.svelte'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { browseSearch } from '$lib/catalog/browse'
   import { cachedBrowseCatalog, loadBrowseCatalog, type BrowseCatalog } from '$lib/catalog/browse-fetch'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
   import { focusOnMount } from '$lib/nav'
   import { catalogProvider } from '$lib/settings/catalog'
   import { heroMedia } from '$lib/stores/hero'

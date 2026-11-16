@@ -11,8 +11,7 @@
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
   import { fade } from 'svelte/transition'
   import { isAndroid } from '$lib/platform'
-  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
 
   const c = $derived($connecting)
   // Past two seconds the loader names what it is waiting on.
@@ -33,18 +32,17 @@
       <AndroidConnectionStatus headline="Getting episode ready" detail={c.detail || c.title} oncancel={() => c?.cancel()} />
     </div>
   {:else if $gameMode && $playing}
-  <!-- A mid-playback source swap must not replace the current frame with a black loading page.
-       This compact card renders live over the paused video's frozen frame (gm-freeze.ts). -->
+  <!-- A mid-playback source swap must not replace the current frame with a black loading page:
+       this compact card renders over the video. -->
   <div
     data-slot="play.connecting"
     data-variant="switch"
-    data-gm-menu-surface
     class="fixed inset-0 z-[55] grid place-items-center bg-black/45"
     onclick={() => c?.cancel()}
     onkeydown={(e) => e.key === 'Escape' && c?.cancel()}
     role="presentation"
   >
-    <div use:gmPanel={'bottom'} out:motion|global={gmPanelOut('bottom')} class="relative w-full max-w-xl rounded-2xl border border-white/10 bg-[#101012]/95 py-6 shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div in:motion|global={{ opacity: [0, 1], y: [28, 0], duration: 220 }} out:motion|global={{ opacity: [0, 1], y: [28, 0], duration: 160 }} class="relative w-full max-w-xl rounded-2xl border border-white/10 bg-[#101012]/95 py-6 shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
       <SourceLoader title={c.title} caption="Switching source" detail={c.detail} onCancel={c.cancel} />
     </div>
   </div>

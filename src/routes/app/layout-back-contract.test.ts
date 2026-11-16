@@ -68,7 +68,7 @@ describe('Settings Back and route focus memory in the app layout (commit 10)', (
       'void restoreRouteFocus(routeFocusKey(to.url), {',
       'signal: controller.signal,',
       'timeoutMs: 3000,',
-      'focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) },',
+      'focus: (el) => focusByNav(el, true, true),',
       '})',
       '}',
       '}',

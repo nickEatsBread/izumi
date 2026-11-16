@@ -123,9 +123,10 @@ describe('docked watch layout', () => {
     expect(lib).toMatch(/fn player_set_inset\(\s*app: AppHandle,\s*left: i32,\s*top: Option<i32>,\s*right: Option<i32>,\s*bottom: Option<i32>,\s*\)/)
     expect(lib).toContain('(l, t, (cw - l - r).max(1), (ch - t - b).max(1))')
     expect(read('../../../../src-tauri/src/player/macos_geometry.rs')).toContain('let width = (content_w - left - right).max(1.0);')
-    const linux = read('../../../../src-tauri/src/player/linux_embed.rs')
-    expect(linux).toContain('pub fn set_inset(window: &tauri::WebviewWindow, left: i32, top: i32, right: i32, bottom: i32)')
-    expect(linux).toContain('fn video_layout(window: (i32, i32), csd: (i32, i32)) -> ((i32, i32), (i32, i32))')
+    const linux = read('../../../../src-tauri/src/player/linux_cef.rs')
+    expect(linux).toMatch(/pub fn set_inset\(_?window: &tauri::WebviewWindow, left: i32, top: i32, right: i32, bottom: i32\)/)
+    expect(linux).toContain('c"video-margin-ratio-right"')
+    expect(linux).toContain('c"video-margin-ratio-bottom"')
   })
 
   it('plays a picked episode through the same route as the Next button', () => {

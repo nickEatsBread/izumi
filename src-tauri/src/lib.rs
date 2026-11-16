@@ -180,121 +180,6 @@ static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 #[derive(Default)]
 struct TacVerificationConfig(std::sync::Mutex<Option<serde_json::Value>>);
 
-// The fields are consumed by the Game-mode OSD (player::gm_osd), which only compiles on Linux
-// (the Steam Deck). On other targets the struct is still deserialized from the frontend but its
-// fields go unread — expected, so silence dead_code off-Linux only.
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) struct GmControlItem {
-    pub(crate) x: f64,
-    pub(crate) y: f64,
-    pub(crate) w: f64,
-    pub(crate) h: f64,
-    pub(crate) label: String,
-    pub(crate) focused: bool,
-    pub(crate) primary: bool,
-    /// A button named in words ("Audio") is drawn as that text, in the HTML button's font size and
-    /// weight, instead of an icon.
-    #[serde(default)]
-    pub(crate) text: String,
-    #[serde(default)]
-    pub(crate) text_size: f64,
-    #[serde(default)]
-    pub(crate) text_weight: u16,
-}
-
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) struct GmTimelineSegment {
-    pub(crate) start: f64,
-    pub(crate) end: f64,
-    pub(crate) kind: String,
-}
-
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) struct GmDynamicOverlay {
-    pub(crate) visible: bool,
-    pub(crate) loading: bool,
-    pub(crate) first_frame: bool,
-    #[serde(default)]
-    pub(crate) controls: bool,
-    #[serde(default)]
-    pub(crate) paused: bool,
-    #[serde(default)]
-    pub(crate) animate_controls: bool,
-    pub(crate) scrubbing: bool,
-    pub(crate) pos: f64,
-    pub(crate) dur: f64,
-    pub(crate) buffer: f64,
-    pub(crate) scrub_time: f64,
-    pub(crate) width: f64,
-    pub(crate) height: f64,
-    // The HTML seek bar's on-screen geometry (CSS px, same space as width/height) so the
-    // native scrub bar is drawn exactly where the player's own bar is — a seamless handoff.
-    pub(crate) bar_x: f64,
-    pub(crate) bar_y: f64, // vertical CENTRE of the bar
-    pub(crate) bar_w: f64,
-    pub(crate) bar_h: f64,
-    #[serde(default)]
-    pub(crate) skip_text: String,
-    #[serde(default)]
-    pub(crate) notice_text: String,
-    #[serde(default)]
-    pub(crate) title: String,
-    #[serde(default)]
-    pub(crate) title_x: f64,
-    #[serde(default)]
-    pub(crate) title_y: f64,
-    #[serde(default)]
-    pub(crate) title_size: f64,
-    #[serde(default)]
-    pub(crate) title_weight: u16,
-    #[serde(default)]
-    pub(crate) episode_text: String,
-    #[serde(default)]
-    pub(crate) episode_x: f64,
-    #[serde(default)]
-    pub(crate) episode_y: f64,
-    #[serde(default)]
-    pub(crate) episode_size: f64,
-    #[serde(default)]
-    pub(crate) episode_weight: u16,
-    #[serde(default)]
-    pub(crate) control_items: Vec<GmControlItem>,
-    #[serde(default)]
-    pub(crate) timeline_segments: Vec<GmTimelineSegment>,
-    #[serde(default)]
-    pub(crate) chapter_marks: Vec<f64>,
-    // The active theme's colours as ASS BGR hex (theme-gm-osd.ts); empty keeps the OSD's white.
-    #[serde(default)]
-    pub(crate) theme_accent: String,
-    #[serde(default)]
-    pub(crate) theme_focus: String,
-    /// The age rating card at the top right as an episode opens (theme `player.rating: "intro"`): the
-    /// rating ("14"), its content descriptors on one line, and when it was first shown (Unix ms; 0 =
-    /// none). The OSD fades it in, holds it and fades it out from that time.
-    #[serde(default)]
-    pub(crate) rating_label: String,
-    #[serde(default)]
-    pub(crate) rating_detail: String,
-    #[serde(default)]
-    pub(crate) rating_shown_at: f64,
-}
-
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // fields are consumed on Linux; other targets still deserialize the command
-struct OverlayCrop {
-    x: i64,
-    y: i64,
-    w: i64,
-    h: i64,
-}
-
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -454,53 +339,22 @@ async fn player_embed(
         )?;
         resize_mpv_child(main_raw);
     }
-    // Linux/Wayland: embed mpv into a wl_subsurface placed BELOW the (transparent)
-    // webview via the OpenGL render API, WITHOUT touching the webview's GTK tree
-    // (reparenting it crashes webkit). The core lives in PlayerHandle, so controls
-    // + progress events work exactly as on Windows. Make the webview background
-    // transparent first so the video shows through the player's video area.
+    // Linux: the offscreen page is already transparent; the compositor draws mpv's video under it
+    // through the OpenGL render API (see player/linux_cef.rs).
     #[cfg(target_os = "linux")]
-    {
-        let _ = main.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
-        if player::linux_embed::is_wayland(&main) {
-            // Desktop / KWin (native Wayland): mpv in a wl_subsurface below the transparent
-            // webview, HTML controls floating over it.
-            player.play_embedded_render(
-                &url,
-                app.clone(),
-                start_seconds,
-                autoplay,
-                initial_buffer_seconds,
-                alang,
-                slang,
-                &main,
-                headers.clone(),
-                subtitles.clone(),
-                audio_tracks.clone(),
-            )?;
-        } else {
-            // Game mode / gamescope (XWayland X11): no wl_subsurface — embed mpv via `--wid`
-            // into a fullscreen X11 CONTAINER window we own (so it can be shown/hidden for the
-            // touch-controls swap + made input-transparent). Fullscreen; no windowed layout.
-            // Wait out a close that is still releasing mpv's output from this container.
-            let _lifecycle = PLAYER_LIFECYCLE.lock().unwrap_or_else(|e| e.into_inner());
-            let size = main.inner_size().map_err(|e| e.to_string())?;
-            let xid = player::linux_x11::ensure_container(&main, size.width, size.height)?;
-            player.play_embedded(
-                &url,
-                xid,
-                app.clone(),
-                start_seconds,
-                autoplay,
-                initial_buffer_seconds,
-                alang,
-                slang,
-                headers.clone(),
-                subtitles.clone(),
-                audio_tracks.clone(),
-            )?;
-        }
-    }
+    player.play_embedded_render(
+        &url,
+        app.clone(),
+        start_seconds,
+        autoplay,
+        initial_buffer_seconds,
+        alang,
+        slang,
+        &main,
+        headers.clone(),
+        subtitles.clone(),
+        audio_tracks.clone(),
+    )?;
     #[cfg(target_os = "macos")]
     {
         // cocoa-cb `--wid` creates a *separate* mpv NSWindow and parents it
@@ -650,37 +504,12 @@ fn widevine_save_cancel(id: String) {
     let _ = id;
 }
 
-/// Serializes Linux X11 embeds against a close that is still releasing mpv's output, so an embed
-/// never loads into a core, or reuses a container, that the close is taking down.
-#[cfg(target_os = "linux")]
-static PLAYER_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Stop playback and clear the current media. Windows/macOS keep the initialized mpv core and its
-/// hidden child surface ready for reuse; Linux tears down its X11 container. The overlay itself is
-/// torn down by the frontend (`playing = false`).
+/// Stop playback and clear the current media. The initialized mpv core (and, on Linux and macOS,
+/// its render context) stays ready for reuse behind the now-opaque browse page. The overlay itself
+/// is torn down by the frontend (`playing = false`).
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
-    // Windows/macOS keep the initialized core behind the now-opaque browse webview. Linux still
-    // performs a full teardown because the Gamescope/X11 path destroys its native host container.
-    #[cfg(target_os = "linux")]
-    {
-        let _lifecycle = PLAYER_LIFECYCLE.lock().unwrap_or_else(|e| e.into_inner());
-        // Game mode: hide the video child (the browse page is already painted under it), take
-        // mpv's EGL output down while that window still exists, and only then destroy it.
-        // Destroying the window under a live output crashed the UI process on about every other
-        // exit: WebKit's next GPU draw reached driver state the dying output had freed.
-        let released = !player::linux_x11::hide_container()
-            || player.release_video_output(std::time::Duration::from_millis(1500));
-        if released {
-            player::linux_x11::destroy_container();
-        } else {
-            // Never destroy the window under a live output: it stays hidden for the next embed.
-            player::linux_embed::elog("x11: video output still up after 1.5s; keeping its window");
-        }
-        player.stop()
-    }
-    #[cfg(any(windows, target_os = "macos"))]
     player.idle()
 }
 
@@ -699,110 +528,6 @@ fn player_is_game_mode(app: AppHandle) -> bool {
     {
         false
     }
-}
-
-/// The compositor contract the frontend should use for player chrome. Gamescope's XWayland
-/// toplevel cannot alpha-composite live HTML over mpv, so it needs the snapshot/native-OSD path.
-/// A native Wayland toplevel can keep the WebKit overlay live above the layer-shell video surface.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_compositor_path(app: AppHandle) -> String {
-    #[cfg(target_os = "linux")]
-    {
-        if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
-            return "desktop-live".into();
-        }
-        return app
-            .get_webview_window("main")
-            .map(|window| {
-                if player::linux_embed::is_wayland(&window) {
-                    "wayland-live"
-                } else {
-                    "x11-snapshot"
-                }
-            })
-            .unwrap_or("x11-snapshot")
-            .into();
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = app;
-        "desktop-live".into()
-    }
-}
-
-/// Game mode: start/stop compositing the HTML controls onto the video via an mpv overlay.
-/// gamescope can't blend a transparent app surface, so the frontend calls this whenever the
-/// controls show/hide and mpv bakes a snapshot of them over the video (see linux_overlay).
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_gm_overlay(
-    app: AppHandle,
-    visible: bool,
-    fast: Option<bool>,
-    animate: Option<bool>,
-    crop: Option<OverlayCrop>,
-    sheet: Option<bool>,
-    exact_crop: Option<bool>,
-) {
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(win) = app.get_webview_window("main") {
-            if player::linux_embed::is_wayland(&win) {
-                return;
-            }
-            if visible {
-                let crop = crop.map(|c| (c.x, c.y, c.w, c.h));
-                player::linux_overlay::start(
-                    app.clone(),
-                    win,
-                    fast.unwrap_or(false),
-                    animate.unwrap_or(true),
-                    crop,
-                    sheet.unwrap_or(false),
-                    exact_crop.unwrap_or(false),
-                );
-            } else {
-                player::linux_overlay::stop(app.clone(), animate.unwrap_or(true));
-            }
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, visible, fast, animate, crop, sheet, exact_crop);
-    }
-}
-
-/// Game mode: hide the mpv X11 child for opaque, live-HTML surfaces such as settings/comments.
-/// Fractional insets remain available at the native layer, but ordinary controls deliberately
-/// pass zero: docking them is the rejected tiny-video workaround.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_gm_dock(bottom: f64, right: f64, top: f64, hide: bool) {
-    #[cfg(target_os = "linux")]
-    player::linux_x11::dock_video(bottom, right, top, hide);
-    #[cfg(not(target_os = "linux"))]
-    let _ = (bottom, right, top, hide);
-}
-
-/// Game mode dynamic overlay: loading and active scrub are rendered inside mpv as ASS OSD.
-/// This keeps the moving Deck UI off the expensive WebKit snapshot/readback path.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn player_gm_dynamic_overlay(app: AppHandle, state: GmDynamicOverlay) {
-    #[cfg(target_os = "linux")]
-    {
-        if app
-            .get_webview_window("main")
-            .map(|window| player::linux_embed::is_wayland(&window))
-            .unwrap_or(false)
-        {
-            return;
-        }
-        player::gm_osd::update(app, state);
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = (app, state);
 }
 
 /// Start/stop the backend gamepad reader (Steam Deck L2/R2 seek). The webview's own Gamepad
@@ -925,42 +650,6 @@ async fn player_editor_snapshot(
     Err("subtitle editor screenshot timed out".into())
 }
 
-/// Game mode: the paused frame, subtitles included, that the menu stage paints full-size while the
-/// video window is unmapped under live menus (gm-freeze.ts). Raw bytes rather than a JSON number
-/// array, so a 1080p JPEG costs no serialisation on the Deck.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-async fn player_frame_snapshot(
-    app: AppHandle,
-    player: tauri::State<'_, player::PlayerHandle>,
-) -> Result<tauri::ipc::Response, String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let path = app
-        .path()
-        .app_cache_dir()
-        .map_err(|error| error.to_string())?
-        .join(format!("menu-frame-{stamp}.jpg"));
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let path_text = path.to_string_lossy().into_owned();
-    player.frame_snapshot_to_file(&path_text)?;
-    for _ in 0..60 {
-        if std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() > 0) {
-            let bytes = std::fs::read(&path).map_err(|error| error.to_string());
-            let _ = std::fs::remove_file(&path);
-            return bytes.map(tauri::ipc::Response::new);
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    let _ = std::fs::remove_file(&path);
-    Err("menu frame snapshot timed out".into())
-}
-
 /// Register the scrub-preview grid of the loaded file `url`. `key` is the infoHash (or
 /// media-episode) cache key; the duration is read from mpv. `width` is the tile width in device
 /// pixels. The headless libmpv decoder renders hovered tiles at once and the rest of the grid in
@@ -1032,74 +721,44 @@ async fn clear_cache(app: AppHandle, bucket: String) -> Result<u64, String> {
         .map_err(|e| e.to_string())?
 }
 
-/// Set the WebKit page zoom (Linux). Used in Game mode instead of CSS `zoom` on the scroll
-/// root — CSS zoom forces WebKit to re-rasterize the whole page on every scroll (the slow
-/// vertical scrolling on the Deck), whereas native page zoom scrolls on the compositor,
-/// exactly like a zoomed page in a desktop browser. No-op on non-Linux (no gamescope there).
+/// The Game-mode UI scale as native page zoom (Linux). CSS `zoom` on the scroll root re-rasterizes
+/// the whole page on every scroll; page zoom scrolls on the compositor. No-op elsewhere.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
     #[cfg(target_os = "linux")]
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.with_webview(move |pw| {
-            use webkit2gtk::WebViewExt;
-            pw.inner().set_zoom_level(level);
-        });
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = (&app, level);
-    Ok(())
-}
-
-/// Reassert Gamescope's native touchscreen routing after a client-side screen transition. Steam
-/// can rewrite the XWayland root property after the controller-triggered navigation event; doing
-/// this from Svelte's `afterNavigate` hook runs after that transition rather than racing it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn restore_native_touch(window: tauri::WebviewWindow) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        return player::linux_x11::enable_native_touch(&window);
-    }
+    return player::linux_cef::set_zoom(&app, level);
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = window;
+        let _ = (&app, level);
         Ok(())
     }
 }
 
-/// Hold the Game-mode touch keepalive while a finger is physically on the screen (the webview
-/// reports the down/up edges). A STEAM_TOUCH_CLICK_MODE write landing mid-gesture makes gamescope
-/// reroute the gesture's remaining motion, so the drag freezes or warps; keeping OUR writes out of
-/// the gesture window removes izumi's half of those transitions. The Rust side expires the hold on
-/// a deadline, so a lost pointerup can never silence the keepalive permanently.
+/// One-time move of a WebKitGTK install's data into the CEF build (Linux). The last WebKitGTK
+/// release writes izumi's own backup export, sign-ins included, to this file in app data. The first
+/// CEF launch restores it into its empty profile and then deletes it.
 #[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn native_touch_hold(held: bool) {
-    #[cfg(target_os = "linux")]
-    player::linux_x11::set_touch_hold(held);
-    #[cfg(not(target_os = "linux"))]
-    let _ = held;
-}
-
-/// Escalated Game-mode touch recovery: fake a ButtonRelease at the X server for any stuck
-/// core-pointer button. This is the only recovery that reaches WebKit's INTERNAL pointer state —
-/// a compositor-swallowed touch-release leaves it holding a phantom press forever, every later
-/// tap reads as a drag continuation, and no amount of DOM-side cleanup can clear it.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn gm_touch_unstick() {
-    #[cfg(target_os = "linux")]
-    player::linux_x11::unstick_pointer();
-}
-
-/// One-time move of a WebKitGTK install's data into the CEF build (Linux). This WebKitGTK release
-/// keeps the profile export (`src/lib/engine-migration.ts`) current in this file in app data; the
-/// first CEF launch restores it into its empty profile and then deletes it.
-#[cfg(target_os = "linux")]
 const ENGINE_MIGRATION_FILE: &str = "engine-migration.json";
 
-/// Replaces the migration file atomically (temp file, fsync, rename), so a crash or power loss
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn engine_migration_take(app: AppHandle) -> Option<String> {
+    let path = app.path().app_data_dir().ok()?.join(ENGINE_MIGRATION_FILE);
+    std::fs::read_to_string(path).ok()
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn engine_migration_done(app: AppHandle) -> Result<(), String> {
+    let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join(ENGINE_MIGRATION_FILE);
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
+}
+
+/// The WebKitGTK side (`startEngineMigrationWriter`, a no-op on Chromium). Replaces the migration file atomically (temp file, fsync, rename), so a crash or power loss
 /// mid-write leaves the previous export intact. Async so the write stays off the main thread.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
@@ -1132,7 +791,7 @@ async fn engine_migration_write(app: AppHandle, json: String) -> Result<(), Stri
 #[tauri::command]
 fn gm_log(message: String) {
     #[cfg(target_os = "linux")]
-    player::linux_embed::elog(&format!("gm: {message}"));
+    player::linux_cef::elog(&format!("gm: {message}"));
     #[cfg(not(target_os = "linux"))]
     eprintln!("[izumi] gm: {message}");
 }
@@ -1152,7 +811,7 @@ fn steam_show_osk(_app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) ->
         // anything (Gaming Mode currently consumes it without opening a keyboard). Returning true
         // here suppressed the HTML fallback and made every field appear dead. Report the real
         // Steamworks result only; the frontend can then open its working local/remote keyboard.
-        player::linux_embed::elog("steam_osk: unavailable — using HTML fallback");
+        player::linux_cef::elog("steam_osk: unavailable — using HTML fallback");
         false
     }
     #[cfg(not(target_os = "linux"))]
@@ -1165,7 +824,7 @@ fn steam_show_osk(_app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) ->
 #[cfg(not(target_os = "android"))]
 fn discussion_log(message: &str) {
     #[cfg(target_os = "linux")]
-    player::linux_embed::elog(message);
+    player::linux_cef::elog(message);
     #[cfg(not(target_os = "linux"))]
     eprintln!("[izumi] {message}");
 }
@@ -1178,12 +837,6 @@ fn finish_discussion_popup(window: &tauri::WebviewWindow, app: &AppHandle) -> Re
     window.close().map_err(|error| error.to_string())?;
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.set_focus();
-        #[cfg(target_os = "linux")]
-        if let Err(error) = player::linux_x11::enable_native_touch(&main) {
-            player::linux_embed::elog(&format!(
-                "discussion-popup: completion touch restore failed: {error}"
-            ));
-        }
     }
     Ok(())
 }
@@ -1230,31 +883,6 @@ fn set_tac_verification_config(
         .lock()
         .map_err(|_| "TAC configuration lock poisoned")? = Some(config);
     Ok(())
-}
-
-/// Toggle the WebView's hardware-acceleration policy (Linux). Game mode uses OnDemand:
-/// Always made the browse page flash on scroll, Never aliases curves. Ghost trails are
-/// handled by `disable_webkit_damage`, not by forcing `Never`. Desktop may still request
-/// OnDemand vs Never. No-op off-Linux.
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-fn set_webview_accel(app: AppHandle, enabled: bool) {
-    #[cfg(target_os = "linux")]
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.with_webview(move |pw| {
-            use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
-            if let Some(settings) = pw.inner().settings() {
-                let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
-                settings.set_hardware_acceleration_policy(if gamescope || enabled {
-                    HardwareAccelerationPolicy::OnDemand
-                } else {
-                    HardwareAccelerationPolicy::Never
-                });
-            }
-        });
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = (&app, enabled);
 }
 
 /// The scrub-preview tile for hover `time` (seconds) on stream `key`. Returns
@@ -2544,6 +2172,7 @@ fn player_chapters(player: tauri::State<'_, player::PlayerHandle>) -> Result<Str
 #[cfg(windows)]
 fn set_webview_transparent(win: &tauri::WebviewWindow) {
     let _ = win.with_webview(|webview| {
+        let Some(webview) = webview.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
         };
@@ -2613,126 +2242,6 @@ document.addEventListener('DOMContentLoaded',pass);
 new MutationObserver(schedule).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
 }catch(e){}})();"#;
 
-/// Gamescope/WebKitGTK does not reliably deliver native touch scrolling inside third-party comment
-/// frames. Injected into every frame at document start, this script self-gates to the three comment
-/// providers Izumi embeds. Disqus and the DiscussAnime archive relay drag deltas to the parent that
-/// owns their scrollbar; Anime Community scrolls the nearest local overflow owner. Taps remain
-/// native provider events, while a real drag suppresses only its trailing synthetic click.
-#[cfg(target_os = "linux")]
-const COMMENTS_TOUCH_SCROLL_SCRIPT: &str = r#"(function(){try{
-var host=location.hostname,path=location.pathname;
-var disqus=host==='disqus.com'&&path.indexOf('/embed/comments')===0&&new URLSearchParams(location.search).get('f')==='discussanime';
-var archive=host==='discussanime.moe'&&path.indexOf('/embed/')===0;
-var tac=(host==='theanimecommunity.com'||host.endsWith('.theanimecommunity.com'));
-if(!disqus&&!archive&&!tac)return;
-if(window.__izumiCommentsTouchScroll)return;window.__izumiCommentsTouchScroll=1;
-function stripTitle(el){if(!el||!el.getAttribute)return;var title=el.getAttribute('title');if(!title)return;el.setAttribute('data-izumi-title',title);if(!el.hasAttribute('aria-label'))el.setAttribute('aria-label',title);el.removeAttribute('title');}
-function stripTitles(root){if(!root)return;if(root.nodeType===1)stripTitle(root);if(root.querySelectorAll){var titled=root.querySelectorAll('[title]');for(var i=0;i<titled.length;i++)stripTitle(titled[i]);}}
-stripTitles(document.documentElement);
-document.addEventListener('pointerover',function(ev){var el=ev.target&&ev.target.closest?ev.target.closest('[title]'):null;stripTitle(el);},true);
-new MutationObserver(function(mutations){for(var i=0;i<mutations.length;i++){var m=mutations[i];if(m.type==='attributes'){stripTitle(m.target);continue;}for(var j=0;j<m.addedNodes.length;j++)stripTitles(m.addedNodes[j]);}}).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['title']});
-var active=false,moved=false,startY=0,lastY=0,lastAt=0,suppressClickUntil=0,target=null,lastTouchAt=-1e9;
-var inputKind=null,pointerId=null;
-var velocity=0,momentumFrame=0;
-var tapTarget=null,redispatching=false,lastKeyboardAt=-1e9,composerEl=null;
-var EDITABLE='textarea,input,[contenteditable]:not([contenteditable="false"]),[role="textbox"]';
-function interactiveTarget(node){return node&&node.closest?node.closest('button,a,[role="button"],'+EDITABLE):null;}
-function labelOf(el){return ((el&&el.textContent)||'')+' '+((el&&el.getAttribute&&el.getAttribute('aria-label'))||'')+' '+((el&&el.getAttribute&&el.getAttribute('placeholder'))||'');}
-function isSeeMore(el){return /(^|\s)see\s+more(\s|$)/i.test(labelOf(el).trim());}
-function isComposerTrigger(el){return !!(disqus&&el&&/join\s+the\s+discussion|write\s+a\s+comment|start\s+the\s+discussion/i.test(labelOf(el)));}
-function editableTarget(node){var el=node&&node.closest?node.closest(EDITABLE):null;if(!el)return null;var type=(el.type||'text').toLowerCase();return ['checkbox','radio','range','button','submit','color'].indexOf(type)<0?el:null;}
-function visibleComposer(){var nodes=document.querySelectorAll(EDITABLE);for(var i=0;i<nodes.length;i++){var el=editableTarget(nodes[i]),r=el&&el.getBoundingClientRect();if(el&&!el.disabled&&r&&r.width>4&&r.height>4&&getComputedStyle(el).visibility!=='hidden')return el;}return null;}
-function requestKeyboard(el){
-  if(!disqus||!el||performance.now()-lastKeyboardAt<600)return;lastKeyboardAt=performance.now();
-  composerEl=el;
-  var r=el.getBoundingClientRect(),type=(el.type||'text').toLowerCase();
-  var mode=el.tagName==='TEXTAREA'||el.isContentEditable||el.getAttribute('role')==='textbox'?1:type==='email'?2:(type==='number'||el.inputMode==='numeric'||el.inputMode==='tel')?3:0;
-  try{window.top.postMessage({type:'izumi-comments-focus-input',rect:{left:r.left,top:r.top,width:r.width,height:r.height},mode:mode},'*')}catch(_e){}
-}
-
-function focusComposer(hit,activate){
-  if(!disqus)return;
-  if(activate&&hit){redispatching=true;try{hit.click()}catch(_e){}finally{redispatching=false;}}
-  var tries=0,delays=[0,35,90,180,360,700];
-  function attempt(){
-    var el=editableTarget(document.activeElement)||editableTarget(hit)||visibleComposer();
-    if(el){composerEl=el;try{el.focus({preventScroll:true})}catch(_e){try{el.focus()}catch(_e2){}}requestKeyboard(el);return;}
-    tries++;if(tries<delays.length)setTimeout(attempt,delays[tries]);
-  }
-  setTimeout(attempt,delays[0]);
-}
-function activateExact(ev,exact){
-  if(!exact)return;if(ev.cancelable)ev.preventDefault();ev.stopPropagation();
-  if(editableTarget(exact)||isComposerTrigger(exact)){focusComposer(exact,true);return;}
-  suppressClickUntil=performance.now()+700;
-  redispatching=true;try{exact.click()}catch(_e){}finally{redispatching=false;}
-}
-function emitInput(el,inputType,data){try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:inputType,data:data||null}))}catch(_e){el.dispatchEvent(new Event('input',{bubbles:true}))}}
-function setNativeValue(el,value){var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;var desc=Object.getOwnPropertyDescriptor(proto,'value');if(desc&&desc.set)desc.set.call(el,value);else el.value=value;}
-function editComposer(action,text){
-  var el=editableTarget(composerEl)||visibleComposer();if(!el)return;composerEl=el;
-  try{el.focus({preventScroll:true})}catch(_e){try{el.focus()}catch(_e2){}}
-  if(action==='close'){try{el.blur()}catch(_e){}return;}
-  if(action==='submit'){el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return;}
-  if(el.isContentEditable){document.execCommand(action==='backspace'?'delete':'insertText',false,action==='insert'?(text||''):null);emitInput(el,action==='backspace'?'deleteContentBackward':'insertText',text||null);return;}
-  var value=el.value||'',start=el.selectionStart==null?value.length:el.selectionStart,end=el.selectionEnd==null?start:el.selectionEnd,next,pos;
-  if(action==='backspace'){if(start===end&&start>0){next=value.slice(0,start-1)+value.slice(end);pos=start-1;}else{next=value.slice(0,start)+value.slice(end);pos=start;}}
-  else{var insert=text||'';next=value.slice(0,start)+insert+value.slice(end);pos=start+insert.length;}
-  setNativeValue(el,next);try{el.setSelectionRange(pos,pos)}catch(_e){}emitInput(el,action==='backspace'?'deleteContentBackward':'insertText',action==='insert'?(text||''):null);
-}
-window.addEventListener('message',function(ev){var m=ev.data;if(ev.source!==window.top||!m||m.type!=='izumi-comments-key')return;if(['insert','backspace','submit','close'].indexOf(m.action)<0)return;editComposer(m.action,typeof m.text==='string'?m.text:'');});
-function relay(phase,dy,dt){try{window.parent.postMessage({type:disqus?'izumi-disqus-touch-scroll':'izumi-comments-touch-scroll',phase:phase,dy:dy||0,dt:dt||0},'*')}catch(_e){}}
-function scrollableFrom(ev){
-  var nodes=ev.composedPath?ev.composedPath():[],i,n,s;
-  for(i=0;i<nodes.length;i++){n=nodes[i];if(!n||n.nodeType!==1)continue;s=getComputedStyle(n);if(n.scrollHeight>n.clientHeight+1&&/(auto|scroll)/.test(s.overflowY))return n;}
-  n=document.scrollingElement;if(n&&n.scrollHeight>n.clientHeight+1)return n;
-  return null;
-}
-function stopMomentum(){if(momentumFrame)cancelAnimationFrame(momentumFrame);momentumFrame=0;}
-function localScroll(dy){if(target)target.scrollTop+=dy;}
-function addVelocity(dy,dt){var next=Math.max(-3,Math.min(3,dy/dt));velocity=(velocity&&next&&Math.sign(velocity)!==Math.sign(next))?next:velocity*0.6+next*0.4;}
-function startMomentum(){
-  if(!target||Math.abs(velocity)<0.15)return;stopMomentum();var started=performance.now(),last=started;
-  function step(now){var dt=Math.min(32,Math.max(1,now-last)),before=target.scrollTop;last=now;velocity*=Math.pow(0.92,dt/16.67);if(now-started>420||Math.abs(velocity)<0.15){momentumFrame=0;return;}localScroll(velocity*dt);if(target.scrollTop===before){momentumFrame=0;return;}momentumFrame=requestAnimationFrame(step);}
-  momentumFrame=requestAnimationFrame(step);
-}
-function begin(y,now,ev,kind,id){active=true;inputKind=kind;pointerId=id;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();if(!target&&(disqus||archive))relay('start',0,0);}
-function move(y,now,ev,kind,id){
-  if(!active||inputKind!==kind||(kind==='pointer'&&pointerId!==id))return;
-  var total=startY-y,dy=lastY-y,dt=Math.max(1,now-lastAt);lastY=y;lastAt=now;
-  if(!moved&&Math.abs(total)<10)return;
-  moved=true;suppressClickUntil=now+120;
-  if(ev.cancelable)ev.preventDefault();ev.stopPropagation();
-  if(target){localScroll(dy);addVelocity(dy,dt);}else relay('move',dy,dt);
-}
-function end(kind,id){if(!active||inputKind!==kind||(kind==='pointer'&&pointerId!==id))return;active=false;inputKind=null;pointerId=null;if(moved){if(target)startMomentum();else relay('end',0,0);}moved=false;}
-document.addEventListener('touchstart',function(ev){
-  if(ev.touches.length!==1)return;lastTouchAt=performance.now();tapTarget=interactiveTarget(ev.target)||ev.target;var t=ev.touches[0];begin(Number.isFinite(t.screenY)?t.screenY:t.clientY,lastTouchAt,ev,'touch',null);
-},{capture:true,passive:true});
-document.addEventListener('touchmove',function(ev){
-  if(ev.touches.length!==1)return;lastTouchAt=performance.now();var t=ev.touches[0];move(Number.isFinite(t.screenY)?t.screenY:t.clientY,lastTouchAt,ev,'touch',null);
-},{capture:true,passive:false});
-document.addEventListener('touchend',function(ev){
-  var exact=tapTarget,activate=!moved&&(isSeeMore(exact)||isComposerTrigger(exact)||!!editableTarget(exact));lastTouchAt=performance.now();end('touch',null);tapTarget=null;
-  if(activate)activateExact(ev,exact);
-},{capture:true,passive:false});
-document.addEventListener('touchcancel',function(){lastTouchAt=performance.now();tapTarget=null;end('touch',null);},{capture:true,passive:true});
-document.addEventListener('pointerdown',function(ev){
-  var now=performance.now();if(ev.button!==0||ev.pointerType==='touch'||inputKind==='touch'||now-lastTouchAt<700)return;tapTarget=interactiveTarget(ev.target)||ev.target;begin(Number.isFinite(ev.screenY)?ev.screenY:ev.clientY,now,ev,'pointer',ev.pointerId);
-},true);
-document.addEventListener('pointermove',function(ev){
-  move(Number.isFinite(ev.screenY)?ev.screenY:ev.clientY,performance.now(),ev,'pointer',ev.pointerId);
-},{capture:true,passive:false});
-document.addEventListener('pointerup',function(ev){var exact=tapTarget,activate=!moved&&(isSeeMore(exact)||isComposerTrigger(exact)||!!editableTarget(exact));end('pointer',ev.pointerId);tapTarget=null;if(activate)activateExact(ev,exact);},true);
-document.addEventListener('pointercancel',function(ev){tapTarget=null;end('pointer',ev.pointerId);},true);
-document.addEventListener('focusin',function(ev){requestKeyboard(editableTarget(ev.target));},true);
-document.addEventListener('click',function(ev){
-  if(redispatching)return;
-  var editable=editableTarget(ev.target);if(editable){try{editable.focus({preventScroll:true})}catch(_e){}requestKeyboard(editable);}
-  else{var hit=interactiveTarget(ev.target);if(isComposerTrigger(hit))focusComposer(hit,false);}
-  if(performance.now()<suppressClickUntil){ev.preventDefault();ev.stopImmediatePropagation();}
-},true);
-}catch(e){}})();"#;
 
 #[cfg(windows)]
 static FRAME_SCRIPT_ADDED: std::sync::atomic::AtomicBool =
@@ -2742,6 +2251,7 @@ static FRAME_SCRIPT_ADDED: std::sync::atomic::AtomicBool =
 fn install_webview_frame_scripts(win: &tauri::WebviewWindow) {
     use std::sync::atomic::Ordering;
     let r = win.with_webview(|webview| {
+        let Some(webview) = webview.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
         use webview2_com::AddScriptToExecuteOnDocumentCreatedCompletedHandler;
         use windows::core::{HSTRING, PCWSTR};
         unsafe {
@@ -3073,7 +2583,7 @@ fn player_set_inset(
     #[cfg(target_os = "linux")]
     {
         if let Some(w) = app.get_webview_window("main") {
-            player::linux_embed::set_inset(&w, left, top, right, bottom);
+            player::linux_cef::set_inset(&w, left, top, right, bottom);
         }
     }
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -3488,6 +2998,7 @@ async fn capture_webview_screencast_frame(
             let tx = tx.clone();
             let hold = hold.clone();
             move |pw| unsafe {
+            let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
                 let core = match pw.controller().CoreWebView2() {
                     Ok(core) => core,
                     Err(_) => return,
@@ -3981,6 +3492,7 @@ async fn drm_gif_screencast(
             let tx = tx.clone();
             let hold = hold.clone();
             move |pw| unsafe {
+            let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
                 let core = match pw.controller().CoreWebView2() {
                     Ok(core) => core,
                     Err(_) => return,
@@ -4125,6 +3637,7 @@ async fn capture_webview_cdp(webview: &tauri::Webview, params: String) -> Result
     let wv = webview.with_webview({
         let slot = slot.clone();
         move |pw| unsafe {
+        let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
             let fail = |msg: String| {
                 if let Some(t) = slot.lock().unwrap().take() {
                     let _ = t.send(Err(msg));
@@ -4931,6 +4444,7 @@ async fn read_cookies(window: tauri::WebviewWindow, uri: String) -> String {
     let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
     let slot_err = slot.clone();
     let wv = window.with_webview(move |pw| unsafe {
+        let Some(pw) = pw.downcast_ref::<tauri_runtime_wry::Webview>() else { return };
         let fail =
             |s: &std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>| {
                 if let Some(t) = s.lock().unwrap().take() {
@@ -5785,7 +5299,7 @@ async fn flatpak_update_install(app: tauri::AppHandle, channel: String) -> Resul
             return Ok(());
         }
         if let Err(portal_error) = flatpak_portal_update(&app).await {
-            player::linux_embed::elog(&format!(
+            player::linux_cef::elog(&format!(
                 "updater: Flatpak portal failed, trying host updater: {portal_error}"
             ));
             flatpak_host_update(channel).await.map_err(|host_error| {
@@ -5803,52 +5317,6 @@ async fn flatpak_update_install(app: tauri::AppHandle, channel: String) -> Resul
         let _ = (app, channel);
         Err("not a flatpak build".into())
     }
-}
-
-/// Turn OFF WebKitGTK's damage-propagation feature flags (`PropagateDamagingInformation`,
-/// `UnifyDamagedRegions`) — enabled by DEFAULT since WebKitGTK 2.50 (which the Deck's GNOME-49/50
-/// runtime now ships: libwebkit2gtk-4.1.so.0.21.8). They pass only CHANGED rectangles to the
-/// system compositor, so on our TRANSPARENT web view a moving element's VACATED region is
-/// never recomposited — the scrub-tooltip ghost trail + lingering menus that only a window
-/// resize clears (Tauri #12800 / WebKitGTK transparent-view class of bug). With them off, the
-/// whole frame is composited every time. There is no env var for this; we toggle the runtime
-/// feature via the WebKitFeature C API, which our pinned webkit2gtk crate doesn't expose → FFI.
-#[cfg(target_os = "linux")]
-unsafe fn disable_webkit_damage(settings: *mut std::ffi::c_void) {
-    use std::ffi::CStr;
-    use std::os::raw::{c_char, c_int, c_void};
-    extern "C" {
-        fn webkit_settings_get_all_features() -> *mut c_void;
-        fn webkit_feature_list_get_length(list: *mut c_void) -> usize;
-        fn webkit_feature_list_get(list: *mut c_void, index: usize) -> *mut c_void;
-        fn webkit_feature_get_identifier(feature: *mut c_void) -> *const c_char;
-        fn webkit_settings_set_feature_enabled(
-            settings: *mut c_void,
-            feature: *mut c_void,
-            enabled: c_int,
-        );
-        fn webkit_feature_list_unref(list: *mut c_void);
-    }
-    let list = webkit_settings_get_all_features();
-    if list.is_null() {
-        return;
-    }
-    let n = webkit_feature_list_get_length(list);
-    for i in 0..n {
-        let f = webkit_feature_list_get(list, i);
-        if f.is_null() {
-            continue;
-        }
-        let idp = webkit_feature_get_identifier(f);
-        if idp.is_null() {
-            continue;
-        }
-        let id = CStr::from_ptr(idp).to_string_lossy();
-        if id == "PropagateDamagingInformation" || id == "UnifyDamagedRegions" {
-            webkit_settings_set_feature_enabled(settings, f, 0);
-        }
-    }
-    webkit_feature_list_unref(list);
 }
 
 /// A `magnet:` URL the OS handed us on the command line, waiting for the frontend to pick it up.
@@ -5910,49 +5378,6 @@ fn take_pending_magnet() -> Option<String> {
     PENDING_MAGNET.lock().ok().and_then(|mut slot| slot.take())
 }
 
-/// Opt-in bring-up for Gamescope's native Wayland/layer-shell player path.
-///
-/// The tested SteamOS image accepted a Wayland connection but did not present GTK's toplevel, so
-/// XWayland remains the production default. Setting `IZUMI_GAMESCOPE_NATIVE_WAYLAND=1` before
-/// launch enables the experiment only after the socket advertises GTK input/toplevel, accelerated
-/// buffer, and player-composition protocols. This matters because GTK cannot recover to X11 after
-/// it has successfully opened an incomplete Wayland display.
-#[cfg(target_os = "linux")]
-fn configure_gamescope_native_wayland_prototype() {
-    let requested = std::env::var("IZUMI_GAMESCOPE_NATIVE_WAYLAND")
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes"
-            )
-        })
-        .unwrap_or(false);
-    if !requested {
-        return;
-    }
-    let Some(display) = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY") else {
-        player::linux_embed::elog(
-            "native Gamescope Wayland requested, but GAMESCOPE_WAYLAND_DISPLAY is absent",
-        );
-        return;
-    };
-    let display = display.to_string_lossy().into_owned();
-    if let Err(error) = player::linux_embed::gamescope_native_wayland_ready(&display) {
-        player::linux_embed::elog(&format!(
-            "native Gamescope Wayland preflight failed; keeping XWayland: {error}"
-        ));
-        return;
-    }
-
-    std::env::set_var("WAYLAND_DISPLAY", &display);
-    std::env::set_var("GDK_BACKEND", "wayland");
-    // Match Gamescope's own --expose-wayland environment contract for toolkits and portals.
-    std::env::set_var("XDG_SESSION_TYPE", "wayland");
-    player::linux_embed::elog(&format!(
-        "native Gamescope Wayland preflight passed on '{display}'"
-    ));
-}
-
 /// Synchronous commands that call into the libmpv core. Tauri runs sync commands on the UI
 /// thread, which also receives every IPC request, and a libmpv call waits for as long as the core
 /// is busy: a hardware-decoder reinit held it for seconds on a memory-starved iGPU. While one
@@ -6009,28 +5434,14 @@ fn route_player_commands<R: tauri::Runtime>(
 #[cfg(not(test))]
 pub fn run() {
     startup_trace::mark("run");
+    let context = isolate_dev_context(tauri::generate_context!());
+    // Linux runs CEF with the main webview offscreen, drawn by izumi's own compositor (see
+    // player/linux_cef.rs); the other platforms keep their system webviews through wry.
     #[cfg(target_os = "linux")]
-    configure_gamescope_native_wayland_prototype();
-    // Linux: the embedded player composites mpv (a wl_subsurface) BELOW the webview,
-    // needing a native Wayland session — so we do NOT force GDK_BACKEND=x11 (Desktop mode
-    // / KWin gives us Wayland). We DELIBERATELY do NOT set WEBKIT_DISABLE_DMABUF_RENDERER
-    // or WEBKIT_DISABLE_COMPOSITING_MODE:
-    //   - WEBKIT_DISABLE_COMPOSITING_MODE turns OFF accelerated compositing, which defeats
-    //     the CSS layer promotion (`will-change: transform`) that keeps the MOVING scrub
-    //     tooltip from leaving a ghost trail — the promoted layer must be a real compositor
-    //     layer for moving it to recomposite-and-clear the old position.
-    //   - WEBKIT_DISABLE_DMABUF_RENDERER forces a non-native software surface; on the Deck's
-    //     AMD/Wayland stack the native DMABUF accelerated path is the RELIABLE one, and
-    //     disabling it breaks the transparent overlay. The AppImage-era white-screen these
-    //     once guarded against was a bundled-mesa clash; the Flatpak uses the runtime's
-    //     matched mesa (+ --device=dri), so it doesn't recur.
-    //
-    // Steam Deck GAME MODE stays on the proven XWayland path by default. Native Wayland is an
-    // explicit prototype because an older tested Gamescope accepted the socket connection but did
-    // not present GTK's toplevel. The opt-in above now checks the actual protocol registry before
-    // selecting Wayland; failed preflight leaves every display variable untouched and therefore
-    // keeps the established XWayland/snapshot path.
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default()
+        .runtime(player::linux_cef::runtime(&context.config().identifier));
+    #[cfg(not(target_os = "linux"))]
+    let builder = tauri::Builder::default().runtime(tauri_runtime_wry::Wry::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder
         // Acquire the single-instance lock before a pending reset can touch app storage.
@@ -6114,8 +5525,8 @@ pub fn run() {
     // addDocumentStartJavaScript path reaches on Android. Windows injects it through WebView2.
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
-        tauri::plugin::Builder::<tauri::Wry>::new("disqus-profile")
-            .js_init_script(DISQUS_PROFILE_SCRIPT.to_string())
+        tauri::plugin::Builder::<tauri::DynRuntime>::new("disqus-profile")
+            .initialization_script_on_all_frames(DISQUS_PROFILE_SCRIPT)
             .build(),
     );
     let builder = builder.setup(|app| {
@@ -6125,20 +5536,6 @@ pub fn run() {
             cache_gc::sweep_at_startup(app.handle());
             subtitle_fonts::init(app.handle());
             modules::start(app.handle());
-            // Game mode: WebKitGTK takes text hinting from GTK's settings. GNOME's slight hinting
-            // rounds every glyph advance, so under the Deck's page zoom each line of text ran about
-            // 2% longer than in Chromium, which lays text out unhinted on linear metrics at a
-            // scale factor above 1. Unhinted, WebKit's Skia text uses the same metrics. Set before
-            // the webview exists so its first settings snapshot already has it; an application
-            // value outranks settings.ini and XSETTINGS.
-            #[cfg(target_os = "linux")]
-            if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
-                if let Some(settings) = gtk::Settings::default() {
-                    use glib::prelude::ObjectExt;
-                    settings.set_property("gtk-xft-hinting", 0i32);
-                    settings.set_property("gtk-xft-hintstyle", "hintnone");
-                }
-            }
             // Stash a magnet URL only when the OS/user explicitly launched this executable with
             // one. Izumi never registers or claims the magnet scheme itself.
             #[cfg(not(target_os = "android"))]
@@ -6461,29 +5858,16 @@ pub fn run() {
                             );
                             match popup.build() {
                                 Ok(window) => {
+                                    // Under Gamescope, hand focus back to the main page when the popup closes.
                                     #[cfg(target_os = "linux")]
                                     if gamescope {
-                                        let popup_window = window.clone();
                                         let event_app = popup_app.clone();
-                                        window.on_window_event(move |event| match event {
-                                            tauri::WindowEvent::Focused(true) => {
-                                                if let Err(error) = player::linux_x11::enable_native_touch(&popup_window) {
-                                                    player::linux_embed::elog(&format!(
-                                                        "discussion-popup: focus touch restore failed: {error}"
-                                                    ));
-                                                }
-                                            }
-                                            tauri::WindowEvent::Destroyed => {
+                                        window.on_window_event(move |event| {
+                                            if let tauri::WindowEvent::Destroyed = event {
                                                 if let Some(main) = event_app.get_webview_window("main") {
                                                     let _ = main.set_focus();
-                                                    if let Err(error) = player::linux_x11::enable_native_touch(&main) {
-                                                        player::linux_embed::elog(&format!(
-                                                            "discussion-popup: close touch restore failed: {error}"
-                                                        ));
-                                                    }
                                                 }
                                             }
-                                            _ => {}
                                         });
                                     }
                                     if gamescope && is_disqus && is_auth {
@@ -6523,6 +5907,8 @@ pub fn run() {
                             NewWindowResponse::Deny
                         }
                     });
+                #[cfg(target_os = "linux")]
+                let main_window = player::linux_cef::configure(main_window);
                 let main_window = desktop_webview::isolate_webview_data(
                     main_window,
                     &app.config().identifier,
@@ -6628,139 +6014,12 @@ pub fn run() {
                     }
                 });
             }
-            // Linux: make the WebView background fully TRANSPARENT so the mpv video
-            // subsurface below shows through the player's transparent areas. Accelerated
-            // compositing is left ON (default) — it's REQUIRED for the frontend's
-            // compositing-layer promotion (`will-change: transform` on the moving scrub
-            // tooltip + popup menus) to actually recomposite-and-clear old positions;
-            // forcing software rendering (policy=Never) makes that promotion a no-op and the
-            // ghost trail returns. The menus must NOT use backdrop-filter (it samples a
-            // backdrop the webview can't see — the video is a separate subsurface).
+            // Linux: CEF is up by now. Stop its idle main-loop spin and keep Gamescope's touch
+            // passthrough on, so real touches reach the offscreen page as touch.
             #[cfg(target_os = "linux")]
-            if let Some(win) = app.get_webview_window("main") {
-                // Steam overrides the session's native touch default with left-click emulation for
-                // this XWayland app. Change Gamescope back to passthrough after our window exists so
-                // WebKitGTK receives real XI2 touch sequences and owns drag + kinetic scrolling,
-                // including inside cross-origin discussion frames.
-                let x11_game_mode = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
-                    && !player::linux_embed::is_wayland(&win);
-                if x11_game_mode {
-                    if let Err(e) = player::linux_x11::enable_native_touch(&win) {
-                        player::linux_embed::elog(&format!("x11: native touch passthrough failed: {e}"));
-                    }
-                }
-                let touch_win = win.clone();
-                win.on_window_event(move |event| {
-                    // Steam may rewrite its root property during an app-focus transition. Reassert
-                    // passthrough after GTK receives focus; this remains compositor-level native
-                    // input routing and does not synthesize or reinterpret any gestures.
-                    if matches!(event, tauri::WindowEvent::Focused(true)) {
-                        if player::linux_embed::is_wayland(&touch_win) {
-                            return;
-                        }
-                        // Focus returning usually means an overlay closed, but Gamescope can also
-                        // wobble focus during a valid swipe. Do not fake-release/warp an active or
-                        // just-completed gesture; the webview watchdog handles a genuinely missing
-                        // release after a quiet window.
-                        player::linux_x11::unstick_pointer_if_idle();
-                        if let Err(e) = player::linux_x11::enable_native_touch(&touch_win) {
-                            player::linux_embed::elog(&format!("x11: focus touch passthrough failed: {e}"));
-                        }
-                    }
-                });
-                // The page writes the CEF migration file before it lets the window close
-                // (engine-migration.ts, capped at 2 s). If the page is hung, close anyway.
-                let close_win = win.clone();
-                win.on_window_event(move |event| {
-                    if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-                        let close_win = close_win.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_secs(4));
-                            let _ = close_win.destroy();
-                        });
-                    }
-                });
-                let native_touch_app = app.handle().clone();
-                let _ = win.with_webview(move |pw| {
-                    use glib::object::ObjectType;
-                    use webkit2gtk::{
-                        CookieAcceptPolicy, CookieManagerExt, SettingsExt,
-                        UserContentInjectedFrames, UserContentManagerExt, UserScript,
-                        UserScriptInjectionTime, WebContextExt, WebViewExt,
-                        WebsiteDataManagerExt,
-                    };
-                    let wv = pw.inner();
-                    wv.set_background_color(&gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
-                    if x11_game_mode {
-                        // SteamOS's WebKitGTK can defer its DOM compatibility mouse event until a
-                        // finger lifts. Start only the hidden-player reveal from GTK's physical
-                        // touch edge instead; returning Proceed preserves WebKit's normal touch,
-                        // click, seekbar, and discussion-frame handling.
-                        gtk::prelude::WidgetExtManual::add_events(
-                            &wv,
-                            gdk::EventMask::TOUCH_MASK,
-                        );
-                        let touch_app = native_touch_app.clone();
-                        gtk::prelude::WidgetExt::connect_touch_event(&wv, move |_wv, event| {
-                            if event.event_type() == gdk::EventType::TouchBegin {
-                                let _ = touch_app.emit("gm-native-touch-begin", ());
-                            }
-                            glib::Propagation::Proceed
-                        });
-                    }
-                    if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
-                        // The comments iframe is created well after setup, so one all-frame user
-                        // script reaches its cross-origin document without polling or DOM overlays.
-                        if let Some(manager) = wv.user_content_manager() {
-                            manager.add_script(&UserScript::new(
-                                COMMENTS_TOUCH_SCROLL_SCRIPT,
-                                UserContentInjectedFrames::AllFrames,
-                                UserScriptInjectionTime::Start,
-                                &[],
-                                &[],
-                            ));
-                        }
-                        // TAC's Cloudflare clearance and Disqus's login live in third-party
-                        // discussion frames. WebKitGTK's tracking policy otherwise withholds those
-                        // cookies after the related first-party popup closes, causing TAC to loop
-                        // back to a blocked challenge and Disqus to appear signed out again.
-                        if let Some(context) = wv.context() {
-                            if let Some(cookies) = context.cookie_manager() {
-                                cookies.set_accept_policy(CookieAcceptPolicy::Always);
-                            }
-                        }
-                        if let Some(data) = wv.website_data_manager() {
-                            data.set_itp_enabled(false);
-                        }
-                    }
-                    // THE root fix for the ghost trails: turn off WebKitGTK 2.50 damage
-                    // propagation (see disable_webkit_damage).
-                    if let Some(settings) = wv.settings() {
-                        // Gamescope passthrough lets WebKit's GTK drag/swipe gestures use this
-                        // async path, including velocity-based native kinetic scrolling.
-                        settings.set_enable_smooth_scrolling(true);
-                        if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
-                            && crate::gm_perf::game_mode_uses_hardware_webkit()
-                        {
-                            use webkit2gtk::HardwareAccelerationPolicy;
-                            settings.set_hardware_acceleration_policy(
-                                HardwareAccelerationPolicy::OnDemand,
-                            );
-                        }
-                        let sptr = settings.as_ptr() as *mut std::ffi::c_void;
-                        unsafe { disable_webkit_damage(sptr) };
-                    }
-                });
-                // One-shot compositor capability probe (logs to izumi-embed.log). Decides the
-                // Game-mode video-overlay architecture from measured facts — does gamescope's
-                // XWayland report an RGBA/composited screen, and does its Wayland socket expose
-                // wl_subcompositor. No-op effect on the running player; pure diagnostics.
-                // Opt-in: it opens up to five throwaway Wayland connections (registry roundtrip
-                // each), writes ~15 log lines and swaps WAYLAND_DISPLAY process-wide, all on the
-                // main thread before the first paint. Nothing consumes the answer at runtime.
-                if std::env::var_os("IZUMI_COMPOSITOR_PROBE").is_some() {
-                    player::linux_embed::probe_compositor(&win);
-                }
+            {
+                player::linux_cef::release_idle_spin();
+                player::linux_cef::spawn_touch_passthrough();
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;
@@ -6787,17 +6046,12 @@ pub fn run() {
             player_embed,
             close_player,
             player_is_game_mode,
-            player_compositor_path,
-            player_gm_overlay,
-            player_gm_dock,
-            player_gm_dynamic_overlay,
             gamepad_start,
             gamepad_stop,
             gamepad_trigger_state,
             spawn_external_player,
             player_get_property,
             player_editor_snapshot,
-            player_frame_snapshot,
             player_sprite_start,
             player_thumb_tile,
             player_thumb_info,
@@ -6805,12 +6059,10 @@ pub fn run() {
             cache_usage,
             clear_cache,
             set_webview_zoom,
-            restore_native_touch,
-            native_touch_hold,
-            gm_touch_unstick,
             gm_log,
+            engine_migration_take,
+            engine_migration_done,
             engine_migration_write,
-            set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
             resolve_deck_login_popup,
@@ -7070,7 +6322,7 @@ pub fn run() {
 
     startup_trace::mark("builder");
     builder
-        .build(isolate_dev_context(tauri::generate_context!()))
+        .build(context)
         .expect("error while running tauri application")
         .run(|_app, _event| {
             #[cfg(not(target_os = "android"))]

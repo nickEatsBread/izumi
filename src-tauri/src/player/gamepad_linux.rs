@@ -23,11 +23,10 @@ use std::time::{Duration, Instant};
 
 use gilrs::{Axis, Button, EventType, GilrsBuilder};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static RUN_ID: AtomicU64 = AtomicU64::new(0);
-static TOUCH_RESTORE_PENDING: AtomicBool = AtomicBool::new(false);
 static TRIGGERS: OnceLock<Mutex<TriggerState>> = OnceLock::new();
 
 /// Analog trigger / stick press + release thresholds (gilrs reports 0.0..=1.0 and -1.0..=1.0).
@@ -74,41 +73,6 @@ fn set_trigger_state(input: &Input) {
     }
 }
 
-/// Steam can transition its Gamescope input routing when controller navigation takes over without
-/// giving the app another focus event. Re-publish the native-touch root property just after that
-/// transition so XWayland/WebKit continues receiving real touch sequences. This does not synthesize
-/// gestures or pointer events; it only asks Gamescope to keep its native passthrough mode.
-fn schedule_native_touch_restore(app: &AppHandle) {
-    if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none()
-        || TOUCH_RESTORE_PENDING.swap(true, Ordering::SeqCst)
-    {
-        return;
-    }
-
-    let delayed_app = app.clone();
-    if app
-        .run_on_main_thread(move || {
-            glib::timeout_add_local_once(Duration::from_millis(120), move || {
-                if let Some(window) = delayed_app.get_webview_window("main") {
-                    if crate::player::linux_embed::is_wayland(&window) {
-                        TOUCH_RESTORE_PENDING.store(false, Ordering::SeqCst);
-                        return;
-                    }
-                    if let Err(error) = crate::player::linux_x11::enable_native_touch(&window) {
-                        crate::player::linux_embed::elog(&format!(
-                            "gamepad: native touch restore failed: {error}"
-                        ));
-                    }
-                }
-                TOUCH_RESTORE_PENDING.store(false, Ordering::SeqCst);
-            });
-        })
-        .is_err()
-    {
-        TOUCH_RESTORE_PENDING.store(false, Ordering::SeqCst);
-    }
-}
-
 /// Per-edge gamepad logging is opt-in (`IZUMI_GAMEPAD_LOG=1`): `elog` opens, appends and closes
 /// the embed log file on every call, which is needless IO on the input path during normal use.
 fn gamepad_log_enabled() -> bool {
@@ -118,11 +82,8 @@ fn gamepad_log_enabled() -> bool {
 
 fn emit_input(app: &AppHandle, input: &Input) {
     set_trigger_state(input);
-    if input.pressed && crate::gm_perf::gamepad_input_restores_touch(input.name) {
-        schedule_native_touch_restore(app);
-    }
     if gamepad_log_enabled() {
-        crate::player::linux_embed::elog(&format!(
+        crate::player::linux_cef::elog(&format!(
             "gamepad: {}={}",
             input.name, input.pressed
         ));
@@ -287,7 +248,7 @@ fn open_deck_hidraw() -> io::Result<Vec<File>> {
             .open(&path)
         {
             Ok(device) => devices.push(device),
-            Err(error) => crate::player::linux_embed::elog(&format!(
+            Err(error) => crate::player::linux_cef::elog(&format!(
                 "gamepad: cannot open {} for Deck grips: {error}",
                 path.display()
             )),
@@ -322,14 +283,14 @@ fn read_deck_grips(app: AppHandle, run_id: u64) {
                 continue;
             }
             Err(error) => {
-                crate::player::linux_embed::elog(&format!(
+                crate::player::linux_cef::elog(&format!(
                     "gamepad: Deck hidraw discovery failed: {error}"
                 ));
                 std::thread::sleep(Duration::from_secs(2));
                 continue;
             }
         };
-        crate::player::linux_embed::elog(&format!(
+        crate::player::linux_cef::elog(&format!(
             "gamepad: watching {} Deck HID interface(s) for L4/R4",
             devices.len()
         ));
@@ -354,7 +315,7 @@ fn read_deck_grips(app: AppHandle, run_id: u64) {
             if ready < 0 {
                 let error = io::Error::last_os_error();
                 if error.kind() != io::ErrorKind::Interrupted {
-                    crate::player::linux_embed::elog(&format!(
+                    crate::player::linux_cef::elog(&format!(
                         "gamepad: Deck hidraw poll failed: {error}"
                     ));
                     reconnect = true;
@@ -386,7 +347,7 @@ fn read_deck_grips(app: AppHandle, run_id: u64) {
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                         Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                         Err(error) => {
-                            crate::player::linux_embed::elog(&format!(
+                            crate::player::linux_cef::elog(&format!(
                                 "gamepad: Deck hidraw read failed: {error}"
                             ));
                             reconnect = true;
@@ -423,7 +384,7 @@ pub fn start(app: AppHandle) {
         .name("izumi-deck-grips".into())
         .spawn(move || read_deck_grips(grip_app, run_id))
     {
-        crate::player::linux_embed::elog(&format!(
+        crate::player::linux_cef::elog(&format!(
             "gamepad: Deck grip reader spawn failed: {error}"
         ));
     }
@@ -438,14 +399,14 @@ pub fn start(app: AppHandle) {
             let mut gilrs = match GilrsBuilder::new().with_default_filters(false).build() {
                 Ok(g) => g,
                 Err(e) => {
-                    crate::player::linux_embed::elog(&format!("gamepad: gilrs init failed: {e}"));
+                    crate::player::linux_cef::elog(&format!("gamepad: gilrs init failed: {e}"));
                     if RUN_ID.load(Ordering::SeqCst) == run_id {
                         RUNNING.store(false, Ordering::SeqCst);
                     }
                     return;
                 }
             };
-            crate::player::linux_embed::elog(&format!(
+            crate::player::linux_cef::elog(&format!(
                 "gamepad: reader started, {} pad(s) connected",
                 gilrs.gamepads().count()
             ));
@@ -469,7 +430,7 @@ pub fn start(app: AppHandle) {
                 while let Some(ev) = pending {
                     match ev.event {
                         EventType::Connected => {
-                            crate::player::linux_embed::elog(&format!(
+                            crate::player::linux_cef::elog(&format!(
                                 "gamepad: connected id={:?}",
                                 ev.id
                             ));

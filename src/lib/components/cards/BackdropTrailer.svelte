@@ -29,7 +29,7 @@
   const saveData = typeof navigator !== 'undefined' && (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true
   const on = $derived(backdropTrailerOn({
     enabled, id, setting: $backdropTrailers, desktop: !$isMobile && !$isAndroid && !$isTv && !$gameMode,
-    // The same rule as reducedMotion() in gm-motion.ts, written against the store so it stays reactive.
+    // The same rule as reducedMotion() in motion/motion.ts, written against the store so it stays reactive.
     reducedMotion: $motionPreference === 'reduce' || ($motionPreference !== 'full' && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
     saveData, playerUp: $playerUp, pageHidden: pageHidden || $windowMinimized, held: held || scrolled || $trailerPopup !== null || $hoverTrailers > 0,
   }))

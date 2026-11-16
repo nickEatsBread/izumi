@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { get } from 'svelte/store'
   import { fade } from 'svelte/transition'
   import { beforeNavigate } from '$app/navigation'
-  import { bumpPlayerOverlay, gameMode, playing } from '$lib/player/session'
   import { portal } from '$lib/util/portal'
   import { revealAboveKeyboard } from '$lib/nav'
   import { closeOsk, oskBackspace, oskDone, oskEcho, oskInsert, oskSession, startOsk } from '$lib/nav/osk'
@@ -65,20 +63,10 @@
       root?.querySelector<HTMLElement>('[data-focusable]')?.focus({ preventScroll: true })
       if (current instanceof HTMLElement && root) undo = revealAboveKeyboard(current, root.getBoundingClientRect().top)
     })
-    // Game mode during playback: the keys reach the screen only through the player's snapshot.
-    // Take one more once the fade-in has painted.
-    const settle = setTimeout(() => { if (get(gameMode) && get(playing)) bumpPlayerOverlay() }, 140)
     return () => {
       cancelAnimationFrame(frame)
-      clearTimeout(settle)
       undo()
     }
-  })
-  // A layer switch repaints every key.
-  $effect(() => {
-    void shift
-    void symbols
-    if (get(gameMode) && get(playing)) bumpPlayerOverlay()
   })
 </script>
 

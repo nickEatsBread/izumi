@@ -55,7 +55,7 @@ describe('shared P2P status overlay', () => {
   it('removes startup surfaces synchronously when native video makes WebKit hidden', () => {
     const player = read('./PlayerOverlay.svelte')
     const loadingSurface = player.slice(
-      player.indexOf('{#if loading && !gmBitmapMode}'),
+      player.indexOf('{#if loading}'),
       player.indexOf('<div class="izumi-hud"><P2PStatusOverlay'),
     )
     expect(loadingSurface).not.toContain('transition:fade')

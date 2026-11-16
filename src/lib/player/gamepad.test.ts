@@ -125,7 +125,7 @@ describe('controller event seek', () => {
   it('keeps hidden controls hidden for d-pad taps and preserves subtitle state across seeks', () => {
     const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
     const native = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/mod.rs', import.meta.url)), 'utf8')
-    expect(overlay).toContain("$scrub.source === 'dpad'")
+    expect(overlay).toContain("source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t)")
     expect(overlay).toContain("action === 'playerSeekBack' || action === 'playerSeekForward'")
     expect(native).toContain('mpv.get_property::<String>("sid")')
     expect(native).toContain('mpv.get_property::<bool>("sub-visibility")')

@@ -9,9 +9,8 @@
   import { flip } from 'svelte/animate'
   import { fade, scale } from 'svelte/transition'
   import { goto, pushState } from '$app/navigation'
-  import { streamPicker, gameMode, playing, bingeSource, debridCaching, connecting, bumpPlayerOverlay, type StreamPickerState } from '$lib/player/session'
-  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
-  import { motion } from '$lib/motion/gm-motion'
+  import { streamPicker, gameMode, playing, bingeSource, debridCaching, connecting, type StreamPickerState } from '$lib/player/session'
+  import { motion } from '$lib/motion/motion'
   import Glyph from '$lib/components/shell/Glyph.svelte'
   import type { Writable } from 'svelte/store'
   import { rankInfos, pickCandidates, preferDirectStartupCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
@@ -58,14 +57,16 @@
 
   const pick = $derived($pickerStore)
   const controllerUi = $derived($gameMode || $controllerMode)
-  // Over a playing video on the Deck the picker is a TV-style side panel over the paused frame
-  // (gm-freeze.ts); everywhere else it stays the centred card.
+  // Over a playing video on the Deck the picker is a TV-style side panel; everywhere else it stays
+  // the centred card.
   const tvPanel = $derived($gameMode && $playing && !$isMobile)
+  const panelMotion = (node: Element, duration: number) =>
+    motion(node as HTMLElement, tvPanel ? { opacity: [0, 1], x: [56, 0], duration } : { opacity: [0, 1], duration })
+  // Local, like the desktop scale it shares the slot with: it runs when the list replaces an automatic pick.
+  const panelIn = (node: Element) => $gameMode ? panelMotion(node, 220) : scale(node, { duration: 200, start: 0.95, opacity: 1 })
   // Global: the panel sits in a nested block, and a local outro never runs when the picker closes.
   // Elsewhere it stays instant, as it always has been.
-  const panelOut = (node: Element) => $gameMode
-    ? motion(node as HTMLElement, gmPanelOut(tvPanel ? 'right' : 'fade'))
-    : { duration: 0 }
+  const panelOut = (node: Element) => $gameMode ? panelMotion(node, 160) : { duration: 0 }
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
   const cacheCheck = $derived($debridKey ? cacheCheckMode($debridProvider) : 'none')
 
@@ -380,7 +381,6 @@
   }
   function focusSource(info: StreamInfo) {
     targetSource(info)
-    if ($gameMode) bumpPlayerOverlay()
   }
   onDestroy(stopAutoTimer)
 
@@ -403,25 +403,12 @@
   // the removed settings button. The next Down then landed on Close/Copy instead of a source.
   let pickerFocusReady = false
   let pickerTrap = $state<HTMLElement | null>(null)
-  let spinnerFrame = $state(0)
   const pickerOpen = $derived(!!pick && !pick.hidden)
 
-  // CSS animation time is not guaranteed to advance between WebKit snapshots under Gamescope.
-  // Step the spinner in state and request one bitmap per step: it visibly moves without keeping a
-  // full-viewport 30fps raster loop alive for the entire (network-bound) source resolution.
-  $effect(() => {
-    if (!$gameMode || !resolving || !pickerTrap) return
-    const timer = setInterval(() => {
-      spinnerFrame = (spinnerFrame + 1) % 8
-      bumpPlayerOverlay()
-    }, 125)
-    return () => clearInterval(timer)
-  })
-
-  // A local vertical path is intentionally independent of page-wide spatial geometry. On the
-  // XWayland snapshot path focus can still belong to the settings button behind this dialog, which
-  // made ArrowDown a no-op. Enter the first source from outside, then walk every visible picker
-  // control in DOM order so grouped-source toggles and the tail actions remain reachable too.
+  // A local vertical path is intentionally independent of page-wide spatial geometry. Focus can
+  // still belong to the settings button behind this dialog, which made ArrowDown a no-op. Enter the
+  // first source from outside, then walk every visible picker control in DOM order so grouped-source
+  // toggles and the tail actions remain reachable too.
   $effect(() => {
     const trap = pickerTrap
     if (!controllerUi || !trap || !pickerOpen) return
@@ -454,7 +441,6 @@
       const target = items[index]
       target.focus({ preventScroll: true })
       target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
-      bumpPlayerOverlay()
     }
     window.addEventListener('stream-picker-nav', onNav)
     return () => window.removeEventListener('stream-picker-nav', onNav)
@@ -467,26 +453,6 @@
     const onDismiss = () => close()
     window.addEventListener('stream-picker-dismiss', onDismiss)
     return () => window.removeEventListener('stream-picker-dismiss', onDismiss)
-  })
-  // The source picker is lazy-loaded outside PlayerOverlay. On a cold open, the player's first
-  // one-shot Gamescope snapshot can therefore happen while only the pending placeholder exists.
-  // Re-snapshot once the real trap mounts, after WebKit has painted its card, regardless of whether
-  // source rows have arrived yet. Later focus changes keep using the existing onfocusin bump.
-  $effect(() => {
-    const trap = pickerTrap
-    if (!$gameMode || !trap) return
-    let cancelled = false
-    bumpPlayerOverlay()
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!cancelled && trap.isConnected) bumpPlayerOverlay()
-    }))
-    const timer = setTimeout(() => {
-      if (!cancelled && trap.isConnected) bumpPlayerOverlay()
-    }, 120)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
   })
   $effect(() => {
     const open = !!pick && !pick.hidden
@@ -911,7 +877,6 @@
        its whole shell while `streamPicker` is set), so it has to survive a ~360px-tall landscape
        viewport — hence the short-viewport rules in the style block. -->
   <div
-    data-gm-menu-surface
     class="fixed inset-0 z-40 grid bg-black/70 {tvPanel ? 'justify-items-end' : $isMobile ? '' : 'place-items-center p-4'}"
     class:backdrop-blur-sm={!$gameMode && !$isMobile}
     transition:fade={{ duration: $gameMode ? 0 : 200 }}
@@ -919,7 +884,7 @@
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div bind:this={pickerTrap} data-slot="sources" data-variant={tvPanel ? 'panel' : $isMobile ? 'phone' : 'dialog'} data-state={resolving ? 'loading' : undefined} data-nav-trap data-gm-tv-panel={tvPanel ? '' : undefined} use:gmPanel={tvPanel ? 'right' : 'fade'} class="sp-panel flex flex-col overflow-hidden shadow-2xl {tvPanel ? 'h-full w-[min(46rem,62vw)] border-l border-white/10 bg-[#101012]/95' : $isMobile ? 'sp-mobile h-full w-full bg-card' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border bg-card'}" in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} out:panelOut|global onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
+    <div bind:this={pickerTrap} data-slot="sources" data-variant={tvPanel ? 'panel' : $isMobile ? 'phone' : 'dialog'} data-state={resolving ? 'loading' : undefined} data-nav-trap data-gm-tv-panel={tvPanel ? '' : undefined} class="sp-panel flex flex-col overflow-hidden shadow-2xl {tvPanel ? 'h-full w-[min(46rem,62vw)] border-l border-white/10 bg-[#101012]/95' : $isMobile ? 'sp-mobile h-full w-full bg-card' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border bg-card'}" in:panelIn out:panelOut|global onclick={(e) => e.stopPropagation()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}
@@ -933,7 +898,7 @@
           <div class="min-w-0 flex-1">
             <h2 class="sp-title font-black leading-tight drop-shadow {$isMobile ? 'line-clamp-1 text-base' : 'line-clamp-2 text-xl'}">{title(pick.media)}</h2>
             <p data-part="sources.status" data-state={resolving ? 'loading' : undefined} class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              {#if resolving}<Spinner size="xs" frame={$gameMode ? spinnerFrame : undefined} />{$jvmRuntimeState === 'starting' ? 'Starting extension runtime…' : 'Finding sources…'}{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
+              {#if resolving}<Spinner size="xs" />{$jvmRuntimeState === 'starting' ? 'Starting extension runtime…' : 'Finding sources…'}{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
           <button data-focusable onclick={close} class="grid shrink-0 place-items-center bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'size-11 rounded-full text-lg' : 'size-10 rounded-lg sm:size-8'}" aria-label="Close">✕</button>
@@ -1164,7 +1129,7 @@
         {/each}
         {#if resolving}
           <div data-part="sources.more" data-state="loading" class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-            <Spinner size="xs" frame={$gameMode ? spinnerFrame : undefined} />
+            <Spinner size="xs" />
             Finding more sources…
           </div>
         {/if}

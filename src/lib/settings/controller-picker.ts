@@ -9,7 +9,7 @@ export function openingOption(list: ParentNode, value: string): HTMLElement | nu
 
 /** Scroll `row` inside the picker's own capped list, centred or just into view. Never
  *  scrollIntoView: it moves every scrollable ancestor, and from this fixed overlay a window scroll
- *  only shifts the page behind the backdrop (nav's revealFocused avoids it for the same reason). */
+ *  only shifts the page behind the backdrop. */
 function scrollInList(row: HTMLElement, centre: boolean): void {
   const list = row.closest<HTMLElement>('[data-nav-scroll-container]:not([data-select-picker])')
   if (!list) return

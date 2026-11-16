@@ -83,9 +83,6 @@
      empty strip. SettingsSubcategory's scroll margin drops the same 2rem. */
   :global(html:is(.gamemode, .tv-mode):not([data-theme-nav='top'])) .settings-sticky { padding-top: 0.625rem; }
   .settings-sticky:not([data-visible]) { visibility: hidden; opacity: 0; transform: translateY(-0.25rem); }
-  /* Game mode: the end of a CSS transition blinks on WebKitGTK and the tween promotes the bar's
-     text to a soft layer (motion/gm-motion.ts), so the bar shows and hides at once. */
-  :global(html.gamemode) .settings-sticky { transition: none; }
   /* The phone layout's sticky back-header already names the section (settings/+layout.svelte). */
   :global(.settings-child) [data-settings-section-header] { display: none; }
 </style>

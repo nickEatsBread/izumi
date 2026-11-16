@@ -26,9 +26,7 @@
     segments,
     chapters,
     onseek,
-    onscrubinput,
     gm = false,
-    native = false,
   }: {
     pos: number
     dur: number
@@ -36,9 +34,7 @@
     segments: Segment[]
     chapters: { time: number; title: string }[]
     onseek: (t: number) => void
-    onscrubinput?: () => void
     gm?: boolean
-    native?: boolean
   } = $props()
 
   let el = $state<HTMLDivElement>()
@@ -182,9 +178,7 @@
     // Keeping the last frame regardless of distance meant skimming from five minutes to forty-five
     // left the five-minute frame on screen at full strength, indistinguishable from a real one.
     // A neighbour within the window is genuinely informative and is dimmed to say so; beyond it
-    // there is nothing honest to show, so the shimmer returns. Calm to look at either way, and (Game
-    // mode) a stable image keeps the overlay snapshot byte-identical so linux_overlay can skip the
-    // mpv re-upload.
+    // there is nothing honest to show, so the shimmer returns.
     const near = i >= 0 ? nearestTile(i) : undefined
     thumbSrc = near ?? ''
     thumbApprox = !!near
@@ -349,7 +343,6 @@
     requestTile(t)
     if (gm && $scrub.active) {
       moveScrub(t, true)
-      onscrubinput?.()
       return
     }
     hoverT = t
@@ -364,10 +357,7 @@
     // Capture can fail for a pointer that died between hit-test and here; a failed capture must
     // not abort starting the scrub.
     try { el?.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
-    if (gm) {
-      beginScrub(t, 'touch')
-      onscrubinput?.()
-    }
+    if (gm) beginScrub(t, 'touch')
     else seeking = true
   }
   function onup(e: PointerEvent) {
@@ -375,10 +365,7 @@
     // own pointerId that dies with the sequence) — releasing is best-effort.
     try { el?.releasePointerCapture(e.pointerId) } catch { /* already released */ }
     if (gm) {
-      if ($scrub.active) {
-        endScrub()
-        onscrubinput?.()
-      }
+      if ($scrub.active) endScrub()
     } else if (seeking) {
       seeking = false
       heldT = hoverT
@@ -407,7 +394,6 @@
   }}
   onpointercancel={onup}
   onlostpointercapture={onup}
-  class:opacity-0={native}
 >
   <!-- Per-chapter segments. Each is its % of the duration with a small gap;
        the hovered chapter's fill bars grow (h-0.5 → h-1) — the popout. Fills are
@@ -461,15 +447,13 @@
               <img
                 src={thumbSrc}
                 alt=""
-                class="block w-48 {gm ? '' : 'transition-opacity duration-150'}"
+                class="block w-48 transition-opacity duration-150"
                 class:opacity-50={thumbApprox}
               />
             {:else}
-              <!-- Tile not ready yet: loading shimmer (never an episode still). Static in game
-                   mode — an animated gradient makes every overlay snapshot differ, defeating the
-                   unchanged-frame skip and burning the web process mid-scrub. -->
+              <!-- Tile not ready yet: loading shimmer (never an episode still). -->
               <div class="relative overflow-hidden bg-neutral-300" style="width:192px;height:108px">
-                <div class="absolute inset-0 bg-gradient-to-r from-neutral-300 via-neutral-100 to-neutral-300" class:animate-pulse={!gm}></div>
+                <div class="absolute inset-0 bg-gradient-to-r from-neutral-300 via-neutral-100 to-neutral-300 animate-pulse"></div>
               </div>
             {/if}
             {#if labelAt(scrubT)}

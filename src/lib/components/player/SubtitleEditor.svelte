@@ -9,7 +9,7 @@
   import { isAndroid, isMacOS } from '$lib/platform'
 
   let {
-    paused, command, getProperty, position: currentPosition, authoredPosition, ass = false, onclose, onpaint, frameTop = 0, frameHeight = 0,
+    paused, command, getProperty, position: currentPosition, authoredPosition, ass = false, onclose, frameTop = 0, frameHeight = 0,
   }: {
     paused: boolean
     command: (name: string, args?: string[]) => void | Promise<void>
@@ -23,8 +23,6 @@
      *  whereas mpv places converted text on the whole player surface. */
     ass?: boolean
     onclose: () => void
-    /** Game-mode XWayland snapshots call this after the editor has painted a visual change. */
-    onpaint?: () => void
     /** CSS-pixel native video surface inside the window; zero height means the full player. */
     frameTop?: number
     frameHeight?: number
@@ -50,32 +48,10 @@
   let closing = false
   let resumeAfter = false
   let restoreTo: string | null = null
-  let paintFrame = 0
-  let paintTimer: ReturnType<typeof setTimeout> | undefined
 
   async function safeCommand(name: string, args: string[] = []) {
     try { await command(name, args) } catch { /* player may be closing */ }
   }
-
-  function requestPaint() {
-    if (!onpaint || typeof requestAnimationFrame !== 'function') return
-    if (paintFrame) cancelAnimationFrame(paintFrame)
-    if (paintTimer) clearTimeout(paintTimer)
-    // Run after the browser has applied Svelte state and focus styles. Calling the native snapshot
-    // from the input handler itself captures the previous slider/focus frame on WebKitGTK.
-    paintFrame = requestAnimationFrame(() => {
-      paintFrame = 0
-      paintTimer = setTimeout(() => {
-        paintTimer = undefined
-        onpaint?.()
-      }, 0)
-    })
-  }
-
-  $effect(() => {
-    void position
-    requestPaint()
-  })
 
   function setPosition(value: number | null) {
     if (value == null) {
@@ -112,8 +88,6 @@
   }
 
   onDestroy(() => {
-    if (paintFrame) cancelAnimationFrame(paintFrame)
-    if (paintTimer) clearTimeout(paintTimer)
     if (closing) return
     sessionSubtitleAdjustments.set(before)
     void leave()
@@ -152,7 +126,7 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div data-nav-trap bind:clientHeight={surfaceHeight} class="absolute inset-0 z-[80] bg-transparent text-white" role="dialog" aria-modal="true" aria-label="Subtitle position editor" tabindex="-1" onkeydown={keydown} onfocusin={requestPaint} onpointerdown={(event) => event.stopPropagation()} onclick={(event) => event.stopPropagation()}>
+<div data-nav-trap bind:clientHeight={surfaceHeight} class="absolute inset-0 z-[80] bg-transparent text-white" role="dialog" aria-modal="true" aria-label="Subtitle position editor" tabindex="-1" onkeydown={keydown} onpointerdown={(event) => event.stopPropagation()} onclick={(event) => event.stopPropagation()}>
   <!-- The controls sit at the top: subtitles live at the bottom of the frame and must stay visible. -->
   <header class="absolute inset-x-0 top-0 z-10 border-b border-white/10 bg-neutral-950/90 px-3 py-2 sm:px-5">
     <div class="flex items-center gap-3">

@@ -206,10 +206,6 @@ describe('room for the ring in carousel rows', () => {
   it('raises the Game-mode and controller-mode track padding so a popped cover keeps its whole ring', () => {
     expect(declared('html.gamemode [data-carousel-scroller], html.controller-mode [data-carousel-scroller]', 'padding-top'))
       .toEqual(['max(1.125rem, 18px)'])
-    // deck-touch-scroll.test.ts reads the FIRST `.gamemode [data-carousel-scroller]` in app.css for `overflow: hidden`.
-    const overflow = css.indexOf('.gamemode [data-carousel-scroller] { overflow: hidden; }')
-    expect(overflow).toBeGreaterThan(-1)
-    expect(css.indexOf('html.gamemode [data-carousel-scroller]')).toBeGreaterThan(overflow)
   })
 })
 

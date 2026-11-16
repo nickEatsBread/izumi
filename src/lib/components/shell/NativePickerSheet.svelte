@@ -3,7 +3,6 @@
   import { get } from 'svelte/store'
   import { afterNavigate } from '$app/navigation'
   import Check from '@lucide/svelte/icons/check'
-  import { gameMode, playing, bumpPlayerOverlay } from '$lib/player/session'
   import { pushNavLayer } from '$lib/nav/layers'
   import { protectedSurface } from '$lib/themes/safe-mode'
   import {
@@ -31,17 +30,10 @@
   const sections = $derived(picker ? groupPickerOptions(picker.options) : [])
   let panel = $state<HTMLElement | null>(null)
 
-  // Over mpv in Game mode the page is only visible through the overlay snapshot, which re-captures
-  // on request. The stores are read with get(), so no effect that calls this depends on them.
-  function bump() {
-    if (get(gameMode) && get(playing)) bumpPlayerOverlay()
-  }
-
   // A value written as a property (bind:value following a store written elsewhere) fires no
-  // mutation, so every row focus re-checks the check mark before the snapshot is refreshed.
+  // mutation, so every row focus re-checks the check mark.
   function onPanelFocusIn() {
     syncNativePickerSelection()
-    bump()
   }
 
   // The open sheet is the top nav layer. It returns focus itself (closeNativePicker), so the layer
@@ -58,7 +50,7 @@
     })
   })
 
-  // Per open select: land on the current value, keep the Game-mode snapshot fresh, and follow the
+  // Per open select: land on the current value and follow the
   // select (options changing under the sheet re-read it; the select disabled or gone closes it).
   $effect(() => {
     const control = select
@@ -67,19 +59,13 @@
     let cancelled = false
     // Focusing a row runs focusin handlers synchronously; nothing they read may become a dependency
     // of this effect, or a store change would re-run it and move focus back to the current value.
-    untrack(() => {
-      focusPickerRow(node)
-      bump()
-    })
-    requestAnimationFrame(() => requestAnimationFrame(() => { if (!cancelled) bump() }))
-    const timer = setTimeout(() => { if (!cancelled) bump() }, 120)
+    untrack(() => focusPickerRow(node))
     const stopWatching = watchControl(control, {
       onOptions: () => {
         refreshNativePicker()
         void tick().then(() => {
           if (cancelled) return
           if (!node.contains(document.activeElement)) focusPickerRow(node)
-          bump()
         })
       },
       onGone: () => closeNativePicker({ restore: false }),
@@ -87,9 +73,7 @@
     })
     return () => {
       cancelled = true
-      clearTimeout(timer)
       stopWatching()
-      requestAnimationFrame(() => bump())
     }
   })
 

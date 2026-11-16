@@ -50,7 +50,7 @@ fn directories(app: &AppHandle) -> Result<Vec<std::path::PathBuf>, tauri::Error>
 
 /// Register before window-state and other plugins, before any WebView/database can be opened.
 #[cfg(not(target_os = "android"))]
-pub fn startup_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+pub fn startup_plugin() -> tauri::plugin::TauriPlugin<tauri::DynRuntime> {
     tauri::plugin::Builder::new("local-reset")
         .setup(|app, _| {
             let marker = app.path().app_config_dir()?.join(crate::reset_data::MARKER);

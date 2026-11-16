@@ -30,14 +30,10 @@ describe('Steam Deck browse loading', () => {
     expect(row).not.toContain('visible || $gameMode')
   })
 
-  it('smoothly carries single focus moves and makes held repeats immediate', () => {
-    expect(nav).toContain("const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'")
+  it('carries focus moves with a native smooth scroll, held repeats included', () => {
+    expect(nav).toContain("const scrollBehavior = (instant = false): ScrollBehavior => instant || reducedMotion() ? 'instant' : 'smooth'")
     expect(css).not.toContain('html.gamemode, html.gamemode body { scroll-behavior: auto; }')
-    expect(nav).toContain("behavior: 'instant'")
-    expect(nav).toContain('abortOngoingScroll(target)')
-    expect(nav).toContain('endMargin: clamp(portHeight * 0.2, 64, 144)')
-    expect(nav).toContain('endMargin: clamp(portWidth * 0.18, 48, 176)')
-    expect(nav).toContain("if (!top && !left) return")
+    expect(css).toContain('[data-focusable] { scroll-margin: 1.5rem; }')
   })
 
   it('moves between browse rows before falling back to a whole-page geometry pass', () => {
@@ -46,7 +42,7 @@ describe('Steam Deck browse loading', () => {
     expect(scoped).toBeGreaterThan(-1)
     expect(global).toBeGreaterThan(scoped)
     expect(nav).toContain("targetRow.querySelector<HTMLElement>('[data-nav-row-default][data-focusable]')")
-    expect(nav).toContain('scrollByExact(window, -window.scrollY, 0, behavior, chase)')
+    expect(nav).toContain('window.scrollTo({ top: 0, behavior })')
   })
 
   it('never skips a loading row or chooses a horizontally clipped card on vertical input', () => {

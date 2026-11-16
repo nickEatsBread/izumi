@@ -23,7 +23,7 @@
 
 <script lang="ts">
   import { navLayer } from '$lib/nav/overlay'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
   import Glyph from '$lib/components/shell/Glyph.svelte'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'

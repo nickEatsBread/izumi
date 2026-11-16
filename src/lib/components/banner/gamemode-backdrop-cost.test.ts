@@ -5,38 +5,16 @@ import { describe, expect, it } from 'vitest'
 const css = readFileSync(fileURLToPath(new URL('../../../app.css', import.meta.url)), 'utf8')
 const hero = readFileSync(fileURLToPath(new URL('./Hero.svelte', import.meta.url)), 'utf8')
 
-describe('Game mode backdrop cost', () => {
-  it('neutralises the mesh theme blur under html.gamemode', () => {
-    // The mesh backdrop is a full-viewport `filter: blur()` layer; the generic Game-mode rule only
-    // strips backdrop-filter, so the blur survived on the Deck iGPU.
-    const rule = css.match(/html\.gamemode \.theme-studio-backdrop \{[^}]*\}/)
-    expect(rule, 'gamemode rule for .theme-studio-backdrop').toBeTruthy()
-    expect(rule![0]).toMatch(/filter:\s*none\s*!important/)
-    expect(rule![0]).toMatch(/transform:\s*none\s*!important/)
-  })
-
-  it('does not run main-thread infinite animations in Game mode', () => {
-    // No compositor promotion there, so an infinite transform animation is a repaint per frame. The
-    // loading shimmer is the one kept (a still placeholder reads as stuck); off-screen rows pause it.
+describe('backdrop and loading cost', () => {
+  it('pauses the shimmer of rows held below the fold', () => {
     expect(css).not.toMatch(/html\.gamemode \.skeloader::before \{\s*animation:\s*none/)
     expect(css).toMatch(/\.deferred-skeleton \.skeloader::before \{\s*animation-play-state:\s*paused;?\s*\}/)
-    const artwork = readFileSync(
-      fileURLToPath(new URL('../onboarding/SetupArtwork.svelte', import.meta.url)),
-      'utf8',
-    )
-    expect(artwork).toMatch(/:global\(html\.gamemode\) \.poster-column \{\s*animation:\s*none;?\s*\}/)
   })
 
   it('lets a placeholder\'s own position utilities beat the shimmer class', () => {
     // Unlayered, `.skeloader { position: relative }` beat `absolute inset-0` and every loading
     // banner's shimmer layer was 0 px tall: Home loaded with no banner placeholder at all.
     expect(css).toContain('@layer components { .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); } }')
-  })
-
-  it('lets browse images appear in place under Game mode instead of tweening in', () => {
-    // Each opacity fade promotes the image to a compositor layer that rasterises soft under the
-    // Deck's page zoom and snaps crisp when dropped: a pixel pop per card, a blink per banner.
-    expect(css).toMatch(/html\.gamemode main img \{\s*transition:\s*none\s*!important;\s*animation:\s*none\s*!important;\s*\}/)
   })
 
   it('ticks the Hero countdown clock slowly unless the label shows seconds', () => {

@@ -48,7 +48,7 @@
   import Cast from '@lucide/svelte/icons/cast'
   import { displayBinding, effectiveBinding, type HotkeyId } from '$lib/hotkeys'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
@@ -72,8 +72,7 @@
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
-  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
   import Glyph from '$lib/components/shell/Glyph.svelte'
   import Brush from '@lucide/svelte/icons/brush'
   import { chapters as chapterStore } from '$lib/player/session'
@@ -104,10 +103,8 @@
     cmd,
     onclose,
     gm = false,
-    native = false,
     ontoggleplay,
     oneditsubtitles,
-    onscrubinput,
     hideBack = false,
     hideTitle = false,
   }: {
@@ -118,25 +115,21 @@
     segments: Segment[]
     cmd: (name: string, args?: string[]) => void
     onclose: () => void
-    // Game mode (Deck/gamescope touch player): no windowed/fullscreen toggle, and the
+    // Game mode (Deck touch player): no windowed/fullscreen toggle, and the
     // play button must swap the fullscreen video back in (not just unpause under a black
     // screen). `ontoggleplay` overrides the default cycle-pause when provided.
     gm?: boolean
-    // Gamescope/XWayland paints these Game-mode controls through native ASS/bitmap chrome.
-    // Native Wayland keeps the same Deck layout but renders this HTML live.
-    native?: boolean
     ontoggleplay?: () => void
     oneditsubtitles?: () => void
-    onscrubinput?: () => void
     // A theme's docked watch page that shows the title and its own navigation beside the video
     // (`player.dock.hide`) drops the player's copies.
     hideBack?: boolean
     hideTitle?: boolean
   } = $props()
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
-  // API 6 player choices; Game mode keeps its own player (its native HUD draws icons by name).
+  // API 6 player choices; Game mode keeps its own TV player.
   const controls = $derived(gm ? resolvePlayerControls(undefined) : resolvePlayerControls($themePresentation))
-  // API 7 words for Audio and Subtitles, read in Game mode too: its native HUD draws `data-gm-text`.
+  // API 7 words for Audio and Subtitles, read in Game mode too.
   const trackWords = $derived($themePresentation?.player?.trackButtons === 'text')
   const wantsEpisodeTitle = $derived(controls.title === 'episode')
   let episodeMeta = $state<EpMeta | undefined>()
@@ -209,7 +202,6 @@
   // seek, not a stream, so mpv doesn't loop over the cached window.
   const seekTo = (t: number) => {
     cmd('seek', [t.toFixed(3), 'absolute+exact'])
-    if (native) bumpPlayerOverlay()
   }
 
   // Game mode: changing episode needs a DOUBLE press (touch double-tap, or two quick A presses on
@@ -267,7 +259,6 @@
     optionsPage = 'root'
     gmSettingsPage = 'root'
     gmSetIdx = 0
-    bumpPlayerOverlay()
     if (showOptions) {
       readDelays()
       void readVideoQualities()
@@ -300,12 +291,10 @@
     const n = gmRowCount()
     if (!n) return
     gmSetIdx = (gmSetIdx + delta + n) % n
-    bumpPlayerOverlay()
   }
   function gmOpenPage(page: typeof gmSettingsPage) {
     gmSettingsPage = page
     gmSetIdx = 0
-    bumpPlayerOverlay()
   }
   function gmBack() {
     if (gmSettingsPage !== 'root') {
@@ -313,7 +302,6 @@
       return
     }
     closePlayerMenus()
-    bumpPlayerOverlay()
   }
   function gmActivate() {
     if (gmSettingsPage === 'root') {
@@ -349,7 +337,6 @@
         else setSleep('end')
       }
     }
-    bumpPlayerOverlay()
   }
   async function setVideoQuality(mode: 'auto' | number) {
     qualityInfo = { ...qualityInfo, mode }
@@ -696,7 +683,6 @@
       window.removeEventListener('player-context-menu', onContextMenu)
       void unlistenMuted.then((unlisten) => unlisten())
       playerMenuOpen.set(false)
-      playerSideSheetOpen.set(false)
     }
   })
 
@@ -761,8 +747,6 @@
     try {
       const raw = await playerTracks()
       tracks = JSON.parse(raw) as Track[]
-      // Game mode draws the bar's words and the sheet's rows from the page: have it look again.
-      if (native) bumpPlayerOverlay()
       secondaryId = await playerGetProperty('secondary-sid').catch(() => 'no')
     }
     catch (e) {
@@ -981,7 +965,6 @@
   // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
     playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt || !!$openPluginPanel)
-    playerSideSheetOpen.set(native && (showOptions || showTracks))
   })
   // A closed player never reopens with a plugin panel up.
   $effect(() => () => openPluginPanel.set(null))
@@ -991,9 +974,9 @@
 {#snippet titleBlock(big: boolean)}
   {#if np.animeTitle && !hideTitle}
     <div data-part="player.heading" class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
-      <div data-part="player.title" data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
+      <div data-part="player.title" class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
-        <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season || undefined} data-season-episode={episodeMeta?.season ? episodeMeta.seasonEpisode ?? np.episode : undefined} data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">
+        <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season || undefined} data-season-episode={episodeMeta?.season ? episodeMeta.seasonEpisode ?? np.episode : undefined} class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">
           {#if controls.title === 'episode'}
             <span data-part="player.episode.number">E{np.episode}</span>{#if episodeTitle}{' '}<span data-part="player.episode.name">{episodeTitle}</span>{/if}
           {:else}
@@ -1006,7 +989,7 @@
 {/snippet}
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
-<div bind:this={root} data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'} data-gm-control-root data-theme-unthemed={gm || undefined} use:protectedSurface={gm} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
+<div bind:this={root} data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'} data-theme-unthemed={gm || undefined} use:protectedSurface={gm} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->
@@ -1021,7 +1004,7 @@
     <!-- Same reasoning as the bottom bar: this bar spans the full width for the sake of one Back
          button, so leaving it pointer-events-auto made the entire top of the video a click-to-pause
          dead zone. The button and the 32px drag strip opt back in; the rest falls through. -->
-    <div data-part="player.top" data-gm-bar class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}"
+    <div data-part="player.top" class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}"
          style:padding-left={backInset}>
       {#if underTitlebar}
         <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
@@ -1038,9 +1021,8 @@
     </div>
   {/if}
 
-  <!-- Bottom control bar: a gradient that floats over the video. Works identically on Desktop
-       (subsurface below the webview) and Game mode (gamescope layer-shell surface below the
-       webview) — the compositor blends the transparent webview over the video either way. -->
+  <!-- Bottom control bar: a gradient that floats over the video. Works identically on Desktop and
+       in Game mode — the compositor blends the transparent page over the video either way. -->
   <!-- The CONTAINER is pointer-events-none on purpose. It is `inset-x-0 bottom-0` with `pt-20`, so
        it reaches ~80px above the seek bar plus the side gutters and the title — and while it was
        pointer-events-auto, every click in that band was swallowed by the root's stopPropagation
@@ -1048,7 +1030,7 @@
        Only the rows that actually ARE controls opt back in below; the gradient, the padding and the
        title now fall through to the overlay's click-to-pause. The Seekbar keeps its own `py-3` grab
        padding, so there is still a forgiving band that seeks rather than pausing. -->
-  <div data-part="player.bottom" data-gm-bar class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
+  <div data-part="player.bottom" class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
@@ -1066,18 +1048,16 @@
          is narrower; Desktop keeps the full-width bar with the time in the button row. -->
     {#if gm}
       <div class="pointer-events-auto flex items-center gap-3">
-        <!-- XWayland's visible time/bar pixels come from mpv's live OSD, so these HTML elements
-             become transparent measurement/hit targets there. Native Wayland paints them live. -->
-        <span data-part="player.time" data-variant="elapsed" class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(pos)}</span>
-        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
-        <span data-part="player.time" data-variant="total" class="w-16 shrink-0 select-none font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(dur)}</span>
+        <span data-part="player.time" data-variant="elapsed" class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums">{fmt(pos)}</span>
+        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
+        <span data-part="player.time" data-variant="total" class="w-16 shrink-0 select-none font-mono text-base tabular-nums">{fmt(dur)}</span>
       </div>
     {:else if controls.time === 'default'}
-      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
+      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
     {:else}
       <div class="pointer-events-auto flex items-center gap-3">
         {#if controls.time === 'split'}<span data-part="player.time" data-variant="elapsed" class="w-16 shrink-0 select-none font-mono text-sm tabular-nums">{fmt(pos)}</span>{/if}
-        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
+        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
         {#if dur > 0}<span data-part="player.time" data-variant={controls.time === 'split' ? 'total' : 'remaining'} class="w-16 shrink-0 select-none text-right font-mono text-sm tabular-nums">{fmt(controls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>{/if}
       </div>
     {/if}
@@ -1332,8 +1312,8 @@
           {#if !trackWords}
             <button data-part="player.control" data-control="tracks" data-focusable class={iconBtn} onclick={loadTracks} aria-label="Audio, subtitles and server"><Captions size={icSize} /></button>
           {:else}
-            {#if hasAudioPage}<button data-part="player.control" data-control="audio" data-focusable data-gm-text="Audio" class={textBtn} onclick={() => openTrackPage('audio')} aria-label="Audio">Audio</button>{/if}
-            {#if hasSubPage}<button data-part="player.control" data-control="subtitles" data-focusable data-gm-text="Subtitles" class={textBtn} onclick={() => openTrackPage('subs')} aria-label="Subtitles">Subtitles</button>{/if}
+            {#if hasAudioPage}<button data-part="player.control" data-control="audio" data-focusable class={textBtn} onclick={() => openTrackPage('audio')} aria-label="Audio">Audio</button>{/if}
+            {#if hasSubPage}<button data-part="player.control" data-control="subtitles" data-focusable class={textBtn} onclick={() => openTrackPage('subs')} aria-label="Subtitles">Subtitles</button>{/if}
           {/if}
           {#if showTracks}
               <!-- Desktop: a two-level drill-down. Root shows the two categories with their
@@ -1632,13 +1612,12 @@
   </div>
 
   {#if gm && showOptions}
-    <!-- A TV-style side panel over the paused video's frozen frame (gm-freeze.ts); pages push in
-         place and B steps back. -->
-    <div data-gm-menu-surface class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
-    <div data-gm-side-sheet data-gm-tv-panel use:gmPanel out:motion={gmPanelOut()} class="gm-sheet absolute inset-y-0 right-0 z-40 flex w-[min(26rem,42vw)] flex-col border-l border-white/10 bg-[#101012]/95 text-white" onclick={(e) => e.stopPropagation()} role="presentation">
+    <!-- A TV-style side panel; pages push in place and B steps back. -->
+    <div class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
+    <div data-gm-tv-panel in:motion={{ opacity: [0, 1], x: [56, 0], duration: 220 }} out:motion={{ opacity: [0, 1], x: [56, 0], duration: 160 }} class="gm-sheet absolute inset-y-0 right-0 z-40 flex w-[min(26rem,42vw)] flex-col border-l border-white/10 bg-[#101012]/95 text-white" onclick={(e) => e.stopPropagation()} role="presentation">
     {#key gmSettingsPage}
     <div bind:this={gmListEl} class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 pb-3 pt-6"
-         in:motion={{ gameModeOnly: true, opacity: [0, 1], x: [gmSettingsPage === 'root' ? -40 : 40, 0], duration: 180 }}>
+         in:motion={{ opacity: [0, 1], x: [gmSettingsPage === 'root' ? -40 : 40, 0], duration: 180 }}>
       {#if gmSettingsPage === 'root'}
         <p class="px-4 pb-3 text-2xl font-bold">Settings</p>
         {#if hasAudioPage}

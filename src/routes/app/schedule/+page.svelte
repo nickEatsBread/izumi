@@ -10,7 +10,6 @@
   import { catalogScreen } from '$lib/settings/catalog'
   import { heroMedia } from '$lib/stores/hero'
   import { offlineMode } from '$lib/stores/offline'
-  import { gameMode } from '$lib/player/session'
   import { isMobile } from '$lib/platform'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { anilistDegradedBannerVisible } from '$lib/anilist/degraded'
@@ -69,10 +68,7 @@
   let headerH = $state(0)
   // The shield spans exactly what sits above the pinned header (shell top + any degraded strip).
   let shieldH = $state(0)
-  // Game mode never pinned this header: gamescope repaints a backdrop-blur bar every scroll frame
-  // (app.css forces will-change:auto under .gamemode, so the layer is never promoted), and the
-  // controller UI has no need for a sticky filter it can reach with one D-pad press.
-  const stickyActive = $derived(tab !== 'watchlist' && $scheduleStickyHeader && !$gameMode)
+  const stickyActive = $derived(tab !== 'watchlist' && $scheduleStickyHeader)
   // Reservation for the degraded strip keys off BANNER VISIBILITY, not the degraded state: once
   // the viewer dismisses the strip, the reserved rows would read as mystery blank space.
   const stickyTop = $derived($isMobile

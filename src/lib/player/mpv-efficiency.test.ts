@@ -12,11 +12,6 @@ describe('embedded mpv efficiency configuration', () => {
     expect(desktopPlayer.match(/set_option\("demuxer-hysteresis-secs", "10"\)/g)).toHaveLength(2)
   })
 
-  it('can swap in a bilinear lite chain while Game-mode chrome is up', () => {
-    expect(desktopPlayer).toContain('set_ui_render_lite')
-    expect(desktopPlayer).toContain('UI_LITE_HOLDERS')
-  })
-
   it('shows the landed frame while paused so Game-mode skim is not a frozen picture', () => {
     expect(desktopPlayer).toContain('hr-seek')
   })

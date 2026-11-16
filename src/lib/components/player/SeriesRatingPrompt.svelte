@@ -9,7 +9,7 @@
   // Save step. The descriptor under the scale ("Very Good") tells a mouse user what the number
   // they are hovering means before they commit; the confirmation offers "Change" for a mis-tap.
   import { onMount, tick } from 'svelte'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
   import { cubicOut } from 'svelte/easing'
   import Check from '@lucide/svelte/icons/check'
   import {
@@ -124,9 +124,7 @@
     class="series-rating fixed inset-0 z-[90] flex items-end justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center"
     onkeydown={onKey}
   >
-    <!-- Script-driven in Game mode (gm-motion): a CSS fade or fly blinks as it ends there. Over the
-         frozen frame of a paused video the stage already dims, so this dim clears (gm-freeze.ts). -->
-    <div data-gm-menu-surface in:motion={{ opacity: [0, 1], duration: 200 }} class="absolute inset-0 bg-black/60"></div>
+    <div in:motion={{ opacity: [0, 1], duration: 200 }} class="absolute inset-0 bg-black/60"></div>
     <div
       in:motion={{ opacity: [0, 1], y: [28, 0], duration: 260, easing: cubicOut }}
       class="series-rating-card relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-neutral-950 text-white shadow-2xl"

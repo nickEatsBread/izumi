@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   PRESENCE_POSITION_INTERVAL_MS,
   presenceDecision,
+  presenceAllowed,
   presenceSignature,
   type PresencePayload,
 } from './presence'
-import { presenceAllowed } from './gm-overlay'
 
 const payload = (over: Partial<PresencePayload> = {}): PresencePayload => ({
   title: 'The Beach Episode',

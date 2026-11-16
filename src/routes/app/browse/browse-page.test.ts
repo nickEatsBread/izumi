@@ -61,7 +61,7 @@ describe('Browse page', () => {
   })
 
   it('animates without CSS transitions in Game mode, and never disables a control', () => {
-    expect(sorts).toContain("import { motion } from '$lib/motion/gm-motion'")
+    expect(sorts).toContain("import { motion } from '$lib/motion/motion'")
     expect(sorts).toContain('in:motion={{ x: [slideFrom, 0], duration: 180 }}')
     for (const source of [page, sorts, categories]) {
       expect(source).not.toMatch(/\sdisabled[\s=>]/)

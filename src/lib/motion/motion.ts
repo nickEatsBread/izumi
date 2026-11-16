@@ -1,6 +1,5 @@
 import { get } from 'svelte/store'
 import { cubicOut } from 'svelte/easing'
-import { gameMode } from '$lib/player/session'
 import { motionPreference } from '$lib/settings/ui'
 
 type Range = readonly [number, number]
@@ -16,8 +15,6 @@ export interface MotionParams {
   /** Horizontal offset as a percentage of the element's own width. */
   xPercent?: Range
   scale?: Range
-  /** Run in Game mode only (elsewhere the element keeps its own CSS motion). */
-  gameModeOnly?: boolean
 }
 
 export interface MotionFrame {
@@ -59,27 +56,11 @@ export function motionCss(frame: MotionFrame): string {
   ].filter(Boolean).join('; ')
 }
 
-/** A Svelte transition for menus, panels and the featured banner.
- *
- *  Everywhere but Game mode it is an ordinary CSS transition. In Game mode (WebKitGTK 2.52 under
- *  gamescope) a CSS or Web Animations animation drops its element's compositor layer when it ends,
- *  and the next frame can be presented before the page tiles hold that element's pixels: the
- *  featured banner and the side menu's pickers blinked once at the end of every animation. There
- *  the same motion runs as per-frame style writes on an element pinned to its own layer for its
- *  whole life (a static translateZ(0)), so nothing changes layers when the motion ends. */
-export function motion(node: HTMLElement, p: MotionParams, options?: { direction?: 'in' | 'out' | 'both' }) {
-  const gm = get(gameMode)
-  if ((p.gameModeOnly && !gm) || reducedMotion()) return { duration: 0 }
+/** A Svelte transition for menus, panels and the featured banner: a plain CSS animation of the
+ *  given channels. Svelte runs transitions through the Web Animations API, which the stylesheet's
+ *  reduced-motion rule cannot reach, so reduced motion is honoured here. */
+export function motion(_node: HTMLElement, p: MotionParams) {
+  if (reducedMotion()) return { duration: 0 }
   const { duration = 200, delay = 0, easing = cubicOut } = p
-  if (!gm) return { duration, delay, easing, css: (t: number) => motionCss(motionFrame(p, t)) }
-  const apply = (t: number) => {
-    const frame = motionFrame(p, t)
-    if (frame.opacity != null) node.style.opacity = String(frame.opacity)
-    if (frame.translate) node.style.translate = frame.translate
-    if (frame.scale != null) node.style.scale = String(frame.scale)
-  }
-  node.style.transform = 'translateZ(0)'
-  // The first painted frame of an intro is already its hidden state, not one frame of the end state.
-  if (options?.direction === 'in') apply(0)
-  return { duration, delay, easing, tick: apply }
+  return { duration, delay, easing, css: (t: number) => motionCss(motionFrame(p, t)) }
 }

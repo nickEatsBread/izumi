@@ -48,7 +48,7 @@
   import { previewPos, rootZoom, SIDEBAR_W } from './preview-pos'
   import { cardMedia } from './card-registry'
   import { expandPos, type ExpandBox } from './expand-pos'
-  import { reducedMotion } from '$lib/motion/gm-motion'
+  import { reducedMotion } from '$lib/motion/motion'
   import { portal } from '$lib/util/portal'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import { compactRatingLabel, primaryRating } from '$lib/catalog/media-metadata'

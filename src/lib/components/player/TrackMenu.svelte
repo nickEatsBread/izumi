@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { playerTracks } from '$lib/player/native'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay, playbackRecovery, oskOpen, connecting } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, playbackRecovery, oskOpen, connecting } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { openSubtitlesToken } from '$lib/settings/ui'
@@ -24,8 +24,7 @@
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import { rememberSeriesTrack } from '$lib/player/track-preferences'
-  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
-  import { motion } from '$lib/motion/gm-motion'
+  import { motion } from '$lib/motion/motion'
   import Glyph from '$lib/components/shell/Glyph.svelte'
   import { protectedSurface } from '$lib/themes/safe-mode'
 
@@ -142,8 +141,7 @@
 
   // Keep the highlighted track visible: with many tracks (e.g. 20 audio) the column overflows,
   // and d-pad nav only moves `subIdx` — the list doesn't follow. Scroll the active button into
-  // view when it changes. `block:'nearest'` = instant (no smooth animation, which would crawl
-  // under the Game-mode snapshot render path).
+  // view when it changes. `block:'nearest'` = instant.
   let trackColEl = $state<HTMLElement>()
   $effect(() => {
     const i = subIdx
@@ -155,7 +153,6 @@
     catch { tracks = [] }
     level = 0; rootIdx = 0; subIdx = 0
     open = true; trackMenuOpen.set(true)
-    bumpPlayerOverlay()
   }
   function closeMenu() {
     open = false
@@ -165,7 +162,6 @@
   }
   function descend() {
     lastPadAt = performance.now()
-    bumpPlayerOverlay()
     if (level !== 0 || !roots.length) return
     openIdx = rootIdx // lock the category we're entering
     const items = itemsFor(roots[openIdx]?.key)
@@ -179,7 +175,6 @@
     lastPadAt = performance.now()
     if (level === 0) { if (roots.length) rootIdx = (rootIdx + delta + roots.length) % roots.length }
     else if (subItems.length) subIdx = (subIdx + delta + subItems.length) % subItems.length
-    bumpPlayerOverlay()
   }
   async function addOnlineSub(c: SubtitleCandidate) {
     try {
@@ -318,10 +313,9 @@
 </script>
 
 {#if open}
-  <!-- A TV-style side panel over the paused video's frozen frame (gm-freeze.ts). Categories push to
-       their tracks in the same panel; B or the back arrow returns, a tap outside closes. -->
+  <!-- A TV-style side panel. Categories push to their tracks in the same panel; B or the back arrow
+       returns, a tap outside closes. -->
   <div
-    data-gm-menu-surface
     data-theme-unthemed
     use:protectedSurface
     class="fixed inset-0 z-40 bg-black/50"
@@ -330,8 +324,8 @@
   >
     <div
       data-gm-tv-panel
-      use:gmPanel
-      out:motion={gmPanelOut()}
+      in:motion={{ opacity: [0, 1], x: [56, 0], duration: 220 }}
+      out:motion={{ opacity: [0, 1], x: [56, 0], duration: 160 }}
       class="gm-sheet absolute inset-y-0 right-0 flex w-[min(30rem,46vw)] flex-col border-l border-white/10 bg-[#101012]/95 text-white"
       onclick={(e) => e.stopPropagation()}
       role="presentation"
@@ -349,7 +343,7 @@
         <div
           bind:this={trackColEl}
           class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3"
-          in:motion={{ gameModeOnly: true, opacity: [0, 1], x: [level === 1 ? 40 : -40, 0], duration: 180 }}
+          in:motion={{ opacity: [0, 1], x: [level === 1 ? 40 : -40, 0], duration: 180 }}
         >
           {#if level === 0}
             {#each roots as r, i (r.key)}
