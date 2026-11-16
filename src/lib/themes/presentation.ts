@@ -14,6 +14,7 @@ export type DisplayField =
   | 'kind'
   | 'airDateLong'
   | 'newBadge' | 'upcoming' | 'episodeCountLabel'
+  | 'airTime' | 'airingLabel' | 'listStatus' | 'delay'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired' | 'episodesWatched'
 /** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise.
@@ -446,6 +447,9 @@ export interface LoadingScreen {
 /** API 8: `title` while a series or catalog title page loads its record, `episode` from the press to the
  *  first frame. */
 export interface LoadingPresentation { title?: LoadingScreen; episode?: LoadingScreen }
+/** API 8: the schedule page. `item` is a display-only template for one airing entry (the entry stays a
+ *  link to the title). */
+export interface SchedulePresentation { item?: ThemeNode }
 /** API 6, TV block only: how the Search page takes text. */
 export interface SearchPresentation {
   /** `grid` docks an A–Z / 0–9 keyboard beside the results. */
@@ -542,16 +546,18 @@ export interface ThemePresentation {
   search?: SearchPresentation
   /** API 8: the loading screens. */
   loading?: LoadingPresentation
+  /** API 8: the schedule page. */
+  schedule?: SchedulePresentation
   /** API 4, phones only: the root font size in px (14–18; izumi's own is 14.5) that every rem of the
    *  app's phone UI follows, times the design's font scale. The izumi mark keeps its own size. Only
    *  accepted inside `mobile`; the resolved phone presentation carries it here. */
   rootSize?: number
 }
 /** What a phone variant can change. Navigation is always the bottom bar there, so `shell` stays shared. */
-export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'rootSize' | 'loading'>
+export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'rootSize' | 'loading' | 'schedule'>
 /** What the TV variant can change: the phone set without the phone root size, plus the shell and the
  *  hover preview choice. */
-export type TvPresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'shell' | 'cardPreview' | 'search' | 'loading'>
+export type TvPresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'shell' | 'cardPreview' | 'search' | 'loading' | 'schedule'>
 /** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
 export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
@@ -571,6 +577,7 @@ const fields = [
   'kind',
   'airDateLong',
   'newBadge', 'upcoming', 'episodeCountLabel',
+  'airTime', 'airingLabel', 'listStatus', 'delay',
 ] as const satisfies readonly DisplayField[]
 const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre', 'ageRating', 'audio', 'timeLeft', 'episodeNo', 'episodeCode', 'watched', 'filler', 'rating', 'episodeName']
 /** The release year, the second and third genres, the episodes watched, the long duration, the bare
@@ -583,7 +590,9 @@ const API5_FIELDS: readonly DisplayField[] = ['airDateLong']
 /** The freshness badge ("New Episode"), an unaired episode's arrival ("Coming Friday, October 30") and the
  *  worded episode count ("1 Episode") are API 6. */
 const API6_FIELDS: readonly DisplayField[] = ['newBadge', 'upcoming', 'episodeCountLabel']
-const fieldsFor = (api: ThemeApi): readonly DisplayField[] => fields.filter(field => (api >= 3 || !API3_FIELDS.includes(field)) && (api >= 4 || !API4_FIELDS.includes(field)) && (api >= 5 || !API5_FIELDS.includes(field)) && (api >= 6 || !API6_FIELDS.includes(field)))
+/** A schedule entry's local time, its own line ("S2 E5"), the viewer's tracking and the delay notice are API 8. */
+const API8_FIELDS: readonly DisplayField[] = ['airTime', 'airingLabel', 'listStatus', 'delay']
+const fieldsFor = (api: ThemeApi): readonly DisplayField[] => fields.filter(field => (api >= 3 || !API3_FIELDS.includes(field)) && (api >= 4 || !API4_FIELDS.includes(field)) && (api >= 5 || !API5_FIELDS.includes(field)) && (api >= 6 || !API6_FIELDS.includes(field)) && (api >= 8 || !API8_FIELDS.includes(field)))
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired', 'episodesWatched'] satisfies NumericDisplayField[]
 const actions: readonly ThemeAction[] = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
 /** The actions the series header (`detail.header`) and facts (`detail.facts`) templates may add from
@@ -1115,7 +1124,7 @@ function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout
 }
 const MOBILE_KEYS = ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'player', 'cards', 'layout']
 function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
-  const raw = record(value); only(raw, [...MOBILE_KEYS, ...api4(api, ['rootSize']), ...api8(api, ['loading'])])
+  const raw = record(value); only(raw, [...MOBILE_KEYS, ...api4(api, ['rootSize']), ...api8(api, ['loading', 'schedule'])])
   // The root size is phone-only, so the shared parser (which also reads the top level) never accepts it.
   const { rootSize, ...shared } = raw
   const result: MobilePresentation = parsePresentation(shared, api, true)
@@ -1124,7 +1133,7 @@ function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
 }
 const TV_KEYS = [...MOBILE_KEYS, 'shell', 'cardPreview', 'search']
 function parseTv(value: unknown, api: ThemeApi): TvPresentation {
-  const raw = record(value); only(raw, [...TV_KEYS, ...api8(api, ['loading'])])
+  const raw = record(value); only(raw, [...TV_KEYS, ...api8(api, ['loading', 'schedule'])])
   // `search` is TV-only, so the shared parser (which also reads the top level) never accepts it.
   const { search, ...shared } = raw
   const result: TvPresentation = parsePresentation(shared, api)
@@ -1141,7 +1150,7 @@ function parseTv(value: unknown, api: ThemeApi): TvPresentation {
  *  parsed, so its layout cannot carry navigation (phones always use the bottom bar). */
 export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API, phone = false): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout', 'cardPreview']), ...api6(api, ['tv']), ...api8(api, ['loading'])])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout', 'cardPreview']), ...api6(api, ['tv']), ...api8(api, ['loading', 'schedule'])])
   const result: ThemePresentation = {}
   if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile, api)
   if (raw.tv !== undefined) result.tv = parseTv(raw.tv, api)
@@ -1184,6 +1193,11 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone, api)
   if (raw.cardPreview !== undefined) result.cardPreview = choice(raw.cardPreview, api >= 6 ? ['popup', 'none', 'expand'] : ['popup', 'none'])
   if (raw.loading !== undefined) result.loading = parseLoading(raw.loading, api)
+  if (raw.schedule !== undefined) {
+    const schedule = record(raw.schedule); only(schedule, ['item'])
+    result.schedule = {}
+    if (schedule.item !== undefined) result.schedule.item = parseNode(schedule.item, undefined, 0, false, api)
+  }
   return result
 }
 /** The presentation for one surface: on a phone the `mobile` block is layered over the shared one, on a
@@ -1215,6 +1229,7 @@ function layerBlock(shared: ThemePresentation, block: MobilePresentation & TvPre
   if (block.player) resolved.player = { ...shared.player, ...block.player }
   // Each loading screen is replaced whole: its template and its exit belong together.
   if (block.loading) resolved.loading = { ...shared.loading, ...block.loading }
+  if (block.schedule) resolved.schedule = { ...shared.schedule, ...block.schedule }
   if (block.cards) resolved.cards = { ...shared.cards, ...block.cards }
   // The phone block can only carry `home` and the side-column keys (`parseLayout` rejects `nav` there), so
   // its navigation always comes from the shared layout; the TV block may carry its own.
@@ -1476,7 +1491,7 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   const tv = layout.tv ?? {}
   if (layout.hero || layout.rows || layout.cards || layout.cardPreview || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home || tv.hero || tv.rows || tv.cards || tv.cardPreview || tv.layout?.home) surfaces.push('Home')
   // Search has no chip of its own; its TV keyboard counts as Shell, the chip for what sits outside Home, Details and the player.
-  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined || tv.shell || tv.density || tv.hideCardLabels || tv.trueBlack || tv.layout?.nav || tv.search) surfaces.push('Shell')
+  if (layout.schedule || phone.schedule || tv.schedule || layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined || tv.shell || tv.density || tv.hideCardLabels || tv.trueBlack || tv.layout?.nav || tv.search) surfaces.push('Shell')
   if (layout.detail || phone.detail || tv.detail || layout.loading?.title || phone.loading?.title || tv.loading?.title) surfaces.push('Details')
   if (layout.player || phone.player || tv.player || layout.loading?.episode || phone.loading?.episode || tv.loading?.episode) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces

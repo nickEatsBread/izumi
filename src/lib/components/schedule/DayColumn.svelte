@@ -7,6 +7,9 @@
   import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
   import { scheduleCardNav } from './schedule-nav'
   import ScheduleRemove from './ScheduleRemove.svelte'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { airingDisplayModel } from '$lib/themes/host-model'
+  import { themePresentation } from '$lib/themes/runtime'
 
   let { label, airings, today = false, big = false, badgeOf, infoOf, navFirst }:
     { label: string; airings: Airing[]; today?: boolean; big?: boolean
@@ -15,11 +18,13 @@
 
   // Only the leading delay line fits a schedule row; the detail page carries the full set.
   const delayOf = (m: Media) => delayLines(infoOf?.(m) ?? null)[0] ?? ''
+  // API 8 `schedule.item`: a theme's template for the entry, inside the same link.
+  const itemTemplate = $derived($themePresentation?.schedule?.item)
 </script>
 
 <div class="flex min-w-0 flex-col" data-part="schedule.day">
   {#if !big}
-    <h3 class="mb-2 text-sm font-black {today ? 'text-sky-400' : ''}">{label}{#if today} · Today{/if}</h3>
+    <h3 data-part="schedule.day.title" data-today={today || undefined} class="mb-2 text-sm font-black {today ? 'text-sky-400' : ''}">{label}{#if today} · Today{/if}</h3>
   {/if}
   <div class={big ? 'grid grid-cols-1 gap-2 sm:grid-cols-2' : 'flex flex-col gap-2'}>
     {#if airings.length}
@@ -28,7 +33,12 @@
         {@const delay = delayOf(a.media)}
         {@const nav = scheduleCardNav(big ? navFirst : undefined, i, airings.length)}
         {@const source = scheduleSourceLabel(a)}
-        <div class="relative" data-schedule-item data-part="schedule.item">
+        <div class="relative" data-schedule-item data-part="schedule.item" data-aired={aired(a.airingAt) && !a.delayPlaceholder || undefined}>
+          {#if itemTemplate}
+            <a data-focusable data-nav-id={nav.id} data-nav-left={nav.left} data-nav-right={nav.right} href={mediaHref(a.media)} use:detailLink={a.media} class="block h-full {mine ? 'pr-14' : ''}">
+              <ThemeNode node={itemTemplate} model={airingDisplayModel(a, mine, delay)} />
+            </a>
+          {:else}
           <a
             data-focusable
             data-nav-id={nav.id}
@@ -38,25 +48,26 @@
             use:detailLink={a.media}
             class="flex h-full min-w-0 items-center gap-3 rounded-xl border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) && !a.delayPlaceholder ? 'opacity-70' : ''} {mine ? 'border-border/80 pr-14' : 'border-transparent'}"
           >
-            <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
+            <img data-part="schedule.item.poster" src={cover(a.media)} alt="" loading="lazy" decoding="async"
                  class="{big ? 'h-20 w-14' : 'h-14 w-10'} shrink-0 rounded-lg object-cover" />
             <div class="min-w-0 flex-1">
-              <p class="line-clamp-2 {big ? 'text-sm' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>
-              <p class="mt-1 text-[0.7rem] text-muted-foreground">{scheduleItemLabel(a)}{#if !a.delayPlaceholder && a.timeKnown !== false} · <span class="font-bold tabular-nums text-foreground">{airTime(a.airingAt)}</span>{/if}</p>
-              {#if a.context}<p class="mt-1 line-clamp-1 text-[0.7rem] text-muted-foreground">{a.context}</p>{/if}
-              {#if delay}<p class="mt-1 text-xs font-bold text-amber-400">{delay}</p>{/if}
+              <p data-part="schedule.item.title" class="line-clamp-2 {big ? 'text-sm' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>
+              <p data-part="schedule.item.meta" class="mt-1 text-[0.7rem] text-muted-foreground">{scheduleItemLabel(a)}{#if !a.delayPlaceholder && a.timeKnown !== false} · <span class="font-bold tabular-nums text-foreground">{airTime(a.airingAt)}</span>{/if}</p>
+              {#if a.context}<p data-part="schedule.item.context" class="mt-1 line-clamp-1 text-[0.7rem] text-muted-foreground">{a.context}</p>{/if}
+              {#if delay}<p data-part="schedule.item.delay" class="mt-1 text-xs font-bold text-amber-400">{delay}</p>{/if}
               <div class="mt-2 flex items-center gap-2">
-                {#if mine}<span class="rounded-full bg-foreground/[0.08] px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watched' ? 'Watched' : mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
-                {#if source}<span class="rounded-full bg-foreground/[0.08] px-2 py-1 text-[0.65rem] font-black text-foreground/70">{source}</span>{/if}
-                {#if !a.delayPlaceholder}<span class="text-[0.7rem] font-bold {aired(a.airingAt) ? 'text-muted-foreground' : 'text-emerald-400'}">{aired(a.airingAt) ? (a.kind === 'movie' ? 'Released' : 'Aired') : until(a.airingAt)}</span>{/if}
+                {#if mine}<span data-part="schedule.item.badge" data-variant="status" class="rounded-full bg-foreground/[0.08] px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watched' ? 'Watched' : mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
+                {#if source}<span data-part="schedule.item.badge" data-variant="source" class="rounded-full bg-foreground/[0.08] px-2 py-1 text-[0.65rem] font-black text-foreground/70">{source}</span>{/if}
+                {#if !a.delayPlaceholder}<span data-part="schedule.item.countdown" class="text-[0.7rem] font-bold {aired(a.airingAt) ? 'text-muted-foreground' : 'text-emerald-400'}">{aired(a.airingAt) ? (a.kind === 'movie' ? 'Released' : 'Aired') : until(a.airingAt)}</span>{/if}
               </div>
             </div>
           </a>
+          {/if}
           {#if mine}<ScheduleRemove media={a.media} />{/if}
         </div>
       {/each}
     {:else}
-      <div class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">Nothing scheduled for this day.</div>
+      <div data-part="schedule.empty" class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">Nothing scheduled for this day.</div>
     {/if}
   </div>
 </div>

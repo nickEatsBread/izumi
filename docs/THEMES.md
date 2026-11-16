@@ -200,6 +200,21 @@ A package declares `themeApi: 8` to use the keys below; the validator refuses th
     @keyframes lo-breathe { 0%, 100% { opacity: .72; scale: .985 } 50% { opacity: .95; scale: 1.015 } }
     ```
 
+- **Schedule (`schedule`).** `schedule.item` is a display-only template for one airing entry, used wherever the page lists airings: the week agenda, the day view, Game mode's day view and the Release calendar. The entry stays a link to the title (the template replaces what is inside it), and on your own shows the remove button stays beside it. It is bound to the title fields (as a poster card) plus the airing: `episodeNumber` and `episodeNo` (the episode airing), `airingIn` and `airingCountdown` (the time left to this airing, absent once it has aired, so `when` tells aired from coming) and four API 8 fields: `airTime` (the local time, absent when the calendar gives only a date), `airingLabel` (the entry's own line: "Episode 5", "S2 E5", "Movie premiere" or the calendar's event), `listStatus` (Watching, Planning or Watched: your tracking, on your shows only) and `delay` (the delay notice when the schedule reports the episode late). `schedule` may sit in the `mobile` and `tv` blocks; coverage counts it as Shell. Every other piece of the page has a hook (see "Search, schedule and library" below): the header, its tabs, the My Shows/All switch, the week arrows and dates, the day buttons, day headings, the parts of the built-in entry, Next up, the Release calendar feeds, the empty, loading and error states, and `data-tab` and `data-layout` on the page.
+
+  ```json
+  "schedule": { "item": { "type": "row", "part": "air", "style": { "gap": 12, "align": "center" }, "children": [
+    { "type": "text", "field": "airTime", "part": "air-time" },
+    { "type": "artwork", "artwork": "poster", "part": "air-art", "style": { "aspect": "2 / 3", "width": 12, "radius": 6 } },
+    { "type": "stack", "children": [
+      { "type": "text", "field": "title", "part": "air-title" },
+      { "type": "text", "field": "airingLabel", "part": "air-line" },
+      { "type": "text", "field": "listStatus", "part": "air-status", "when": { "field": "listStatus" } }
+    ] },
+    { "type": "text", "field": "airingIn", "part": "air-in", "when": { "field": "airingIn" } }
+  ] } }
+  ```
+
 ### Theme API 7
 
 A package declares `themeApi: 7` to use the drawer navigation and the player keys `player.trackButtons`, `player.rating`, `player.endTime` and the `fit` button in `player.buttons`; the validator refuses them in an older package.
@@ -762,10 +777,36 @@ State values:
 | `search.layout` | slot | API 6, TV surfaces: the Search page while a theme docks the grid keyboard (`tv.search.keyboard: "grid"`), a row holding the `search.keyboard` on the left and the rest of the page on the right. |  |
 | `search.keyboard` | part | API 6, TV surfaces: the grid keyboard docked left of the Search page, six columns of `search.key` buttons: Space and Backspace (three columns each), then a–z and 0–9, then a full-width Clear. It types into the page's search field and stays in view as the results scroll (`position: sticky`, 1rem under the top bar); controller focus starts on "a". |  |
 | `search.key` | part | One key of the `search.keyboard`, named by `data-key` (`space`, `backspace`, `clear`, or the lowercase letter or digit it types). izumi draws the focused key white with a black glyph; style `:focus` to change it. | `data-key` |
-| `schedule` | slot | The airing schedule page. |  |
+| `schedule` | slot | The airing schedule page. `data-tab` is the open tab (`schedule`, `personal` for the Release calendar, `watchlist`); `data-layout` is `agenda` (the whole week, desktop) or `days` (a day at a time: phones, a pad, or the Day view setting). | `data-tab`, `data-layout` |
+| `schedule.header` | part | The row of tabs, the My Shows/All filter and the week controls at the top of the page. `data-pinned` while it sticks under the navigation (the Pin schedule header setting). | `data-pinned` |
+| `schedule.tabs` | part | The strip holding the Schedule, Release calendar and Watchlist tabs. |  |
+| `schedule.tab` | part | One of those tabs, named by `data-tab` (`schedule`, `personal`, `watchlist`); `data-active` on the open one. | `data-tab`, `data-active` |
+| `schedule.filter` | part | The My Shows / All switch (Schedule tab only). |  |
+| `schedule.filter.option` | part | One side of that switch: `data-value` is `mine` or `all`, `data-active` on the chosen one. My Shows carries the count of your shows airing this week. | `data-value`, `data-active` |
+| `schedule.today` | part | The Today button, shown while another week is open. |  |
+| `schedule.week` | part | The week controls: the previous and next arrows around the dates. |  |
+| `schedule.week.step` | part | The previous or next week arrow (`data-dir` `previous` or `next`). | `data-dir` |
+| `schedule.week.label` | part | The dates of the open week ("Nov 16 - Nov 22"). |  |
+| `schedule.daytabs` | part | The strip of seven day buttons over a day at a time (phones, a pad, the Day view setting). |  |
+| `schedule.daytab` | part | One day button: `data-active` on the open day, `data-today` on today, `data-unaired` while it has episodes still to air (Schedule tab). | `data-active`, `data-today`, `data-unaired` |
+| `schedule.hint` | part | The pad line under the day buttons ("L1 / R1 to switch days"). |  |
 | `schedule.day` | part | One day of airings: a day of the week agenda, or the selected day. |  |
-| `schedule.item` | part | One airing entry. |  |
-| `schedule.error` | part | The message shown when the schedule could not be loaded, with a Try again button. |  |
+| `schedule.day.title` | part | The heading of a day ("Monday · Nov 16 · Today"); `data-today` on today. The day view has none. | `data-today` |
+| `schedule.item` | part | One airing entry: a link to the title, and on your own shows the remove button beside it. `data-aired` once it has aired. With API 8 `schedule.item` the link holds the template instead of the parts below. | `data-aired` |
+| `schedule.item.poster` | part | The cover of an entry. |  |
+| `schedule.item.title` | part | The title of an entry. |  |
+| `schedule.item.meta` | part | The episode and local time of an entry ("Episode 5 · 21:30"). |  |
+| `schedule.item.badge` | part | A label on an entry: `data-variant="status"` is your tracking (Watching, Planning, Watched), `data-variant="source"` the calendar it came from. | `data-variant` |
+| `schedule.item.countdown` | part | The time left to an airing ("in 2h 5m"); in the day view also Aired or Released once it has. |  |
+| `schedule.item.delay` | part | The delay notice on an entry the schedule reports late. |  |
+| `schedule.item.context` | part | Why a personal calendar entry is there (a Release calendar match). |  |
+| `schedule.nextup` | part | The Next up strip over the current week: your next airings and the ones just aired. |  |
+| `schedule.nextup.item` | part | One Next up card. |  |
+| `schedule.feeds` | part | The Release calendar feed chips. |  |
+| `schedule.feed` | part | One feed chip; `data-active` on the chosen feed. | `data-active` |
+| `schedule.empty` | part | The box shown when nothing airs: this week, this day, none of your shows, or nothing in a Release calendar feed. |  |
+| `schedule.loading` | part | The placeholders (`.skeloader`) shown while the week loads. |  |
+| `schedule.error` | part | The message shown when the schedule or the Release calendar could not be loaded. |  |
 | `library` | slot | The library page. |  |
 | `library.tabs` | part | The library section tabs. |  |
 | `library.grid` | slot | The library card grid. |  |

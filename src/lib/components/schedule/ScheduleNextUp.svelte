@@ -25,7 +25,7 @@
 </script>
 
 {#if items.length}
-  <div class="mb-6">
+  <div data-part="schedule.nextup" class="mb-6">
     <h2 class="mb-2 flex items-center gap-1.5 text-sm font-black">
       <Radio size={15} class="text-sky-400" /> Next up
     </h2>
@@ -33,7 +33,7 @@
       {#each items as a (a.media.id + '-' + a.episode)}
         {@const soon = a.airingAt * 1000 > now}
         {@const kind = classifyMine(a.media, sets)}
-        <a data-focusable href={`/app/anime/${a.media.id}`} use:detailLink={a.media}
+        <a data-focusable data-part="schedule.nextup.item" href={`/app/anime/${a.media.id}`} use:detailLink={a.media}
            class="group relative w-40 shrink-0 overflow-hidden rounded-lg border bg-secondary transition-colors hover:bg-accent
                   {kind ? 'border-border/80' : 'border-transparent'}">
           <div class="relative h-24 w-full overflow-hidden">

@@ -142,10 +142,13 @@
 </script>
 
 {#snippet dayTabs(showHint: boolean)}
-  <div bind:this={dayRow} class="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] snap-x sm:mx-0 sm:overflow-visible sm:px-0">
+  <div bind:this={dayRow} data-part="schedule.daytabs" class="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] snap-x sm:mx-0 sm:overflow-visible sm:px-0">
     {#each SHORT as day, index (day)}
       <button
         data-focusable
+        data-part="schedule.daytab"
+        data-active={index === selected || undefined}
+        data-today={index === todayIdx || undefined}
         data-nav-down="schedule-first-airing"
         onclick={() => { if (index !== selected) h.tap(); selected = index }}
         class="relative h-[5.25rem] w-[7.75rem] shrink-0 snap-center rounded-2xl border text-center text-lg font-black transition-colors sm:h-auto sm:w-auto sm:flex-1 sm:shrink sm:rounded-lg sm:py-3 sm:text-sm
@@ -157,7 +160,7 @@
       </button>
     {/each}
   </div>
-  {#if showHint}<p class="mb-3 text-xs text-muted-foreground">{$bumperTabs ? 'L2 / R2' : 'L1 / R1'} to switch days</p>{/if}
+  {#if showHint}<p data-part="schedule.hint" class="mb-3 text-xs text-muted-foreground">{$bumperTabs ? 'L2 / R2' : 'L1 / R1'} to switch days</p>{/if}
 {/snippet}
 
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -174,11 +177,13 @@
   {/if}
 </div>
 
-<div class="-mx-4 mb-5 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0" aria-label="Release calendar feed">
+<div data-part="schedule.feeds" class="-mx-4 mb-5 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0" aria-label="Release calendar feed">
   {#each feeds as option (option.value)}
     <button
       type="button"
       data-focusable
+      data-part="schedule.feed"
+      data-active={feed === option.value || undefined}
       aria-pressed={feed === option.value}
       disabled={!connected && option.value !== 'for-you'}
       title={!connected && option.value !== 'for-you' ? 'Connect Trakt to unlock this calendar' : undefined}
@@ -206,6 +211,7 @@
 {/if}
 
 {#if loading}
+  <div data-part="schedule.loading">
   <div class="-mx-4 flex gap-3 overflow-hidden px-4 sm:mx-0 sm:px-0">
     {#each Array.from({ length: 4 }) as _}
       <div class="skeloader h-[5.25rem] w-[7.75rem] shrink-0 rounded-2xl sm:flex-1"></div>
@@ -216,20 +222,21 @@
       <div class="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3"><div class="skeloader mt-2 h-4 rounded"></div><div class="skeloader h-28 rounded-xl"></div></div>
     {/each}
   </div>
+  </div>
 {:else if error}
-  <div class="rounded-lg border border-destructive/40 bg-destructive/10 p-5">
+  <div data-part="schedule.error" class="rounded-lg border border-destructive/40 bg-destructive/10 p-5">
     <p class="font-bold">The release calendar could not load</p>
     <p class="mt-1 text-sm text-muted-foreground">{error}</p>
   </div>
 {:else if feed === 'for-you' && !connected && historyCount === 0}
   {@render dayTabs(false)}
-  <div class="rounded-lg border border-border/50 bg-secondary/40 p-8 text-center">
+  <div data-part="schedule.empty" class="rounded-lg border border-border/50 bg-secondary/40 p-8 text-center">
     <p class="text-sm font-bold">No calendar signals yet</p>
     <p class="mx-auto mt-1 max-w-md text-xs text-muted-foreground">Watch a movie or series from TMDB or Stremio, or connect Trakt to bring in your personal release calendar.</p>
   </div>
 {:else if airings.length === 0}
   {@render dayTabs(false)}
-  <div class="rounded-lg border border-border/50 bg-secondary/40 p-8 text-center">
+  <div data-part="schedule.empty" class="rounded-lg border border-border/50 bg-secondary/40 p-8 text-center">
     <p class="text-sm font-bold">Nothing lands this week</p>
     <p class="mx-auto mt-1 max-w-md text-xs text-muted-foreground">Try another week or choose a different release feed.</p>
   </div>

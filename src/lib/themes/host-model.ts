@@ -5,6 +5,8 @@ import type { Pos } from '$lib/player/progress'
 import { compactCountdown, longCountdown } from './countdown'
 import { episodeCodeText, episodeNameText } from './episode-fields'
 import type { DisplayModel } from './presentation'
+import { airTime, scheduleItemLabel, type Airing } from '$lib/anilist/schedule'
+import type { ScheduleBadge } from '$lib/anilist/my-shows'
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
 
@@ -200,6 +202,26 @@ export function episodeDisplayModel(
     still: extras.still ?? meta?.image,
     ...extras,
   })
+}
+
+const LIST_STATUS: Record<ScheduleBadge, string> = { watched: 'Watched', watching: 'Watching', planning: 'Planning' }
+
+/** API 8 `schedule.item`: one airing, with the viewer's tracking (`badge`) and the leading delay line.
+ *  `airingIn` and `airingCountdown` count down to this airing and are absent once it has aired. */
+export function airingDisplayModel(airing: Airing, badge?: ScheduleBadge | null, delay = '', now = Date.now()): DisplayModel {
+  const secondsLeft = airing.airingAt - Math.floor(now / 1000)
+  const coming = !airing.delayPlaceholder && secondsLeft > 0
+  return mediaDisplayModel(airing.media, {
+    episodeNumber: airing.episode,
+    episodeNo: String(airing.episode),
+    airingIn: coming ? compactCountdown(secondsLeft) : undefined,
+    airingCountdown: coming ? longCountdown(secondsLeft) : undefined,
+    airingSoon: undefined,
+    airTime: airing.delayPlaceholder || airing.timeKnown === false ? undefined : airTime(airing.airingAt),
+    airingLabel: scheduleItemLabel(airing),
+    listStatus: badge ? LIST_STATUS[badge] : undefined,
+    delay: delay || undefined,
+  }, 0, now)
 }
 
 /** API 8 `loading.episode`: the title and the episode being opened. Without a record (an external or
