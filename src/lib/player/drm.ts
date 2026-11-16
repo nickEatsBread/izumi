@@ -9,6 +9,9 @@ export interface StreamDrm {
   releaseUrl?: string
   /** Optional provider endpoint that refreshes tracks after its lazy manifest is materialized. */
   refreshUrl?: string
+  /** Optional decrypting-download plan: segment URLs, byte ranges and content protection data.
+   *  Present when the source can produce a clear, offline file instead of stored ciphertext. */
+  planUrl?: string
   licenseHeaders?: Record<string, string>
   serverCertificateUrl?: string
   videoRobustness?: string
@@ -132,6 +135,7 @@ export function parseStreamDrm(value: unknown): StreamDrm | undefined {
     licenseUrl: raw.licenseUrl,
     releaseUrl: typeof raw.releaseUrl === 'string' && raw.releaseUrl ? raw.releaseUrl : undefined,
     refreshUrl: typeof raw.refreshUrl === 'string' && raw.refreshUrl ? raw.refreshUrl : undefined,
+    planUrl: typeof raw.planUrl === 'string' && raw.planUrl ? raw.planUrl : undefined,
     licenseHeaders: headers && Object.keys(headers).length ? headers : undefined,
     serverCertificateUrl: typeof raw.serverCertificateUrl === 'string'
       ? raw.serverCertificateUrl

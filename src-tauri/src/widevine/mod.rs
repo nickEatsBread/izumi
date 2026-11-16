@@ -1,34 +1,47 @@
-//! Protected (Widevine) playback on Linux through izumi's own libmpv player.
+//! Protected (Widevine) handling by hosting Google's module directly, the way Kodi does.
 //!
-//! WebKitGTK has no EME, so instead of a browser engine izumi hosts Google's Widevine module itself,
-//! the way Kodi does: one module thread (`cdm.rs`, C++ shim in `native/widevine/`), licences through
-//! the source's licence URL, and protected files read through `izcr://` (`protocol.rs`), where they
-//! are decrypted in memory. Video goes through the module's own decoder unless the module allows
-//! decrypt-only video, in which case mpv's hardware decoder is used. The module is downloaded from
-//! Google only after the user has read and accepted its licence (`fetch.rs`).
+//! On Linux the module also powers playback: WebKitGTK has no EME, so protected files are read
+//! through `izcr://` (`protocol.rs`) and decrypted in memory on one module thread (`cdm.rs`, C++ shim
+//! in `native/widevine/`). On Windows the webview has EME and streams protected media itself, so the
+//! module is used only to *save* a protected episode as a clear file (`save.rs`): there the host
+//! vtable is built in Rust (`host_win.rs`) because a COM-less `.dll` cannot be loaded the dlopen way.
+//!
+//! The module is downloaded from Google only after the user has accepted its licence (`fetch.rs`),
+//! except on Windows where the WebView2 runtime already ships a copy the host prefers.
 mod cdm;
 pub(crate) mod fetch;
 mod fmp4;
+// The in-memory streaming path (Track/RawVideo over izcr://) needs libmpv, which only the Linux
+// desktop embeds. Windows saves to a clear file instead and never touches these.
+#[cfg(target_os = "linux")]
 mod media;
 mod mpd;
+#[cfg(target_os = "linux")]
 mod protocol;
 pub(crate) mod save;
 mod seccomp;
+#[cfg(target_os = "linux")]
 pub(crate) mod session;
+// The Rust CDM host vtable. Linux links the C++ shim instead (build.rs).
+#[cfg(target_os = "windows")]
+mod host_win;
 
+#[cfg(target_os = "linux")]
 pub use protocol::register as register_protocol;
+#[cfg(target_os = "linux")]
 pub use session::{end_all, is_protected_url, Request};
 
-use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_data_dir().map_err(|e| format!("no app data folder: {e}"))
 }
 
-/// Licenses a protected manifest and registers its in-memory streams for the player, opening at `start`
-/// seconds (see `Prepared::start`).
+/// Licenses a protected manifest and registers its in-memory streams for the player, opening at
+/// `start` seconds (see `Prepared::start`). Linux only; other platforms stream in the webview.
+#[cfg(target_os = "linux")]
 pub async fn prepare(app: &AppHandle, manifest_url: &str, req: &Request, start: Option<f64>) -> anyhow::Result<session::Prepared> {
+    use std::sync::Arc;
     let data = data_dir(app).map_err(anyhow::Error::msg)?;
     let emitter = app.clone();
     let on_refused: media::OnRefused = Arc::new(move || {
@@ -38,13 +51,27 @@ pub async fn prepare(app: &AppHandle, manifest_url: &str, req: &Request, start: 
     session::prepare(&data, manifest_url, req, start, on_refused).await
 }
 
-/// Saves a protected episode for offline use (`save.rs`), reporting progress as `download-progress`
-/// for download `id`. Returns the folder; the player opens it as `file://<folder>`.
-pub async fn save_download(app: &AppHandle, id: String, manifest_url: String, dir: String, name: String, max_height: Option<u32>) -> Result<serde_json::Value, String> {
+/// Saves a protected episode as a clear file (`save.rs`), reporting progress as `download-progress`
+/// for download `id`. `drm` is the source's licence request (URL + headers) so the module can get
+/// the content keys. Returns the folder; the player opens it as `file://<folder>`.
+pub async fn save_download(
+    app: &AppHandle,
+    id: String,
+    manifest_url: String,
+    dir: String,
+    name: String,
+    max_height: Option<u32>,
+    drm: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let licence: save::Licence = drm
+        .map(|d| serde_json::from_value(d).map_err(|e| format!("bad protected-stream request: {e}")))
+        .transpose()?
+        .ok_or("saving a protected episode needs its licence request")?;
+    let data = data_dir(app)?;
     let emitter = app.clone();
     let progress_id = id.clone();
     let folder = save::folder_for(std::path::Path::new(&dir), &name);
-    let result = save::save(&id, &manifest_url, &folder, max_height, move |received, total, speed| {
+    let result = save::save(&id, &manifest_url, &folder, max_height, &licence, &data, move |received, total, speed| {
         let _ = emitter.emit("download-progress", (progress_id.as_str(), received, total, speed));
     })
     .await
@@ -93,7 +120,7 @@ pub(crate) fn lang_matches(a: &str, b: &str) -> bool {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    /// Protected playback through izumi's own player is available on this build.
+    /// Protected handling through izumi's own module host is available on this build.
     pub supported: bool,
     pub installed: Option<String>,
 }

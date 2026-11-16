@@ -32,11 +32,11 @@ pub struct Recipe {
 const RECIPES: &[Recipe] = &[Recipe {
     id: "widevine",
     name: "Widevine",
-    purpose: "Plays protected video in izumi's own player",
+    purpose: "Handles protected video: plays it on Linux, saves it as a clear file on Windows",
     publisher: "Google",
     approx_bytes: 21_970_001,
     licence: "Google's licence for the Widevine module",
-    needed: cfg!(all(target_os = "linux", target_arch = "x86_64")),
+    needed: cfg!(widevine_host),
 }];
 
 pub fn recipe(id: &str) -> Option<&'static Recipe> {
@@ -152,7 +152,7 @@ fn drop_request(wanted: &mut Wanted, id: &str, by: &str) -> bool {
 
 fn installed_version(data: &Path, id: &str) -> Option<String> {
     match id {
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(widevine_host)]
         "widevine" => crate::widevine::fetch::installed(data).map(|i| i.version),
         _ => {
             let _ = data;
@@ -163,7 +163,7 @@ fn installed_version(data: &Path, id: &str) -> Option<String> {
 
 fn remove_files(data: &Path, id: &str) -> Result<(), String> {
     match id {
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(widevine_host)]
         "widevine" => crate::widevine::fetch::remove(data).map_err(|e| format!("{e:#}")),
         _ => {
             let _ = data;
@@ -184,7 +184,7 @@ fn http() -> Result<reqwest::Client, String> {
 /// Downloads, verifies and installs one module; returns the installed version.
 async fn install(shared: &'static Shared, id: &str, via: &str) -> Result<String, String> {
     match id {
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(widevine_host)]
         "widevine" => {
             use crate::widevine::fetch;
             let _one_at_a_time = crate::widevine::DOWNLOAD.lock().await;
@@ -208,7 +208,7 @@ async fn install(shared: &'static Shared, id: &str, via: &str) -> Result<String,
 /// Installs a newer build when one is due; it is used from the next start.
 async fn update(shared: &'static Shared, id: &str) {
     match id {
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[cfg(widevine_host)]
         "widevine" => {
             let Ok(client) = http() else { return };
             let _one_at_a_time = crate::widevine::DOWNLOAD.lock().await;
@@ -402,7 +402,7 @@ mod tests {
     fn only_compiled_recipes_exist() {
         assert!(recipe("widevine").is_some());
         assert!(recipe("https://example.com/x.so").is_none());
-        assert_eq!(recipe("widevine").unwrap().needed, cfg!(all(target_os = "linux", target_arch = "x86_64")));
+        assert_eq!(recipe("widevine").unwrap().needed, cfg!(widevine_host));
     }
 
     #[test]

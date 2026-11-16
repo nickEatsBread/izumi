@@ -24,10 +24,11 @@ export interface DownloadItem {
   path?: string
   url?: string
   /** Which engine is fetching this item. Absent on items queued by older builds, which were all
-   *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job. */
-  /** `drm-local`: a protected episode saved by izumi's own Widevine module (Linux): `path` is its
-   *  folder of encrypted files, licensed again from the source each time it plays. */
-  kind?: 'http' | 'torrent' | 'shaka' | 'drm-local'
+   *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job.
+   *  `drm-local`: a protected episode saved by izumi's own Widevine module: `path` is its folder of
+   *  clear files. `drm`: protected segments decrypted with a bundled device into one clear local
+   *  file. Neither needs a CDM or a licence at playback. */
+  kind?: 'http' | 'torrent' | 'shaka' | 'drm-local' | 'drm'
   /** The HTTP engine is assembling an adaptive playlist. Its raw partial restarts from segment 1
    * on resume, so the visible byte counter must restart with it. */
   hls?: boolean

@@ -20,6 +20,8 @@ src-tauri/gen/
 !/docs/theme-packages/
 !/docs/theme-packages/**
 !/docs/recommendation-watch-habits-research.md
+!/docs/drm-offline-downloads.md
+!/docs/drm-device-provisioning.md
 !/docs/recommendation-evaluation/
 
 /distnet/
@@ -72,3 +74,6 @@ flatpak/izumi-key.gpg
 # Session scratch under scripts/ci/; shared CI helpers keep unprefixed names and stay tracked
 scripts/ci/_*
 scripts/ci/__pycache__/
+
+# A Widevine device identity is a credential: never commit one.
+*.wvd

@@ -54,7 +54,11 @@ A native anime library manager for browsing, tracking, and playing from the sour
   controls): custom seekbar with **on-demand scrub thumbnails**, chapter popouts, AniSkip
   OP/ED/recap skipping, AnimeThemes-aware first-play, audio/subtitle menus, video-fit toggle,
   screenshot, next/prev episode, full controller/d-pad navigation.
-- **Offline** — download a resolved stream to disk and play it back locally.
+- **Offline** — download a resolved stream to disk and play it back locally. On desktop,
+  protected (Widevine) episodes are decrypted into a plain local file; the device identity comes
+  from a gated pool when the build bakes in `IZUMI_CDM_BASE_URL` and `IZUMI_CDM_KEY`, and a build
+  without them (a fork, for instance) still works on the bundled device alone
+  ([details](docs/drm-offline-downloads.md#device-supply)).
 - **Automatic downloads** — follow a show and collect aired episodes using per-series quality,
   audio, codec, cache, delay, and starting-episode rules.
 - **Watch Together** — host or join synchronized playback rooms across paired Izumi devices;
