@@ -113,7 +113,8 @@ jobs:
             | python3 -c 'import sys,json
           for l in sys.stdin:
               m=json.loads(l)
-              if m.get("reason")=="compiler-artifact" and m.get("executable") and m["target"]["kind"]==["lib"]: print(m["executable"])' | tail -1)"
+              if m.get("reason")=="compiler-artifact" and m.get("executable") and m["profile"]["test"]: print(m["executable"])' | tail -1)"
+          [ -n "$bin" ] || { echo 'no lib test binary found'; exit 1; }
           signed="$RUNNER_TEMP/izumi-lib-tests-hardened"
           cp "$bin" "$signed"
           codesign --force --sign - --options runtime --entitlements Entitlements.plist "$signed"
