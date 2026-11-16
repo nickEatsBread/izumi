@@ -1329,6 +1329,23 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_module_fails_first_with_nothing_fetched_or_written() {
+        // The frontend falls back to another engine on this error, so it must come before any
+        // network or disk work: the manifest URL here is unreachable and the folder must not appear.
+        std::env::set_var("IZUMI_WIDEVINE_NO_SYSTEM", "1");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("test-tmp").join(format!("no-module-{}", std::process::id()));
+        let (data, out) = (root.join("data"), root.join("out"));
+        std::fs::create_dir_all(&data).unwrap();
+        let licence = Licence { key_system: None, license_url: "http://127.0.0.1:9/licence".into(), license_headers: None, server_certificate_url: None };
+        let err = tauri::async_runtime::block_on(save("no-module", "http://127.0.0.1:9/manifest.mpd", &out, None, &licence, &data, |_, _, _| {}))
+            .err()
+            .expect("a save without the module must fail");
+        assert!(format!("{err:#}").contains(super::super::NOT_INSTALLED), "{err:#}");
+        assert!(!out.exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn lanes_split_so_neither_track_waits_long() {
         let sd = 854 * 480;
         // One lane: it does both tracks in turn.
