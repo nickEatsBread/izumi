@@ -4313,6 +4313,9 @@ export interface ResolvedShakaDownload extends ResolvedDownloadBase {
 export interface ResolvedDrmDownload extends ResolvedDownloadBase {
   kind: 'drm'
   planUrl: string
+  /** The same presentation's manifest, for a save through izumi's own Widevine module, which is
+   *  preferred where it is installed (the plan path is the fallback without it). */
+  url: string
   licenseUrl: string
   releaseUrl: string
   drm: NonNullable<Stream['__drm']>
@@ -4437,6 +4440,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
         return {
           kind: 'drm',
           planUrl: offlineManifestUrl(planBase, height),
+          url: offlineManifestUrl(presentation.url, height),
           licenseUrl: best.__drm.licenseUrl ?? '',
           releaseUrl: best.__drm.releaseUrl ?? '',
           drm: best.__drm,

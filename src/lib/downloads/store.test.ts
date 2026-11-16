@@ -25,6 +25,7 @@ vi.mock('./shaka-offline', () => ({
 vi.mock('$lib/anizip', () => ({ getEpisodeMeta: async () => ({}) }))
 const nativeDrm = { on: false }
 vi.mock('$lib/player/native-drm', () => ({
+  NOT_INSTALLED: 'widevine-not-installed',
   usesNativeDrm: (drm: { licenseUrl?: string } | undefined) => nativeDrm.on && !!drm?.licenseUrl,
 }))
 vi.mock('$lib/net/http', () => ({
@@ -292,5 +293,79 @@ describe('protected episodes on Linux, through the native Widevine module', () =
     await vi.waitFor(() => expect(get(downloads)['7:2']?.status).toBe('done'))
     expect(calls('widevine_save')).toHaveLength(0)
     expect(get(downloads)['7:2']?.kind).toBe('shaka')
+  })
+})
+
+describe('protected episodes with a decrypt plan: the module first, the bundled device without it', () => {
+  const drm = {
+    kind: 'drm',
+    url: 'http://127.0.0.1:4000/v/1/manifest.mpd?offline=1',
+    planUrl: 'http://127.0.0.1:4000/v/1/offline-plan?offline=1',
+    licenseUrl: 'http://127.0.0.1:4000/v/1/license',
+    releaseUrl: 'http://127.0.0.1:4000/v/1/session',
+    drm: { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1:4000/v/1/license', releaseUrl: 'http://127.0.0.1:4000/v/1/session' },
+    filename: 'Test Anime - E2.mp4',
+    preferredHeight: 720,
+    sourceOriginId: 'example.source',
+  }
+
+  afterEach(() => { nativeDrm.on = false })
+
+  it('saves through the installed module from the same presentation manifest', async () => {
+    nativeDrm.on = true
+    resolveDownloadUrl.mockResolvedValue(drm)
+    invoke.mockImplementation(async (command: string) => command === 'download_dir_default' ? '/downloads'
+      : command === 'widevine_save_folder' ? '/downloads/Test Anime - E2.protected'
+      : command === 'widevine_save' ? { path: '/downloads/Test Anime - E2.protected', bytes: 600, height: 720 }
+      : command === 'ext_fetch' ? { status: 200, body: '' } : undefined)
+
+    enqueue(media, 2)
+    await vi.waitFor(() => expect(get(downloads)['7:2']?.status).toBe('done'))
+
+    expect(calls('widevine_save')[0]?.[1]).toMatchObject({ manifestUrl: drm.url, maxHeight: 720, drm: drm.drm })
+    expect(calls('drm_download_start')).toHaveLength(0)
+    expect(get(downloads)['7:2']).toMatchObject({ kind: 'drm-local', requiresOnlineLicense: false })
+  })
+
+  it('falls back to the bundled device when the module is not installed', async () => {
+    nativeDrm.on = true
+    resolveDownloadUrl.mockResolvedValue(drm)
+    invoke.mockImplementation(async (command: string) => {
+      if (command === 'widevine_save') throw new Error('widevine-not-installed')
+      return command === 'download_dir_default' ? '/downloads'
+        : command === 'widevine_save_folder' ? '/downloads/Test Anime - E2.protected'
+        : command === 'ext_fetch' ? { status: 200, body: '' } : undefined
+    })
+
+    enqueue(media, 2)
+    await vi.waitFor(() => expect(calls('drm_download_start')).toHaveLength(1))
+
+    expect(calls('drm_download_start')[0]?.[1]).toMatchObject({
+      id: '7:2', planUrl: drm.planUrl, licenseUrl: drm.licenseUrl, releaseUrl: drm.releaseUrl, dir: '/downloads', filename: drm.filename,
+    })
+    // Pause and cancel now route to the device engine, and no module folder is left recorded.
+    expect(get(downloads)['7:2']).toMatchObject({ kind: 'drm', path: undefined })
+    expect(get(downloads)['7:2']?.status).not.toBe('error')
+  })
+
+  it('does not hide other module failures behind the fallback', async () => {
+    nativeDrm.on = true
+    resolveDownloadUrl.mockResolvedValue(drm)
+    invoke.mockImplementation(async (command: string) => {
+      if (command === 'widevine_save') throw new Error('the licence server refused this device (HTTP 403)')
+      return command === 'download_dir_default' ? '/downloads' : command === 'widevine_save_folder' ? '/downloads/x.protected' : undefined
+    })
+
+    enqueue(media, 2)
+    await vi.waitFor(() => expect(get(downloads)['7:2']?.status).toBe('error'))
+    expect(calls('drm_download_start')).toHaveLength(0)
+  })
+
+  it('uses the bundled device directly where the module is not built', async () => {
+    resolveDownloadUrl.mockResolvedValue(drm)
+    enqueue(media, 2)
+    await vi.waitFor(() => expect(calls('drm_download_start')).toHaveLength(1))
+    expect(calls('widevine_save')).toHaveLength(0)
+    expect(get(downloads)['7:2']?.kind).toBe('drm')
   })
 })
