@@ -73,6 +73,11 @@ static REDRAW_PENDING: AtomicBool = AtomicBool::new(false);
 /// Target native-fullscreen layout. `set_fullscreen` animates, so `is_fullscreen()`
 /// and the frontend inset `$effect` lag the GL view by hundreds of ms.
 static FULLSCREEN_LAYOUT: AtomicBool = AtomicBool::new(false);
+/// No file is open. `close_player` keeps the core and this view for the next play, and the view's
+/// surface still holds the last frame of the closed episode. Only the page's CSS covered it, so it
+/// flashed whenever WebKit repainted the cleared webview, e.g. as the window came back from the
+/// background. While idle the view stays hidden and nothing renders into it.
+static IDLE: AtomicBool = AtomicBool::new(false);
 
 struct Embed {
     view: Retained<NSOpenGLView>,
@@ -373,6 +378,25 @@ pub fn detach() {
 fn teardown_embed(embed: Embed) {
     let view_as_view: &NSView = embed.view.as_super();
     view_as_view.removeFromSuperview();
+}
+
+/// The player closed but the core stays warm: hide the video view until a new file renders.
+pub fn idle() {
+    IDLE.store(true, Ordering::Release);
+    schedule_after(0, || {
+        let Ok(guard) = EMBED.lock() else {
+            return;
+        };
+        if let (true, Some(embed)) = (IDLE.load(Ordering::Acquire), guard.as_ref()) {
+            let view_as_view: &NSView = embed.view.as_super();
+            view_as_view.setHidden(true);
+        }
+    });
+}
+
+/// A file is loading: the next render shows the view again, drawn fresh.
+pub fn wake() {
+    IDLE.store(false, Ordering::Release);
 }
 
 pub fn resize(window: &WebviewWindow) {
@@ -679,7 +703,7 @@ fn schedule_redraw() {
 }
 
 fn render_now() -> Result<(), String> {
-    if MainThreadMarker::new().is_none() {
+    if MainThreadMarker::new().is_none() || IDLE.load(Ordering::Acquire) {
         return Ok(());
     }
     let guard = EMBED.lock().map_err(|e| e.to_string())?;
@@ -690,8 +714,14 @@ fn render_now() -> Result<(), String> {
         .view
         .openGLContext()
         .ok_or_else(|| "openGLContext nil".to_string())?;
-    gl_ctx.makeCurrentContext();
     let view_as_view: &NSView = embed.view.as_super();
+    if view_as_view.isHidden() {
+        // This render replaces the closed episode's frame before the view is composited again.
+        // `stop` dropped mpv's frames, so until the new file decodes it draws black.
+        view_as_view.setHidden(false);
+        let _: () = unsafe { msg_send![&*gl_ctx, update] };
+    }
+    gl_ctx.makeCurrentContext();
     let bounds = view_as_view.bounds();
     let backing: NSRect = unsafe { msg_send![view_as_view, convertRectToBacking: bounds] };
     let mut w = backing.size.width as i32;

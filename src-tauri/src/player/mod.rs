@@ -663,10 +663,13 @@ impl PlayerHandle {
         Ok(())
     }
 
-    /// Stop the current file but retain the initialized core and embedded surface. The browse
-    /// webview becomes opaque before this runs, so keeping the idle surface costs no visual state
-    /// and lets the next episode/source skip libmpv initialization entirely.
+    /// Stop the current file but retain the initialized core and embedded surface, so the next
+    /// episode/source skips libmpv initialization entirely. The browse page's CSS alone must not
+    /// be what covers a surface still holding the closed file's last frame: macOS hides its view
+    /// until the next file renders (`macos_embed::idle`).
     pub fn idle(&self) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        macos_embed::idle();
         self.gif_abort()?;
         if let Some(mpv) = self.mpv.lock().map_err(|e| e.to_string())?.as_ref() {
             let _ = mpv.command("stop", &[]);
@@ -1756,6 +1759,8 @@ fn load_file(
     pending_external_tracks: &Arc<Mutex<Option<PendingExternalTracks>>>,
     sidecar_gate: &SidecarGate,
 ) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    macos_embed::wake();
     // Scrub tiles wait in the background until this file shows its first frame.
     thumbs::MAIN_PLAYER_LOADING.store(true, std::sync::atomic::Ordering::Relaxed);
     // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
