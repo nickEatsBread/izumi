@@ -31,6 +31,9 @@
     "android": {
       "minSdkVersion": 26
     },
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    },
     "windows": {
       "nsis": {
         "installerHooks": "./windows/installer-hooks.nsh"
