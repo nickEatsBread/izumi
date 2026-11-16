@@ -360,6 +360,24 @@ describe('a protected episode saved on this device', () => {
     expect(stream.__audioLang).toBe('ja-JP')
   })
 
+  it('plays an already-clear saved folder with no DRM, as a video+audio file pair', async () => {
+    const { clearProtectedStream } = await import('./play')
+    const stream = clearProtectedStream('/downloads/Test Anime - E2.protected')
+    expect(stream.url).toBe('file:///downloads/Test%20Anime%20-%20E2.protected/video.mp4')
+    expect(stream.__audioTracks).toEqual([{ url: 'file:///downloads/Test%20Anime%20-%20E2.protected/audio.mp4' }])
+    expect(stream.__drm).toBeUndefined()
+    // A name with URL-special characters is encoded so the path stays intact.
+    expect(clearProtectedStream('/downloads/Q&A #1? 100%.protected').url).toBe('file:///downloads/Q%26A%20%231%3F%20100%25.protected/video.mp4')
+  })
+
+  it('plays a clear protected download offline, without re-licensing', async () => {
+    const { readFileSync } = await import('node:fs')
+    const play = readFileSync(new URL('./play.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+    const branch = play.slice(play.indexOf("'completed clear protected download hit"), play.indexOf("'completed protected download hit"))
+    expect(branch).toContain('clearProtectedStream(local.path)')
+    expect(branch).not.toContain('resolveDownloadUrl(')
+  })
+
   it('holds the connecting screen from the click while the source licenses it again', async () => {
     const { readFileSync } = await import('node:fs')
     const play = readFileSync(new URL('./play.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
