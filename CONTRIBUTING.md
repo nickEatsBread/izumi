@@ -35,4 +35,4 @@ CI runs the same on every PR.
 ## Licence
 
 By contributing you agree your contributions are licensed under the project's
-[AGPL-3.0-or-later](LICENSE).
+[GPL-3.0-or-later](LICENSE).

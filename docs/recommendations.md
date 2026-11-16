@@ -23,7 +23,7 @@ Trailers require an explicit action, and unavailable trailers are not invented.
 
 ## Ranking and feedback
 
-The AGPL engine is in `src/lib/shared/recommendation-engine.ts`. It has no framework, storage,
+The GPL engine is in `src/lib/shared/recommendation-engine.ts`. It has no framework, storage,
 network or global-clock dependency. Its inputs are candidate features, weighted taste signals,
 exclusions and an explicit timestamp. Its output is ranked identities plus readable evidence.
 
@@ -56,7 +56,7 @@ before choosing a hosted training system such as Gorse.
 
 ## TV and licensing boundary
 
-The main client and engine remain AGPL-3.0-or-later. The separate TV repository remains MIT.
+The main client and engine remain GPL-3.0-or-later. The separate TV repository remains MIT.
 **The TV does not bundle the engine.** It receives an ordered candidate list with explanations
 through the existing encrypted companion snapshot. The payload contains results, not executable
 ranking code or raw taste vectors.
