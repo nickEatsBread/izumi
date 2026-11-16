@@ -189,7 +189,12 @@ Run it with `IZUMI_LIVE_SAVE_MANIFEST`, `IZUMI_LIVE_SAVE_LICENSE`, `IZUMI_LIVE_S
 
 - **macOS** keeps the webview path for both playback and saving; the module host is not built there.
 - **Android** delegates playback to an external player and is unaffected.
-- The lane measurements above are Windows only. The Linux shim keeps all per-instance state in its
-  `Host` (the buffer pool is per host and locked; module load is locked), each lane thread is
-  seccomp-filtered on its own, and the build is checked, but the multi-lane save has not been timed on
-  Linux.
+- Linux was measured once, under WSL2 on the same machine (Ubuntu 24.04, `libwidevinecdm.so`
+  4.10.3112.0 through the C++ shim, distro ffmpeg): one lane 194.9 s (audio 129.3 s, video 65.5 s),
+  default 3 + 3 lanes 51.0 s (audio 40.8 s, video 51.0 s at 668 fps, waiting 50.5 s on that slower
+  libx264). Audio was byte-identical to the Windows save; video was byte-identical between the two
+  Linux runs (a different libx264 build from Windows, so not to the Windows file). The shim keeps all
+  per-instance state in its `Host` (the buffer pool is per host and locked; module load is locked) and
+  each lane thread is seccomp-filtered on its own. A real Linux desktop and a Steam Deck are not
+  measured. rustc 1.95 hits an internal compiler error in `drm_gif_capture_loop` on Linux; 1.96.1
+  (the Windows toolchain) builds it.

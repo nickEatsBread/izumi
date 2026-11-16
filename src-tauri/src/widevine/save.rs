@@ -1595,6 +1595,17 @@ mod tests {
         Ok(())
     }
 
+    // Installs the current module into IZUMI_LIVE_SAVE_DATA for the live tests on a machine that has
+    // none (a fresh Linux box), recording consent as the player's prompt would.
+    #[test]
+    #[ignore = "live: downloads the module from Google's component service"]
+    fn live_install_module() {
+        let data = PathBuf::from(std::env::var("IZUMI_LIVE_SAVE_DATA").expect("IZUMI_LIVE_SAVE_DATA"));
+        let staged = tauri::async_runtime::block_on(fetch::stage(&reqwest::Client::new(), &data, &|_, _| {})).expect("stage");
+        let installed = fetch::accept(&data, &staged.version, "test").expect("accept");
+        eprintln!("[live] installed module {} at {}", staged.version, installed.library.display());
+    }
+
     // A real end-to-end save against a live licence server, driven by env vars so it only runs when
     // asked (it needs the module installed, a reachable source, and the network):
     //   IZUMI_LIVE_SAVE_MANIFEST  the manifest URL
