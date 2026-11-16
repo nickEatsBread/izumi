@@ -14,6 +14,14 @@ mod doh;
 #[cfg(not(target_os = "android"))]
 mod doh_socks;
 mod download;
+// Decrypting DRM downloads produce a clear local file (no CDM/licence at playback). Desktop-only:
+// Android keeps the Shaka offline path.
+#[cfg(not(target_os = "android"))]
+mod drm_download;
+// Where the decrypting downloader's Widevine device comes from: override, cached pool member,
+// fresh pool member, bundled seed. Desktop-only, like `drm_download`.
+#[cfg(not(target_os = "android"))]
+mod widevine_device;
 mod extension_package;
 mod store_trust;
 #[cfg(not(target_os = "android"))]
@@ -65,9 +73,11 @@ mod subsync;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
 mod steam_osk;
-// Protected (Widevine) playback through izumi's own player. Linux only: other desktops play
-// protected streams in their webview's EME.
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+// Protected (Widevine) handling by hosting Google's module directly. Linux also plays protected
+// streams through izumi's own player; Windows uses it only to save protected episodes as clear
+// files (its webview still streams them live). macOS keeps the webview path for both.
+// `widevine_host` is set by build.rs for x86-64 Linux and Windows.
+#[cfg(widevine_host)]
 mod widevine;
 // Optional native modules (packs ask for them by id), downloaded in the background.
 mod modules;
@@ -545,9 +555,9 @@ fn module_release(id: String, by: Option<String>) -> Result<(), String> {
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(widevine_host)]
     return widevine::widevine_status(app).and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(widevine_host))]
     {
         let _ = app;
         Ok(serde_json::json!({ "supported": false, "installed": null }))
@@ -558,9 +568,9 @@ fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn widevine_download(app: AppHandle) -> Result<serde_json::Value, String> {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(widevine_host)]
     return widevine::widevine_download(app).await.and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(widevine_host))]
     {
         let _ = app;
         Err("unsupported".into())
@@ -571,9 +581,9 @@ async fn widevine_download(app: AppHandle) -> Result<serde_json::Value, String> 
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn widevine_accept(app: AppHandle, version: String) -> Result<String, String> {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(widevine_host)]
     return widevine::widevine_accept(app, version);
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(widevine_host))]
     {
         let _ = (app, version);
         Err("unsupported".into())
@@ -584,24 +594,33 @@ fn widevine_accept(app: AppHandle, version: String) -> Result<String, String> {
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn widevine_remove(app: AppHandle) -> Result<(), String> {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(widevine_host)]
     return widevine::widevine_remove(app);
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(widevine_host))]
     {
         let _ = app;
         Err("unsupported".into())
     }
 }
 
-/// Saves a protected episode for offline use: its encrypted files, played later through the module.
+/// Saves a protected episode for offline use as a clear file. `drm` carries the source's licence URL
+/// and headers so the module can obtain the content keys and decrypt each fragment before writing.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-async fn widevine_save(app: AppHandle, id: String, manifest_url: String, dir: String, name: String, max_height: Option<u32>) -> Result<serde_json::Value, String> {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    return widevine::save_download(&app, id, manifest_url, dir, name, max_height).await;
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+async fn widevine_save(
+    app: AppHandle,
+    id: String,
+    manifest_url: String,
+    dir: String,
+    name: String,
+    max_height: Option<u32>,
+    drm: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(widevine_host)]
+    return widevine::save_download(&app, id, manifest_url, dir, name, max_height, drm).await;
+    #[cfg(not(widevine_host))]
     {
-        let _ = (app, id, manifest_url, dir, name, max_height);
+        let _ = (app, id, manifest_url, dir, name, max_height, drm);
         Err("unsupported".into())
     }
 }
@@ -610,9 +629,9 @@ async fn widevine_save(app: AppHandle, id: String, manifest_url: String, dir: St
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn widevine_save_folder(dir: String, name: String) -> String {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(widevine_host)]
     return widevine::save::folder_for(std::path::Path::new(&dir), &name).display().to_string();
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(widevine_host))]
     {
         let _ = name;
         dir
@@ -623,9 +642,9 @@ fn widevine_save_folder(dir: String, name: String) -> String {
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn widevine_save_cancel(id: String) {
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(widevine_host)]
     widevine::cancel_save(&id);
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(not(widevine_host))]
     let _ = id;
 }
 
@@ -6081,6 +6100,7 @@ pub fn run() {
     let builder = builder
         .manage(PipWindowState::default())
         .manage(DrmGifCapture::default())
+        .manage(drm_download::DrmDownloads::default())
         .manage(desktop_cast::DesktopCastState::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder
@@ -6890,6 +6910,8 @@ pub fn run() {
             download::download_disk_space,
             startup_trace::startup_marks,
             download::reveal_in_folder,
+            drm_download::drm_download_start,
+            drm_download::drm_download_cancel,
             direct_torrent::torrent_engine_warmup,
             direct_torrent::torrent_metadata_prefetch,
             direct_torrent::torrent_playback_cancel_start,
@@ -7356,3 +7378,4 @@ mod deep_link_tests {
             .is_some_and(|s| s.iter().any(|s| s == "izumi"))));
     }
 }
+
