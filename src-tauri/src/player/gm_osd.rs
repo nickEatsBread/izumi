@@ -1545,18 +1545,35 @@ fn loading_ass(state: &GmDynamicOverlay, phase: f64, w: f64, h: f64, unit: f64) 
         push(&mut lines, rect(0.0, 0.0, w, h, "000000", "00"));
     }
     if state.loading {
-        loading_overlay(phase, w, h, unit, theme_color(&state.theme_accent), &mut lines);
+        let ring = spinner_ring(state.theme_spinner_size, state.theme_spinner_stroke);
+        loading_overlay(phase, w, h, unit, ring, theme_color(&state.theme_accent), &mut lines);
     }
     lines.join("\n")
 }
 
+/// The loading ring's size and stroke in screen pixels: the theme's (theme-gm-osd.ts, the page ring's
+/// --theme-player-spinner-*), or izumi's 48 px ring with a 4 px stroke when unset or junk.
+fn spinner_ring(size: f64, stroke: f64) -> (f64, f64) {
+    let size = if size.is_finite() && size > 0.0 { size.clamp(16.0, 256.0) } else { 48.0 };
+    let stroke = if stroke.is_finite() && stroke > 0.0 { stroke.clamp(1.0, size / 2.0) } else { 4.0 };
+    (size, stroke)
+}
+
 /// `turn` is how far into its one-second turn the arc is (wall clock), and `unit` is canvas units per
-/// screen pixel. The ring is 84 screen pixels across with a 4.5 px stroke: a faint track with a quarter
-/// arc in the accent colour on it, the page's ring exactly (Spinner.svelte `player`).
-fn loading_overlay(turn: f64, w: f64, h: f64, unit: f64, color: &str, lines: &mut Vec<String>) {
+/// screen pixel. `ring` is the ring's size and stroke in screen pixels (spinner_ring): a faint track
+/// with a quarter arc in the accent colour on it, the page's ring exactly (Spinner.svelte `player`).
+fn loading_overlay(
+    turn: f64,
+    w: f64,
+    h: f64,
+    unit: f64,
+    (size, stroke): (f64, f64),
+    color: &str,
+    lines: &mut Vec<String>,
+) {
     let (cx, cy) = (w / 2.0, h / 2.0);
-    let outer = 42.0 * unit;
-    let inner = (42.0 - 4.5) * unit;
+    let outer = size / 2.0 * unit;
+    let inner = (size / 2.0 - stroke) * unit;
     push(lines, circle_ring(cx, cy, inner, outer, "FFFFFF", &alpha_hex(0.15)));
     let centre = turn.rem_euclid(1.0) * PI * 2.0 - PI / 2.0;
     push(
@@ -2022,10 +2039,23 @@ mod tests {
     #[test]
     fn the_loading_ring_is_a_track_with_a_quarter_arc() {
         let mut lines = Vec::new();
-        loading_overlay(0.25, 1280.0, 800.0, 1.0, "2175F4", &mut lines);
+        loading_overlay(0.25, 1280.0, 800.0, 1.0, (48.0, 4.0), "2175F4", &mut lines);
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("\\1c&HFFFFFF&") && lines[0].contains(&format!("\\1a&H{}&", alpha_hex(0.15))));
         assert!(lines[1].contains("\\1c&H2175F4&\\1a&H00&"));
+    }
+
+    #[test]
+    fn the_loading_ring_is_48_px_unless_the_theme_sizes_it() {
+        assert_eq!(spinner_ring(0.0, 0.0), (48.0, 4.0));
+        assert_eq!(spinner_ring(f64::NAN, -1.0), (48.0, 4.0));
+        assert_eq!(spinner_ring(84.0, 4.5), (84.0, 4.5));
+        assert_eq!(spinner_ring(9999.0, 9999.0), (256.0, 128.0));
+        // The track's outer edge is half the size from the centre, its inner edge one stroke inside that.
+        let mut lines = Vec::new();
+        loading_overlay(0.0, 1280.0, 800.0, 1.0, (84.0, 4.5), "FFFFFF", &mut lines);
+        assert!(lines[0].contains(&format!("m {} {}", dr(640.0), dr(400.0 - 42.0))));
+        assert!(lines[0].contains(&format!("m {} {}", dr(640.0), dr(400.0 - 37.5))));
     }
 
     #[test]

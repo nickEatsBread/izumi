@@ -274,6 +274,11 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) theme_accent: String,
     #[serde(default)]
     pub(crate) theme_focus: String,
+    // The theme's loading ring in screen px (theme-gm-osd.ts); 0 keeps the OSD's 48 px ring and 4 px stroke.
+    #[serde(default)]
+    pub(crate) theme_spinner_size: f64,
+    #[serde(default)]
+    pub(crate) theme_spinner_stroke: f64,
     /// The age rating card at the top right as an episode opens (theme `player.rating: "intro"`): the
     /// rating ("14"), its content descriptors on one line, and when it was first shown (Unix ms; 0 =
     /// none). The OSD fades it in, holds it and fades it out from that time.

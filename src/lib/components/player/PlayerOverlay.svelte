@@ -1331,12 +1331,12 @@
   let gmScrubWasActive = false
   // The native OSD draws in the theme's colours. Read once the player opens, then whenever theme.ts
   // rewrites <html>'s palette or theme mark, so a theme switch reaches an open player too.
-  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '' })
+  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '', themeSpinnerSize: 0, themeSpinnerStroke: 0 })
   $effect(() => {
     if (!gmBitmapMode) return
     const read = () => {
       const next = readGmOsdTheme()
-      if (next.themeAccent !== gmTheme.themeAccent || next.themeFocus !== gmTheme.themeFocus) gmTheme = next
+      if ((Object.keys(next) as (keyof GmOsdTheme)[]).some((key) => next[key] !== gmTheme[key])) gmTheme = next
     }
     untrack(read)
     const observer = new MutationObserver(read)
