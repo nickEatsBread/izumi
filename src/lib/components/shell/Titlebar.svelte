@@ -99,8 +99,10 @@
     {#if $playerStage.right > 0}<div data-tauri-drag-region class="pointer-events-auto absolute inset-y-0 right-0" style:width="{$playerStage.right * 100}%"></div>{/if}
   {/if}
   <!-- macOS keeps its real native traffic lights at the leading edge. Reserve their hit area and
-       place the GIF indicator after them; Windows/Linux retain the sidebar-width indicator slot. -->
-  <div data-tauri-drag-region class="pointer-events-auto relative flex h-8 shrink-0 items-center overflow-hidden [contain:paint] {$isMacOS ? 'w-28 justify-end pr-2' : 'w-14 justify-center'}">
+       place the GIF indicator after them; Windows/Linux retain the sidebar-width indicator slot.
+       The slot follows the bar's pointer events rather than opting back in: over the player it would
+       sit on top of Back (16px from the window's edge) and turn a click on it into a window drag. -->
+  <div data-tauri-drag-region class="relative flex h-8 shrink-0 items-center overflow-hidden [contain:paint] {$isMacOS ? 'w-28 justify-end pr-2' : 'w-14 justify-center'}">
     {#if $gifRecordingStart != null}
       <button
         class="pointer-events-auto flex h-5 max-w-[48px] items-center gap-0.5 rounded-full bg-red-600 px-1.5 text-[9px] font-semibold leading-none text-white outline-none hover:bg-red-500 focus:outline-none focus-visible:outline-none"
