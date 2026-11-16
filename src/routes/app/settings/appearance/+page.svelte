@@ -15,7 +15,9 @@
   import { settingsControllerMode } from '$lib/settings/surface'
   import { m } from '$lib/paraglide/messages.js'
   import { catalogLabel, catalogScreen, customScreens } from '$lib/settings/catalog'
-  import { screenThemeName, setScreenTheme } from '$lib/themes/screen-theme'
+  import { playerTheme, screenThemeName, screenThemeOptions, setScreenTheme, type ScreenThemeRef } from '$lib/themes/screen-theme'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import { studioThemes } from '$lib/settings/theme-studio'
   import { playStartupAnimationNow, startupAnimationEnabled, startupAnimationInfo } from '$lib/startup/animation'
 
   const presets = [
@@ -40,6 +42,10 @@
 {#snippet trailersSwitch()}<SettingsSwitch value={$backdropTrailers} onToggle={() => ($backdropTrailers = !$backdropTrailers)} label="Theme trailers" interactive={false} />{/snippet}
 {#snippet startupSwitch()}<SettingsSwitch value={$startupAnimationEnabled} onToggle={() => ($startupAnimationEnabled = !$startupAnimationEnabled)} label="Startup intro" interactive={false} />{/snippet}
 {#snippet dragSwitch()}<SettingsSwitch value={$dragCarousels} onToggle={() => ($dragCarousels = !$dragCarousels)} label="Mouse-drag carousels" interactive={false} />{/snippet}
+{#snippet playerThemeMenu()}
+  <SelectMenu variant="inline" value={$playerTheme} options={screenThemeOptions($studioThemes)} ariaLabel="Player theme"
+    onChange={(value) => ($playerTheme = value as ScreenThemeRef | '')} />
+{/snippet}
 {#snippet scaleControl()}
   <span class="flex w-full items-center gap-3 sm:w-auto">
     <input type="range" min="0.5" max="2" step="0.1" data-focusable bind:value={$uiScale} aria-label={m.settings_ui_scale()} class="ui-range h-6 w-full cursor-pointer sm:h-2 sm:w-40" />
@@ -58,6 +64,8 @@
         {/snippet}
       </SettingsRow>
     {/if}
+    <!-- While an episode opens or plays this theme paints the window; navigation and layout keep the app theme. -->
+    <SettingsRow settingKey="player-theme" title="Player theme" description="The look of the player and an episode's loading screen" control={playerThemeMenu} />
     <SettingsRow title="Themes" description="Install, update and manage themes" href="/app/settings/themes" chevron />
     <SetupElsewhere title="Theme Studio" status={$themePreset === 'custom' ? 'In use' : 'Not used'} where="Needs a mouse and keyboard: connect them to design here">
       <SettingsRow title="Theme Studio" description="Design your own colours, type and backdrop" href="/app/settings/theme-studio" chevron />

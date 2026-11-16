@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parsePresentation, resolvePlayerControls, resolvePresentation } from './presentation'
+import { parsePresentation, resolvePlayerControls, resolvePresentation, withPlayerTheme } from './presentation'
 
 describe('player controls (API 6)', () => {
   it('parses the four keys', () => {
@@ -48,5 +48,21 @@ describe('API 7 player keys', () => {
     expect(() => parsePresentation({ player: { buttons: ['fit'] } }, 6)).toThrow()
     expect(() => parsePresentation({ player: { endTime: true } }, 6)).toThrow('unsupported')
     expect(parsePresentation({ player: { buttons: ['restart'] } }, 6).player).toEqual({ buttons: ['restart'] })
+  })
+})
+
+describe('player theme (API 8 client setting)', () => {
+  const app = parsePresentation({ shell: { nav: 'top' }, density: 'compact', player: { time: 'split', layout: 'docked' } })
+  it('takes the player keys from the player theme and everything else from the app theme', () => {
+    const merged = withPlayerTheme(app, parsePresentation({ shell: { nav: 'drawer' }, player: { time: 'remaining' } }))
+    expect(merged?.shell?.nav).toBe('top')
+    expect(merged?.density).toBe('compact')
+    expect(merged?.player).toEqual({ time: 'remaining' })
+  })
+  it("gives izumi's own player when the player theme has none (a palette)", () => {
+    expect(withPlayerTheme(app, undefined)?.player).toBeUndefined()
+    expect(withPlayerTheme(app, undefined)?.shell?.nav).toBe('top')
+    expect(withPlayerTheme(undefined, undefined)).toBeUndefined()
+    expect(withPlayerTheme(undefined, parsePresentation({ player: { endTime: true } }))).toEqual({ player: { endTime: true } })
   })
 })
