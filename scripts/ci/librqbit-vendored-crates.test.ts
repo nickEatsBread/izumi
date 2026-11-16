@@ -30,7 +30,8 @@ describe('vendored librqbit crates', () => {
   })
 
   it('has a directory for each vendored crate and none left over', () => {
-    const dirs = readdirSync('src-tauri/vendor').filter((name) => existsSync(`src-tauri/vendor/${name}/Cargo.toml`))
+    // Only librqbit crates: src-tauri/vendor holds other vendored crates too (widevine).
+    const dirs = readdirSync('src-tauri/vendor').filter((name) => name.startsWith('librqbit') && existsSync(`src-tauri/vendor/${name}/Cargo.toml`))
     expect(dirs.sort()).toEqual([...vendored].sort())
   })
 

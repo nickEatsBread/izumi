@@ -5,7 +5,7 @@
     "rqbit": {
       "url": "https://github.com/ikatson/rqbit.git",
       "branch": "main",
-      "rev": "57e95d16c830863a1fde32d8fa98153b53a3d0b4"
+      "rev": "f23bacdddcc5318caa813418b8eb1b1d7307faaa"
     },
     "librqbit-utp": {
       "url": "https://github.com/ikatson/librqbit-utp.git",
@@ -25,9 +25,7 @@
   },
   "vendored": [
     "librqbit",
-    "librqbit-bencode",
-    "librqbit-dht",
-    "librqbit-peer-protocol",
+    "librqbit-lsd",
     "librqbit-utp"
   ],
   "cargo": "1.96.1"
