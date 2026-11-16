@@ -35,7 +35,7 @@
     ontoggle?: () => void
     onsettings?: () => void
     settingsLabel?: string
-    /** For entries managed on another page (themes). */
+    /** For entries managed on another page (themes, packs). */
     onmanage?: () => void
   } = $props()
 
@@ -47,7 +47,7 @@
         ? install.spec
         : install.type === 'package'
           ? (install.pkg.packageFormat === 'aniyomi-repo' ? install.pkg.apk : install.pkg.package)
-          : install.release.download
+          : install.type === 'pack' || install.type === 'plugin' ? install.url : install.release.download
     try {
       return new URL(url).hostname
     } catch {
@@ -57,6 +57,8 @@
   const live = $derived(entry.install.type === 'addon' || entry.install.type === 'extension')
   const installLabel = $derived(entry.install.type === 'theme'
     ? 'Preview & install'
+    : entry.install.type === 'pack' ? 'Review & set up'
+    : entry.install.type === 'plugin' ? 'Review & install'
     : entry.install.type === 'addon' && entry.install.configureUrl ? 'Configure & install' : 'Install')
 </script>
 
@@ -104,7 +106,7 @@
                   class="rounded-md px-3 py-2 text-sm font-black {enabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-secondary'}">{enabled ? 'Enabled' : 'Enable'}</button>
         {/if}
         {#if onsettings}<button type="button" data-focusable onclick={onsettings} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">{settingsLabel}</button>{/if}
-        {#if onmanage}<button type="button" data-focusable onclick={onmanage} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Manage in Themes</button>{/if}
+        {#if onmanage}<button type="button" data-focusable onclick={onmanage} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Manage in {entry.kind === 'pack' ? 'Sources' : entry.kind === 'plugin' ? 'Plugins' : 'Themes'}</button>{/if}
         {#if onremove}<button type="button" data-focusable disabled={busy} onclick={onremove} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10">Remove</button>{/if}
       {:else if elsewhere}
         <p class="self-center text-sm text-muted-foreground">Already installed from another store or source.</p>

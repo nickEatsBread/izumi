@@ -1,27 +1,33 @@
-import { readFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { grantText, parseManifest } from './manifest'
 import { checkPluginUrl, isLocalHost } from './network'
 import { classifyStorageKey } from '$lib/storage/key-policy'
 
-// Loaded by URL so the type checker leaves the plugin's plain JavaScript alone.
-const pluginPath = '../../../plugins/jump-to-moment/main.js'
-const { parseMatches, pickLines } = (await import(/* @vite-ignore */ pluginPath)) as {
-  parseMatches: (content: string) => { line: number; reason?: string }[]
-  pickLines: (cues: { start: number; end: number; text: string }[], query: string) => number[]
-}
-
-const exampleDir = new URL('../../../plugins/jump-to-moment/', import.meta.url)
-const example = () => JSON.parse(readFileSync(new URL('plugin.json', exampleDir), 'utf8'))
+// A plugin shaped like Jump to a moment (now published in the plugin marketplace): a panel, the
+// subtitles, seeking, and a network grant taken from a url setting.
+const example = () => ({
+  app: 'izumi', kind: 'plugin', schemaVersion: 1, pluginApi: 1,
+  id: 'watch.izumi.jump-to-moment', name: 'Jump to a moment', version: '1.0.0', author: 'Izumi',
+  description: 'Describe a scene and the player jumps to it.',
+  main: { path: 'main.js', sha256: 'a'.repeat(64) },
+  permissions: {
+    scopes: ['network', 'player.events', 'player.subtitles', 'player.control', 'player.panel'],
+    network: { domains: [], fromSetting: 'endpoint', reason: 'Sends your question to the model address you enter.' },
+  },
+  settings: [
+    { id: 'endpoint', type: 'url', label: 'Model address', placeholder: 'http://localhost:11434/v1' },
+    { id: 'apiKey', type: 'secret', label: 'API key' },
+    { id: 'watchedOnly', type: 'toggle', label: "Only search what I've watched", default: false },
+  ],
+  panel: { label: 'Jump to a moment', placeholder: 'Describe a moment…' },
+})
 
 describe('plugin manifest', () => {
-  it('accepts the example plugin and pins its code', () => {
+  it('accepts a plugin with a panel and a network grant from a setting', () => {
     const manifest = parseManifest(example())
     expect(manifest.permissions.network).toMatchObject({ domains: [], fromSetting: 'endpoint' })
     expect(manifest.panel?.label).toBe('Jump to a moment')
-    const code = readFileSync(new URL(manifest.main.path, exampleDir), 'utf8')
-    expect(createHash('sha256').update(code, 'utf8').digest('hex')).toBe(manifest.main.sha256)
+    expect(manifest.settings.map((setting) => setting.id)).toEqual(['endpoint', 'apiKey', 'watchedOnly'])
   })
 
   it('refuses what izumi would not run', () => {
@@ -70,20 +76,5 @@ describe('plugin network guard', () => {
     expect(classifyStorageKey('plugin-secret-watch.izumi.jump-to-moment')).toBe('secret')
     expect(classifyStorageKey('installed-plugins-v1')).toBe('device')
     expect(classifyStorageKey('plugins-enabled-v1')).toBe('device')
-  })
-})
-
-describe('jump to a moment', () => {
-  const cues = Array.from({ length: 60 }, (_, i) => ({ start: i * 10, end: i * 10 + 5, text: i === 30 ? 'This soup tastes incredible!' : `line ${i}` }))
-
-  it('sends the windows around keyword hits, or everything when nothing matches', () => {
-    expect(pickLines(cues, 'where he tastes the soup')).toEqual(Array.from({ length: 11 }, (_, i) => 25 + i))
-    expect(pickLines(cues, 'the quiet bit')).toHaveLength(60)
-  })
-
-  it('reads line numbers out of a reply and drops anything else', () => {
-    expect(parseMatches('```json\n{"matches":[{"line":31,"reason":"he tastes it"},{"line":"x"}]}\n```')).toEqual([{ line: 31, reason: 'he tastes it' }])
-    expect(parseMatches('no idea')).toEqual([])
-    expect(parseMatches('{"matches": []}')).toEqual([])
   })
 })
