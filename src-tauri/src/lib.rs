@@ -65,6 +65,18 @@ mod subsync;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
 mod steam_osk;
+// Protected (Widevine) playback through izumi's own player. Linux only: other desktops play
+// protected streams in their webview's EME.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod widevine;
+// Optional native modules (packs ask for them by id), downloaded in the background.
+mod modules;
+// The short video a pack can set to play while izumi starts.
+mod startup_animation;
+// A pack the Deck installer was asked to set up, offered once at the next launch.
+mod pending_pack;
+// How long each launch step took, for measuring startup on a device.
+mod startup_trace;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -170,6 +182,14 @@ pub(crate) struct GmControlItem {
     pub(crate) label: String,
     pub(crate) focused: bool,
     pub(crate) primary: bool,
+    /// A button named in words ("Audio") is drawn as that text, in the HTML button's font size and
+    /// weight, instead of an icon.
+    #[serde(default)]
+    pub(crate) text: String,
+    #[serde(default)]
+    pub(crate) text_size: f64,
+    #[serde(default)]
+    pub(crate) text_weight: u16,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]
@@ -237,6 +257,20 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) timeline_segments: Vec<GmTimelineSegment>,
     #[serde(default)]
     pub(crate) chapter_marks: Vec<f64>,
+    // The active theme's colours as ASS BGR hex (theme-gm-osd.ts); empty keeps the OSD's white.
+    #[serde(default)]
+    pub(crate) theme_accent: String,
+    #[serde(default)]
+    pub(crate) theme_focus: String,
+    /// The age rating card at the top right as an episode opens (theme `player.rating: "intro"`): the
+    /// rating ("14"), its content descriptors on one line, and when it was first shown (Unix ms; 0 =
+    /// none). The OSD fades it in, holds it and fades it out from that time.
+    #[serde(default)]
+    pub(crate) rating_label: String,
+    #[serde(default)]
+    pub(crate) rating_detail: String,
+    #[serde(default)]
+    pub(crate) rating_shown_at: f64,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]
@@ -318,8 +352,9 @@ async fn player_embed(
     headers: Option<std::collections::HashMap<String, String>>,
     subtitles: Option<Vec<player::Subtitle>>,
     audio_tracks: Option<Vec<player::AudioTrack>>,
+    drm: Option<serde_json::Value>,
     player: tauri::State<'_, player::PlayerHandle>,
-) -> Result<(), String> {
+) -> Result<Option<serde_json::Value>, String> {
     let autoplay = autoplay.unwrap_or(true);
     if let Some(bytes) = cache_bytes {
         player::PLAYER_CACHE_BYTES.store(
@@ -327,6 +362,43 @@ async fn player_embed(
             std::sync::atomic::Ordering::Relaxed,
         );
     }
+    // A protected stream: license it and play its decrypted-in-memory `izcr://` streams instead.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    let (url, audio_tracks, protected, start_seconds) = match drm {
+        Some(drm) => {
+            let request: widevine::Request =
+                serde_json::from_value(drm).map_err(|e| format!("bad protected-stream request: {e}"))?;
+            let prepared = widevine::prepare(&app, &url, &request, start_seconds)
+                .await
+                .map_err(|e| format!("{e:#}"))?;
+            player::set_file_options(&prepared.video_url, prepared.file_options.clone());
+            let lang = prepared.audio_lang.clone();
+            let audio = vec![player::AudioTrack {
+                url: prepared.audio_url.clone(),
+                title: lang.clone(),
+                lang,
+                select: true,
+            }];
+            let info = serde_json::to_value(&prepared).map_err(|e| e.to_string())?;
+            (prepared.video_url, Some(audio), Some(info), prepared.start)
+        }
+        None => {
+            widevine::end_all();
+            (url, audio_tracks, None, start_seconds)
+        }
+    };
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let protected: Option<serde_json::Value> = match drm {
+        Some(_) => return Err("protected streams play in the webview on this platform".into()),
+        None => None,
+    };
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    let url = if protected.is_some() {
+        url
+    } else {
+        hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?
+    };
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let url = hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?;
     let mut subtitles = subtitles;
     if let Some(tracks) = subtitles.as_mut() {
@@ -441,7 +513,120 @@ async fn player_embed(
     }
     // Never report success without a live core. The old macOS path returned Ok in ~1ms
     // and the overlay spun forever while every `player_command` failed with "no player".
-    player::require_live_core(player.has_core())
+    player::require_live_core(player.has_core())?;
+    Ok(protected)
+}
+
+/// Every module izumi knows, with whether it is wanted, installed or downloading on this device.
+#[tauri::command]
+fn module_status() -> Result<Vec<modules::Status>, String> {
+    modules::module_status()
+}
+
+/// Asks for a module on behalf of `by` (`pack:<id>` or `user`) after its licence was shown.
+#[tauri::command]
+fn module_request(id: String, by: String) -> Result<modules::Status, String> {
+    modules::module_request(id, by)
+}
+
+/// Tries a failed module download again now.
+#[tauri::command]
+fn module_retry() -> Result<(), String> {
+    modules::module_retry()
+}
+
+/// Withdraws a request; the module is deleted once nobody wants it (`by` = null: delete now).
+#[tauri::command]
+fn module_release(id: String, by: Option<String>) -> Result<(), String> {
+    modules::module_release(id, by)
+}
+
+/// Whether izumi's own player can play protected streams here, and which module version is ready.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_status(app).and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = app;
+        Ok(serde_json::json!({ "supported": false, "installed": null }))
+    }
+}
+
+/// Downloads Google's Widevine module into staging and returns its licence text.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn widevine_download(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_download(app).await.and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = app;
+        Err("unsupported".into())
+    }
+}
+
+/// Installs the staged module after the user accepted its licence.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_accept(app: AppHandle, version: String) -> Result<String, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_accept(app, version);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = (app, version);
+        Err("unsupported".into())
+    }
+}
+
+/// Deletes the downloaded module and the recorded licence acceptance.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_remove(app: AppHandle) -> Result<(), String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_remove(app);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = app;
+        Err("unsupported".into())
+    }
+}
+
+/// Saves a protected episode for offline use: its encrypted files, played later through the module.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn widevine_save(app: AppHandle, id: String, manifest_url: String, dir: String, name: String, max_height: Option<u32>) -> Result<serde_json::Value, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::save_download(&app, id, manifest_url, dir, name, max_height).await;
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = (app, id, manifest_url, dir, name, max_height);
+        Err("unsupported".into())
+    }
+}
+
+/// The folder a protected download named `name` is saved in, so a cancel can discard it.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_save_folder(dir: String, name: String) -> String {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::save::folder_for(std::path::Path::new(&dir), &name).display().to_string();
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = name;
+        dir
+    }
+}
+
+/// Pauses a running `widevine_save`.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_save_cancel(id: String) {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    widevine::cancel_save(&id);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = id;
 }
 
 /// Serializes Linux X11 embeds against a close that is still releasing mpv's output, so an embed
@@ -768,6 +953,13 @@ fn player_sprite_start(
     width: Option<i32>,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<bool, String> {
+    // Seek-bar tiles are decoded by a second core and cached as JPEG files; protected media never
+    // goes there (that core cannot open `izcr://` either). Protected streams use the source's own
+    // preview images.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if widevine::is_protected_url(&url) {
+        return Ok(false);
+    }
     let cache_root = app
         .path()
         .app_cache_dir()
@@ -878,6 +1070,38 @@ fn native_touch_hold(held: bool) {
 fn gm_touch_unstick() {
     #[cfg(target_os = "linux")]
     player::linux_x11::unstick_pointer();
+}
+
+/// One-time move of a WebKitGTK install's data into the CEF build (Linux). This WebKitGTK release
+/// keeps the profile export (`src/lib/engine-migration.ts`) current in this file in app data; the
+/// first CEF launch restores it into its empty profile and then deletes it.
+#[cfg(target_os = "linux")]
+const ENGINE_MIGRATION_FILE: &str = "engine-migration.json";
+
+/// Replaces the migration file atomically (temp file, fsync, rename), so a crash or power loss
+/// mid-write leaves the previous export intact. Async so the write stays off the main thread.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn engine_migration_write(app: AppHandle, json: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        // Startup, timer and close writes can overlap, and they share one temp file.
+        static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one_at_a_time = WRITE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(ENGINE_MIGRATION_FILE);
+        let temp = dir.join(format!("{ENGINE_MIGRATION_FILE}.tmp"));
+        let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
+        file.write_all(json.as_bytes()).and_then(|()| file.sync_all()).map_err(|e| e.to_string())?;
+        std::fs::rename(&temp, &path).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, json);
+        Ok(())
+    }
 }
 
 /// Game-mode input diagnostics from the webview, persisted through the same file+stderr channel
@@ -4369,6 +4593,11 @@ async fn player_capture_segment(
     if source.is_empty() {
         return Err("no-player-source".into());
     }
+    // Protected media is decrypted in memory only; it is never re-encoded into a file.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if widevine::is_protected_url(&source) {
+        return Err("protected-capture-unavailable".into());
+    }
     let headers = player
         .get_property("http-header-fields")
         .unwrap_or_default();
@@ -5758,6 +5987,7 @@ fn route_player_commands<R: tauri::Runtime>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
+    startup_trace::mark("run");
     #[cfg(target_os = "linux")]
     configure_gamescope_native_wayland_prototype();
     // Linux: the embedded player composites mpv (a wl_subsurface) BELOW the webview,
@@ -5867,10 +6097,12 @@ pub fn run() {
             .build(),
     );
     let builder = builder.setup(|app| {
+            startup_trace::mark("setup");
             // Reclaim what the last session left behind, before anything writes more. Detached: a
             // stat walk over an abandoned torrent payload must not sit between launch and paint.
             cache_gc::sweep_at_startup(app.handle());
             subtitle_fonts::init(app.handle());
+            modules::start(app.handle());
             // Game mode: WebKitGTK takes text hinting from GTK's settings. GNOME's slight hinting
             // rounds every glyph advance, so under the Deck's page zoom each line of text ran about
             // 2% longer than in Chromium, which lays text out unhinted on linear metrics at a
@@ -5901,16 +6133,22 @@ pub fn run() {
             // single time. The scheme comes from the config so a side-by-side build claims its own
             // and never evicts the installed release's registration.
             // `magnet:` is deliberately not touched here — see PENDING_MAGNET.
+            // Never inside a Flatpak: the sandbox ships neither tool and its data dir is private,
+            // so it failed on every launch; only the exported desktop file can claim a scheme.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
+            if !running_in_flatpak() {
                 let scheme = configured_deep_link_scheme(app.config());
-                let deep_link = app.deep_link();
-                if !deep_link.is_registered(&scheme).unwrap_or(false) {
-                    if let Err(error) = deep_link.register(&scheme) {
-                        eprintln!("[izumi] {scheme}:// handler registration skipped: {error}");
+                let handle = app.handle().clone();
+                // Off the main thread: the check alone spawns xdg-mime, which delayed the window.
+                std::thread::spawn(move || {
+                    use tauri_plugin_deep_link::DeepLinkExt;
+                    let deep_link = handle.deep_link();
+                    if !deep_link.is_registered(&scheme).unwrap_or(false) {
+                        if let Err(error) = deep_link.register(&scheme) {
+                            eprintln!("[izumi] {scheme}:// handler registration skipped: {error}");
+                        }
                     }
-                }
+                });
             }
             // Restore iroh only for devices that already opted into a sync group. Fresh
             // installs remain fully offline until the user enables Device Sync explicitly.
@@ -5918,6 +6156,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 sync::initialize_if_configured(sync_app).await
             });
+            startup_trace::mark("setup.services");
 
             // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
             // on_new_window handler. Tauri denies `window.open` by default, which silently blocks the
@@ -5988,16 +6227,25 @@ pub fn run() {
                     .visible(false)
                     // Native Deck zoom is applied by the frontend after it reads the persisted UI
                     // scale. Hide the first document paint until then to prevent a launch zoom-in.
-                    .initialization_script(if gamescope {
-                        "(function(){function hide(){if(!document.documentElement)return false;document.documentElement.classList.add('deck-launch-pending');return true}if(!hide())document.addEventListener('DOMContentLoaded',hide,{once:true})})();"
-                    } else {
-                        ""
-                    })
+                    // A pack's startup animation starts from app.html, before the app's code loads.
+                    .initialization_script(format!(
+                        "{}{}",
+                        startup_animation::launch_script(app.handle()),
+                        if gamescope {
+                            "(function(){function hide(){if(!document.documentElement)return false;document.documentElement.classList.add('deck-launch-pending');return true}if(!hide())document.addEventListener('DOMContentLoaded',hide,{once:true})})();"
+                        } else {
+                            ""
+                        }
+                    ))
                     .on_page_load(|win, payload| {
                         #[cfg(windows)]
                         install_webview_frame_scripts(&win);
                         if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                            startup_trace::mark("page.finished");
                             let _ = win.show();
+                            startup_trace::mark("window.shown");
+                        } else {
+                            startup_trace::mark("page.started");
                         }
                     })
                     .on_new_window(move |url, features| {
@@ -6258,6 +6506,7 @@ pub fn run() {
                     &app.config().identifier,
                 )
                 .build()?;
+                startup_trace::mark("window.built");
 
                 // The window above is built hidden and `on_page_load` is the ONLY thing that ever
                 // reveals it. When that first load never reaches Finished — a webview that fails to
@@ -6397,6 +6646,18 @@ pub fn run() {
                         }
                     }
                 });
+                // The page writes the CEF migration file before it lets the window close
+                // (engine-migration.ts, capped at 2 s). If the page is hung, close anyway.
+                let close_win = win.clone();
+                win.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                        let close_win = close_win.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(4));
+                            let _ = close_win.destroy();
+                        });
+                    }
+                });
                 let native_touch_app = app.handle().clone();
                 let _ = win.with_webview(move |pw| {
                     use glib::object::ObjectType;
@@ -6481,6 +6742,7 @@ pub fn run() {
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;
+            startup_trace::mark("setup.done");
             Ok(())
         });
 
@@ -6525,6 +6787,7 @@ pub fn run() {
             native_touch_hold,
             gm_touch_unstick,
             gm_log,
+            engine_migration_write,
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
@@ -6591,6 +6854,22 @@ pub fn run() {
             player_gif_stop,
             player_gif_abort,
             player_capture_segment,
+            widevine_status,
+            widevine_download,
+            widevine_accept,
+            widevine_save,
+            widevine_save_folder,
+            widevine_save_cancel,
+            widevine_remove,
+            module_status,
+            module_request,
+            module_retry,
+            module_release,
+            startup_animation::startup_animation_set,
+            startup_animation::startup_animation_clear,
+            startup_animation::startup_animation_info,
+            startup_animation::startup_animation_url,
+            pending_pack::pack_take_pending,
             player_diag,
             mpv_version,
             player_command,
@@ -6608,6 +6887,8 @@ pub fn run() {
             download::download_cancel,
             download::download_delete,
             download::download_dir_default,
+            download::download_disk_space,
+            startup_trace::startup_marks,
             download::reveal_in_folder,
             direct_torrent::torrent_engine_warmup,
             direct_torrent::torrent_metadata_prefetch,
@@ -6666,6 +6947,15 @@ pub fn run() {
         // Always answers None on Android (no argv), but keeping it registered means the shared
         // deep-link bootstrap doesn't have to branch per platform.
         take_pending_magnet,
+        module_status,
+        module_request,
+        module_retry,
+        module_release,
+        startup_animation::startup_animation_set,
+        startup_animation::startup_animation_clear,
+        startup_animation::startup_animation_info,
+        startup_animation::startup_animation_url,
+        pending_pack::pack_take_pending,
         // Android has no scrub tiles (playback is delegated), but it does accumulate the torrent,
         // subtitle and update buckets, and the Storage screen is shared.
         cache_usage,
@@ -6697,6 +6987,8 @@ pub fn run() {
         download::download_cancel,
         download::download_delete,
         download::download_dir_default,
+        download::download_disk_space,
+        startup_trace::startup_marks,
         download::reveal_in_folder,
         direct_torrent::torrent_engine_warmup,
         direct_torrent::torrent_metadata_prefetch,
@@ -6751,9 +7043,16 @@ pub fn run() {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let builder = builder.plugin(tauri_plugin_haptics::init());
 
+    startup_trace::mark("builder");
     builder
-        .run(isolate_dev_context(tauri::generate_context!()))
-        .expect("error while running tauri application");
+        .build(isolate_dev_context(tauri::generate_context!()))
+        .expect("error while running tauri application")
+        .run(|_app, _event| {
+            #[cfg(not(target_os = "android"))]
+            if let tauri::RunEvent::Exit = _event {
+                extension_service::stop_all_on_exit(_app);
+            }
+        });
 }
 
 #[cfg(not(target_os = "android"))]

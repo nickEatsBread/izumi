@@ -17,6 +17,7 @@ import Users from '@lucide/svelte/icons/users'
 import Activity from '@lucide/svelte/icons/activity'
 import Film from '@lucide/svelte/icons/film'
 import LibraryBig from '@lucide/svelte/icons/library-big'
+import LayoutGrid from '@lucide/svelte/icons/layout-grid'
 
 // Lucide icons are Svelte 5 function components. Taken off an icon we already import rather than
 // from `@lucide/svelte`'s `LucideIcon`, because that root export is a barrel over every icon and
@@ -24,7 +25,7 @@ import LibraryBig from '@lucide/svelte/icons/library-big'
 type LucideIcon = typeof Home
 
 export type NavPlacement = 'bottom' | 'top' | 'hidden'
-export type NavItemId = 'schedule' | 'downloads' | 'watch' | 'settings' | 'search' | 'trakt' | 'letterboxd' | 'library'
+export type NavItemId = 'schedule' | 'downloads' | 'watch' | 'settings' | 'search' | 'trakt' | 'letterboxd' | 'library' | 'browse'
 
 export interface NavMeta { label: string; href: string; icon: LucideIcon }
 
@@ -38,6 +39,7 @@ export const NAV_META: Record<NavItemId, NavMeta> = {
   trakt: { label: 'Trakt', href: '/app/trakt', icon: Activity },
   letterboxd: { label: 'Letterboxd', href: '/app/letterboxd', icon: Film },
   library: { label: 'Library', href: '/app/library', icon: LibraryBig },
+  browse: { label: 'Browse', href: '/app/browse', icon: LayoutGrid },
 }
 
 /** Home — the fixed anchor. Always the first bottom tab; not part of the movable set. */
@@ -54,6 +56,7 @@ export const DEFAULT_NAV: NavItemConfig[] = [
   { id: 'search', placement: 'top' },
   { id: 'watch', placement: 'top' },
   { id: 'library', placement: 'top' },
+  { id: 'browse', placement: 'top' },
   { id: 'trakt', placement: 'hidden' },
   { id: 'letterboxd', placement: 'hidden' },
 ]

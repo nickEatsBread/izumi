@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import Check from '@lucide/svelte/icons/check'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Store from '@lucide/svelte/icons/store'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { m } from '$lib/paraglide/messages.js'
@@ -108,7 +108,7 @@
     <form class="mt-3 flex gap-2" onsubmit={(event) => { event.preventDefault(); void add() }}>
       <input bind:value={input} data-focusable aria-label={m.onboarding_sources_add_title()} placeholder={m.onboarding_sources_url_placeholder()} autocomplete="off" autocapitalize="none" spellcheck="false" class="setup-field !min-h-10 flex-1 py-2 text-sm" />
       <button type="submit" data-focusable disabled={adding || !input.trim()} class="setup-inline-button !min-h-10 shrink-0 bg-foreground px-4 py-2 text-sm text-background">
-        {#if adding}<LoaderCircle size={15} class="tile-spinner" />{m.onboarding_sources_adding()}{:else}{m.onboarding_sources_add()}{/if}
+        {#if adding}<Spinner inline />{m.onboarding_sources_adding()}{:else}{m.onboarding_sources_add()}{/if}
       </button>
     </form>
     {#if addError}<p bind:this={errorAlert} role="alert" tabindex="-1" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
@@ -119,7 +119,7 @@
     <p class="mt-5 flex items-center gap-2 text-sm" role="status" aria-live="polite">
       {#if !sourceCount}<span class="text-muted-foreground">{m.onboarding_sources_none()}</span>
       {:else}
-        {#if health === 'checking'}<LoaderCircle size={16} class="tile-spinner shrink-0" />
+        {#if health === 'checking'}<Spinner inline />
         {:else if health === 'error'}<TriangleAlert size={16} class="shrink-0 text-destructive" />
         {:else}<Check size={16} class="shrink-0" />{/if}
         <span><span class="font-semibold">{m.onboarding_count_sources({ count: String(sourceCount) })}</span>

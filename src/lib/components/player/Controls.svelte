@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
   import { playerCommand, playerGetProperty, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
+  import { nativeDrmSupported, usesNativeDrm } from '$lib/player/native-drm'
   import { listen } from '@tauri-apps/api/event'
   import { onMount, tick } from 'svelte'
   import type { Segment } from '$lib/stremio/aniskip'
@@ -49,6 +50,7 @@
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import { resolvePlayerControls } from '$lib/themes/presentation'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import { loadEpisodeMeta, episodeName } from '$lib/player/episode-info'
   import type { EpMeta } from '$lib/anizip/types'
   import { listenSafe } from '$lib/util/listen'
@@ -131,6 +133,8 @@
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
   // API 6 player choices; Game mode keeps its own player (its native HUD draws icons by name).
   const controls = $derived(gm ? resolvePlayerControls(undefined) : resolvePlayerControls($themePresentation))
+  // API 7 words for Audio and Subtitles, read in Game mode too: its native HUD draws `data-gm-text`.
+  const trackWords = $derived($themePresentation?.player?.trackButtons === 'text')
   const wantsEpisodeTitle = $derived(controls.title === 'episode')
   let episodeMeta = $state<EpMeta | undefined>()
   // Keyed on the title and episode, not the wrapper object: a source swap re-sets `nowPlayingMedia`
@@ -161,6 +165,10 @@
   const iconBtn = $derived(gm
     ? 'grid size-12 place-items-center rounded-full bg-white/10 transition-[transform,background-color] duration-150 ease-out hover:bg-white/20'
     : 'grid size-10 place-items-center rounded-full transition hover:bg-white/15')
+  // The same pills sized to a word, for those Audio and Subtitles buttons.
+  const textBtn = $derived(gm
+    ? 'h-12 select-none rounded-full bg-white/10 px-5 text-lg font-semibold transition-[transform,background-color] duration-150 ease-out hover:bg-white/20'
+    : 'h-10 select-none rounded-full px-3 text-sm font-semibold transition hover:bg-white/15')
   const icSize = $derived(gm ? 24 : 20)
   const titleTop = $derived(gm && $playerTitleTop)
 
@@ -247,7 +255,7 @@
     try { applyQualityInfo(JSON.parse(await playerGetProperty('video-quality-options'))) }
     catch { qualityInfo = { mode: 'auto', activeHeight: 0, heights: [] } }
   }
-  let gmSettingsPage = $state<'root' | 'speed' | 'quality' | 'fit' | 'tools'>('root')
+  let gmSettingsPage = $state<'root' | 'audio' | 'subs' | 'speed' | 'quality' | 'fit' | 'tools'>('root')
   let gmSetIdx = $state(0)
   function toggleOptions() {
     showOptions = !showOptions
@@ -260,6 +268,7 @@
     if (showOptions) {
       readDelays()
       void readVideoQualities()
+      if (gm) void refreshTracks()
     }
   }
   function closePlayerMenus() {
@@ -275,9 +284,10 @@
     closePlayerMenus()
     oneditsubtitles?.()
   }
-  const gmRootKeys = $derived(['source', 'speed', ...(qualityInfo.heights.length ? ['quality'] : []), 'fit', 'subtitles', 'tools'] as string[])
   function gmRowCount() {
     if (gmSettingsPage === 'root') return gmRootKeys.length
+    if (gmSettingsPage === 'audio') return 1 + audios.length
+    if (gmSettingsPage === 'subs') return 2 + gmSubTracks.length
     if (gmSettingsPage === 'speed') return 1 + speeds.length
     if (gmSettingsPage === 'quality') return 2 + qualityInfo.heights.length
     if (gmSettingsPage === 'fit') return 1 + VIDEO_FITS.length
@@ -305,17 +315,22 @@
   function gmActivate() {
     if (gmSettingsPage === 'root') {
       const key = gmRootKeys[gmSetIdx]
-      if (key === 'source') changeSource()
+      if (key === 'audio' || key === 'subs') gmOpenPage(key)
+      else if (key === 'source') changeSource()
       else if (key === 'speed') gmOpenPage('speed')
       else if (key === 'quality') gmOpenPage('quality')
       else if (key === 'fit') gmOpenPage('fit')
-      else if (key === 'subtitles') openSubtitleEditor()
+      else if (key === 'position') openSubtitleEditor()
       else if (key === 'tools') gmOpenPage('tools')
       return
     }
     if (gmSetIdx === 0) { gmBack(); return }
     const i = gmSetIdx - 1
-    if (gmSettingsPage === 'speed') setSpeed(speeds[i] ?? 1)
+    if (gmSettingsPage === 'audio') { if (audios[i]) gmPickTrack(audios[i]) }
+    else if (gmSettingsPage === 'subs') {
+      if (i === 0) gmPickTrack(null)
+      else if (gmSubTracks[i - 1]) gmPickTrack(gmSubTracks[i - 1])
+    } else if (gmSettingsPage === 'speed') setSpeed(speeds[i] ?? 1)
     else if (gmSettingsPage === 'quality') {
       if (i === 0) void setVideoQuality('auto')
       else void setVideoQuality(qualityInfo.heights[i - 1] ?? 'auto')
@@ -727,22 +742,6 @@
       .then((fonts) => { if (fonts.length) playerNotice.set(`Saved subtitle style “${preset.name}” with its fonts (${fonts.join(', ')})`) })
   }
 
-  async function saveDeckSubtitleStyle() {
-    capturedStyle = captureFromExtradata(
-      await invoke<string>('player_get_property', { name: 'sub-ass-extradata' }).catch(() => ''),
-    )
-    styleSaveName = subtitlePresetSourceName({
-      group: get(bingeSource)?.group,
-      title: get(nowPlayingMedia)?.media.title?.userPreferred,
-    })
-    if (!capturedStyle) {
-      playerNotice.set('Current subtitle track has no ASS style to save')
-      return
-    }
-    saveCapturedStyle()
-    showTracks = false
-  }
-
   // Dev-only tools, reached through the track menu (Subtitles/Audio) as a third "Dev tools"
   // category. import.meta.env.DEV is compiled to a literal false in production, so both the row
   // and this whole block are tree-shaken out of a release build. Copy URL is the first tool;
@@ -759,6 +758,8 @@
     try {
       const raw = await playerTracks()
       tracks = JSON.parse(raw) as Track[]
+      // Game mode draws the bar's words and the sheet's rows from the page: have it look again.
+      if (native) bumpPlayerOverlay()
       secondaryId = await playerGetProperty('secondary-sid').catch(() => 'no')
     }
     catch (e) {
@@ -778,14 +779,27 @@
     if (showTracks) await refreshTracks()
   }
   // A sidecar can finish while this menu is already open. Refresh its live mpv snapshot after
-  // every successful sub-add so "Loading subtitles…" turns into selectable tracks in place.
+  // every successful sub-add so "Loading subtitles…" turns into selectable tracks in place. The
+  // settings sheet and the bar's Audio and Subtitles words read the same list.
   $effect(() => {
     const revision = $torrentSubtitleState.revision
-    if (showTracks && revision > 0) void refreshTracks()
+    if ((showTracks || showOptions || trackWords) && revision > 0) void refreshTracks()
   })
+  // The words show only for a page that exists, so the bar needs the list as soon as it mounts.
+  $effect(() => { if (trackWords) void refreshTracks() })
   const subs = $derived(tracks.filter((t) => t.type === 'sub'))
   const captions = $derived(tracks.filter((t) => t.type === 'caption'))
   const audios = $derived(tracks.filter((t) => t.type === 'audio'))
+  // Settings sheet pages: Audio only for a real choice (a protected stream's presentations count),
+  // Subtitles for any subtitle track or closed caption, listed together after Off.
+  const hasAudioPage = $derived(audios.length > 1)
+  const gmSubTracks = $derived([...subs, ...captions])
+  const hasSubPage = $derived(gmSubTracks.length > 0)
+  // The sheet's root rows. The highlight and gmActivate both index this list: a new row needs its key
+  // here, its own `gmRootKeys.indexOf` highlight in the sheet and a branch in gmActivate.
+  // shortcut: a track list that lands while the sheet is open shifts the rows under a held index;
+  // key the highlight by row if that is ever noticeable.
+  const gmRootKeys = $derived([...(hasAudioPage ? ['audio'] : []), ...(hasSubPage ? ['subs'] : []), 'source', 'speed', ...(qualityInfo.heights.length ? ['quality'] : []), 'fit', 'position', 'tools'] as string[])
 
   // Language-forward, deduped track labels — shared with the Game-mode picker so the two
   // never diverge. Leads with the language name (a multi-language Blu-ray's subtitle tracks
@@ -794,7 +808,7 @@
   const label = (track: Track, group: Track[]) =>
     trackLabel(track, group, { filename: $nowPlayingStream.filename })
   function pick(kind: 'sid' | 'aid' | 'secondary-sid' | 'ccid', id: number) {
-    cmd('set', [kind, String(id)])
+    cmd('set', [kind, id < 0 ? 'no' : String(id)]) // -1: the settings sheet's subtitles Off
     if (kind === 'secondary-sid') { secondaryId = String(id); return }
     const type = kind === 'sid' ? 'sub' : kind === 'ccid' ? 'caption' : 'audio'
     const selected = tracks.find((track) => track.type === type && track.id === id) ?? null
@@ -808,6 +822,34 @@
     })
     if (kind === 'sid' && $subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
   }
+  // A settings sheet pick, on the ☰ menu's own path: playerTracks lists a protected stream's
+  // presentations and playerCommand switches to one on `set aid|sid`. Off clears closed captions
+  // too (only a webview player has them).
+  function gmPickTrack(track: Track | null) {
+    if (!track && captions.length) cmd('set', ['ccid', 'no'])
+    pick(track?.type === 'audio' ? 'aid' : track?.type === 'caption' ? 'ccid' : 'sid', track?.id ?? -1)
+    gmOpenPage('root')
+  }
+  // The theme's Audio and Subtitles words open straight on their page: the settings sheet's in Game
+  // mode, the tracks menu's on desktop (Closed captions when a stream has no subtitles).
+  function openTrackPage(page: 'audio' | 'subs') {
+    if (gm) {
+      if (!showOptions) toggleOptions()
+      gmOpenPage(page)
+      return
+    }
+    const cat = page === 'subs' && !subs.length ? 'captions' : page
+    showTracks = !(showTracks && menuLevel === 'detail' && detailCat === cat)
+    showOptions = false
+    showEpisodes = false
+    openDetail(cat)
+    if (showTracks) void refreshTracks()
+  }
+  // Index-driven like the rest of the sheet, so a long track list scrolls its highlight into view.
+  let gmListEl = $state<HTMLElement>()
+  $effect(() => {
+    gmListEl?.querySelectorAll('.gm-set-row')[gmSetIdx]?.scrollIntoView({ block: 'nearest' })
+  })
 
   // Desktop drill-down helpers. `detailItems` is the chosen category's track list;
   // `curLabel` is what shows on the collapsed root row for each category (the active
@@ -845,6 +887,7 @@
         : curLabel(subs),
   )
   const curCaptionLabel = $derived(curLabel(captions))
+  const gmSubLabel = $derived(subs.some((t) => t.selected) ? curSubLabel : curCaptionLabel)
   const curServerLabel = $derived(serverMenuLabels[0] ?? 'Current server')
   const curSecondaryLabel = $derived.by(() => {
     const track = subs.find((item) => String(item.id) === secondaryId)
@@ -958,7 +1001,7 @@
 {/snippet}
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
-<div bind:this={root} data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'} data-gm-control-root data-theme-unthemed={gm || undefined} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
+<div bind:this={root} data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'} data-gm-control-root data-theme-unthemed={gm || undefined} use:protectedSurface={gm} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->
@@ -1217,7 +1260,7 @@
                           </button>
                         {/each}
                       {:else if optionsPage === 'timing'}
-                        {#each ($nowPlayingStream.drm ? [['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
+                        {#each ($nowPlayingStream.drm && !usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported) ? [['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
                           <div class="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5">
                             <span>{label}</span>
                             <span class="flex shrink-0 items-center gap-1">
@@ -1267,58 +1310,18 @@
         {/if}
 
         <!-- Audio, subtitle and server menu. Server selection lives here so the control strip has
-             one predictable media-options entry point rather than a second, unlabeled arrows icon. -->
-        <div class="relative">
-          <button data-part="player.control" data-control="tracks" data-focusable class={iconBtn} onclick={loadTracks} aria-label="Audio, subtitles and server"><Captions size={icSize} /></button>
+             one predictable media-options entry point rather than a second, unlabeled arrows icon.
+             A theme can ask for the words Audio and Subtitles instead (API 7 `player.trackButtons`),
+             each opening its own page; they then take the row's own gaps (`contents`), and the
+             desktop menu opens over the row's end. The menu never opens in Game mode (☰ owns it). -->
+        <div class={trackWords ? 'contents' : 'relative'}>
+          {#if !trackWords}
+            <button data-part="player.control" data-control="tracks" data-focusable class={iconBtn} onclick={loadTracks} aria-label="Audio, subtitles and server"><Captions size={icSize} /></button>
+          {:else}
+            {#if hasAudioPage}<button data-part="player.control" data-control="audio" data-focusable data-gm-text="Audio" class={textBtn} onclick={() => openTrackPage('audio')} aria-label="Audio">Audio</button>{/if}
+            {#if hasSubPage}<button data-part="player.control" data-control="subtitles" data-focusable data-gm-text="Subtitles" class={textBtn} onclick={() => openTrackPage('subs')} aria-label="Subtitles">Subtitles</button>{/if}
+          {/if}
           {#if showTracks}
-            {#if gm}
-              <!-- Game mode keeps the flat, tap-friendly list (the ☰ TrackMenu is the primary
-                   Deck path; this popover is the fallback and stays snapshot-crisp with no promoted layer). -->
-              <div data-gm-side-sheet class="gm-sheet gm-sheet-in fixed right-5 top-[14%] z-30 max-h-[72vh] w-[22rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl">
-                <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Audio</p>
-                {#if audios.length}
-                  {#each audios as t (t.id)}
-                    <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={() => pick('aid', t.id)}>
-                      {t.selected ? '✓ ' : ''}{label(t, audios)}
-                    </button>
-                  {/each}
-                {:else}
-                  <p class="px-2 py-1 text-white/40">No audio tracks</p>
-                {/if}
-
-                <p class="mt-1 px-2 py-1 text-xs uppercase tracking-wide text-white/50">Subtitles</p>
-                <!-- mpv disables subs with sid=no (0 is not a valid track id). -->
-                <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={() => { cmd('set', ['sid', 'no']); tracks = tracks.map((t) => (t.type === 'sub' ? { ...t, selected: false } : t)) }}>None</button>
-                {#each subs as t (t.id)}
-                  <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={() => pick('sid', t.id)}>
-                    {t.selected ? '✓ ' : ''}{label(t, subs)}
-                  </button>
-                {/each}
-                {#if captions.length}
-                  <p class="mt-1 px-2 py-1 text-xs uppercase tracking-wide text-white/50">Closed captions</p>
-                  <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={() => { cmd('set', ['ccid', 'no']); tracks = tracks.map((t) => (t.type === 'caption' ? { ...t, selected: false } : t)) }}>None</button>
-                  {#each captions as t (t.id)}
-                    <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={() => pick('ccid', t.id)}>
-                      {t.selected ? '✓ ' : ''}{label(t, captions)}
-                    </button>
-                  {/each}
-                {/if}
-                <p class="mt-1 px-2 py-1 text-xs uppercase tracking-wide text-white/50">Subtitle style</p>
-                <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15"
-                        onclick={() => { sessionSubtitleStyle.set(null); playerNotice.set('Using default subtitle style'); showTracks = false }}>
-                  Use default style
-                </button>
-                {#each $savedSubtitleStyles as preset (preset.id)}
-                  <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15"
-                          onclick={() => { sessionSubtitleStyle.set(preset); playerNotice.set(`Applied subtitle style: ${preset.name}`); showTracks = false }}>
-                    Apply {preset.name}
-                  </button>
-                {/each}
-                <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={saveDeckSubtitleStyle}>
-                  Save current release style
-                </button>
-              </div>
-            {:else}
               <!-- Desktop: a two-level drill-down. Root shows the two categories with their
                    active track; picking one slides (Miller-column) into just that category's
                    list — not one flat wall. The port height morphs between the two columns'
@@ -1563,7 +1566,6 @@
                   </div>
                 </div>
               </div>
-            {/if}
           {/if}
         </div>
 
@@ -1621,26 +1623,41 @@
     <div data-gm-menu-surface class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
     <div data-gm-side-sheet data-gm-tv-panel use:gmPanel out:motion={gmPanelOut()} class="gm-sheet absolute inset-y-0 right-0 z-40 flex w-[min(26rem,42vw)] flex-col border-l border-white/10 bg-[#101012]/95 text-white" onclick={(e) => e.stopPropagation()} role="presentation">
     {#key gmSettingsPage}
-    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 pb-3 pt-6"
+    <div bind:this={gmListEl} class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 pb-3 pt-6"
          in:motion={{ gameModeOnly: true, opacity: [0, 1], x: [gmSettingsPage === 'root' ? -40 : 40, 0], duration: 180 }}>
       {#if gmSettingsPage === 'root'}
         <p class="px-4 pb-3 text-2xl font-bold">Settings</p>
-        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={changeSource}><span>Change source</span><span class="opacity-50">›</span></button>
-        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => gmOpenPage('speed')}><span>Speed</span><span class="opacity-50">{speed}× ›</span></button>
+        {#if hasAudioPage}
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('audio')} class:text-black={gmSetIdx === gmRootKeys.indexOf('audio')} onclick={() => gmOpenPage('audio')}><span>Audio</span><span class="flex min-w-0 gap-1 opacity-50"><span class="truncate">{curAudioLabel}</span>›</span></button>
+        {/if}
+        {#if hasSubPage}
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('subs')} class:text-black={gmSetIdx === gmRootKeys.indexOf('subs')} onclick={() => gmOpenPage('subs')}><span>Subtitles</span><span class="flex min-w-0 gap-1 opacity-50"><span class="truncate">{gmSubLabel}</span>›</span></button>
+        {/if}
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('source')} class:text-black={gmSetIdx === gmRootKeys.indexOf('source')} onclick={changeSource}><span>Change source</span><span class="opacity-50">›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('speed')} class:text-black={gmSetIdx === gmRootKeys.indexOf('speed')} onclick={() => gmOpenPage('speed')}><span>Speed</span><span class="opacity-50">{speed}× ›</span></button>
         {#if qualityInfo.heights.length}
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2} class:text-black={gmSetIdx === 2} onclick={() => gmOpenPage('quality')}>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('quality')} class:text-black={gmSetIdx === gmRootKeys.indexOf('quality')} onclick={() => gmOpenPage('quality')}>
             <span>Quality</span>
             <span class="opacity-50">{qualityInfo.mode === 'auto' ? `Auto${qualityInfo.activeHeight ? ` (${qualityInfo.activeHeight}p)` : ''}` : `${qualityInfo.mode}p`} ›</span>
           </button>
         {/if}
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('fit')} class:text-black={gmSetIdx === gmRootKeys.indexOf('fit')} onclick={() => gmOpenPage('fit')}><span>Video fit</span><span class="opacity-50">{fitLabel} ›</span></button>
-        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('subtitles')} class:text-black={gmSetIdx === gmRootKeys.indexOf('subtitles')} onclick={openSubtitleEditor}><span>Move subtitles</span><span class="opacity-50">Position ›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('position')} class:text-black={gmSetIdx === gmRootKeys.indexOf('position')} onclick={openSubtitleEditor}><span>Move subtitles</span><span class="opacity-50">Position ›</span></button>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('tools')} class:text-black={gmSetIdx === gmRootKeys.indexOf('tools')} onclick={() => gmOpenPage('tools')}><span>Tools</span><span class="opacity-50">›</span></button>
       {:else}
         <button data-focusable class="gm-set-row mb-1 font-bold" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={gmBack}>
-          <span>‹ {gmSettingsPage === 'speed' ? 'Speed' : gmSettingsPage === 'quality' ? 'Quality' : gmSettingsPage === 'fit' ? 'Video fit' : 'Tools'}</span>
+          <span>‹ {gmSettingsPage === 'audio' ? 'Audio' : gmSettingsPage === 'subs' ? 'Subtitles' : gmSettingsPage === 'speed' ? 'Speed' : gmSettingsPage === 'quality' ? 'Quality' : gmSettingsPage === 'fit' ? 'Video fit' : 'Tools'}</span>
         </button>
-        {#if gmSettingsPage === 'speed'}
+        {#if gmSettingsPage === 'audio'}
+          {#each audios as t, i (t.id)}
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => gmPickTrack(t)}><span class="line-clamp-2">{label(t, audios)}</span>{#if t.selected}<Check size={26} class="shrink-0" />{/if}</button>
+          {/each}
+        {:else if gmSettingsPage === 'subs'}
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => gmPickTrack(null)}><span>Off</span>{#if !gmSubTracks.some((t) => t.selected)}<Check size={26} class="shrink-0" />{/if}</button>
+          {#each gmSubTracks as t, i (`${t.type}${t.id}`)}
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 2} class:text-black={gmSetIdx === i + 2} onclick={() => gmPickTrack(t)}><span class="line-clamp-2">{label(t, t.type === 'caption' ? captions : subs)}</span>{#if t.selected}<Check size={26} class="shrink-0" />{/if}</button>
+          {/each}
+        {:else if gmSettingsPage === 'speed'}
           {#each speeds as s, i}
             <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => setSpeed(s)}>{s}×</button>
           {/each}

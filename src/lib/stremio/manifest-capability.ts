@@ -7,6 +7,8 @@ export interface AddonCatalogExtra {
   isRequired?: boolean
   options?: string[]
   optionsLimit?: number
+  /** izumi-only: artwork for some of the options (a category's backdrop on the Categories screen). */
+  izumi?: { images?: Record<string, string> }
 }
 
 export interface AddonCatalog {
@@ -16,6 +18,12 @@ export interface AddonCatalog {
   /** Legacy manifest field. Modern add-ons expose these as genre extra options. */
   genres?: string[]
   extra?: AddonCatalogExtra[]
+  /** izumi-only hints: `home: false` keeps the listing off Home (Browse still lists it);
+   *  `homeFilters: false` offers no filtered Home rows (one per genre, say), only the plain one;
+   *  `browse: false` keeps it out of Browse's listings; `menu` lists it in the drawer as its own
+   *  screen (a watchlist, a history), opening on a wall of the named extra's options first when it
+   *  names one (`extra: "season"`). */
+  izumi?: { home?: boolean; homeFilters?: boolean; browse?: boolean; menu?: { label?: string; icon?: string; extra?: string } }
   /** Legacy manifest fields: the extra names a catalog takes, and those it requires. */
   extraSupported?: string[]
   extraRequired?: string[]

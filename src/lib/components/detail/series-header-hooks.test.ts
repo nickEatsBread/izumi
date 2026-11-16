@@ -22,7 +22,27 @@ describe('series action states', () => {
   })
   it('says when the title is listed or saved', () => {
     expect(detail.match(/data-part="detail\.list-button"[^>]*? data-state=\{effStatus \? 'listed' : undefined\}/g)?.length).toBe(3)
-    expect(detail.match(/data-action="save" data-state=\{savedLocally \? 'saved' : undefined\}/g)?.length).toBe(3)
+    expect(detail.match(/data-action="save" data-state=\{watchlisted \? 'saved' : undefined\}/g)?.length).toBe(3)
+  })
+})
+
+// "Save" is izumi's Watchlist in one press, as on a catalog title page; the other device lists are in
+// More on every layout, and the list button stays the tracking action.
+describe('the Watchlist button', () => {
+  it('toggles the Watchlist alone, says so, and never disables itself', () => {
+    expect(detail).toContain('const watchlisted = $derived(shown ? mediaIsInLocalList($localLibrary, shown, WATCHLIST_ID) : false)')
+    expect(detail.match(/onclick=\{ready\(\(full\) => (\{ h\.tap\(\); )?toggleMediaInLocalList\(full, WATCHLIST_ID\)/g)?.length).toBe(3)
+    expect(detail.match(/\{watchlisted \? 'In Watchlist' : 'Watchlist'\}/g)?.length).toBe(3)
+    expect(detail.match(/data-action="save"[^>]*aria-pressed=\{watchlisted\}/g)?.length).toBe(3)
+    expect(detail).not.toMatch(/data-action="save"[^>]*disabled=/)
+  })
+  it('keeps the other lists in More: the phone menu and the desktop options menu', () => {
+    const menu = detail.slice(detail.indexOf('<div data-part="detail.menu"'), detail.indexOf('{#each externalTrackerLinks as tracker'))
+    expect(menu).toContain("onclick={ready(() => { h.tap(); closeMenu(); showLocalLists = true })}")
+    expect(menu).toContain('Save to a list')
+    for (const option of ['watchlist', 'lists', 'tracker']) expect(detail).toContain(`id: '${option}'`)
+    expect(detail.match(/data-action="more" data-focusable data-nav-scroll-top onclick=\{ready\(\(\) => openOptions\(\)\)\}/g)?.length).toBe(2)
+    expect(detail).toContain('{#if optionsOpen && media}<OptionsSheet title={title(media)} groups={optionGroups}')
   })
 })
 

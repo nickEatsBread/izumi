@@ -61,6 +61,6 @@ describe('app layout boot services', () => {
   it('mounts first-run setup lazily and only while onboarding is incomplete', () => {
     expect(layout).not.toContain("import FirstRunSetup from")
     expect(layout).toContain("const loadFirstRunSetup = () => import('$lib/components/onboarding/FirstRunSetup.svelte')")
-    expect(layout).toContain("{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore'}<Lazy load={loadFirstRunSetup} />{/if}")
+    expect(layout).toContain("{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore' && page.url.pathname !== '/app/pack'}<Lazy load={loadFirstRunSetup} />{/if}")
   })
 })

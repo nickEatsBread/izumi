@@ -5,7 +5,7 @@ import { get } from 'svelte/store'
 // preference with no debrid credential is a fully supported setup, so it has to produce a real
 // download attempt through the native torrent engine — never a "add a debrid key" dead end.
 
-const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>) =>
+const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>): Promise<unknown> =>
   (command === 'download_dir_default' ? '/downloads' : undefined))
 const resolveDownloadUrl = vi.fn()
 const storeShakaOffline = vi.fn()
@@ -23,6 +23,13 @@ vi.mock('./shaka-offline', () => ({
   removeShakaOffline: (...a: unknown[]) => removeShakaOffline(...a),
 }))
 vi.mock('$lib/anizip', () => ({ getEpisodeMeta: async () => ({}) }))
+const nativeDrm = { on: false }
+vi.mock('$lib/player/native-drm', () => ({
+  usesNativeDrm: (drm: { licenseUrl?: string } | undefined) => nativeDrm.on && !!drm?.licenseUrl,
+}))
+vi.mock('$lib/net/http', () => ({
+  invokeNativeHttp: (command: string, args: Record<string, unknown>) => invoke(command, args),
+}))
 vi.mock('$lib/player/direct-torrent', () => ({
   torrentEngineNetworkOptions: () => ({ downloadLimitMbps: 0, upstreamCapacityMbps: null, socksProxyUrl: null }),
 }))
@@ -232,5 +239,56 @@ describe('download failure copy', () => {
 
     expect(get(downloads)['7:2'].error).toBe('That source has no downloadable link.')
     expect(get(downloads)['7:2'].error).not.toMatch(/debrid|key/i)
+  })
+})
+
+describe('protected episodes on Linux, through the native Widevine module', () => {
+  const shaka = {
+    kind: 'shaka',
+    url: 'http://127.0.0.1:4000/v/1/manifest.mpd?offline=1',
+    drm: { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1:4000/v/1/license', releaseUrl: 'http://127.0.0.1:4000/v/1/session' },
+    filename: 'Test Anime - E2.mkv',
+    preferredHeight: 1080,
+    sourceOriginId: 'example.source',
+  }
+
+  afterEach(() => { nativeDrm.on = false })
+
+  it('saves the encrypted files natively instead of storing them in the webview, then frees the session', async () => {
+    nativeDrm.on = true
+    resolveDownloadUrl.mockResolvedValue(shaka)
+    invoke.mockImplementation(async (command: string) => command === 'download_dir_default' ? '/downloads'
+      : command === 'widevine_save_folder' ? '/downloads/Test Anime - E2.protected'
+      : command === 'widevine_save' ? { path: '/downloads/Test Anime - E2.protected', bytes: 600, height: 1080 }
+      : command === 'ext_fetch' ? { status: 200, body: '' } : undefined)
+
+    enqueue(media, 2)
+    await vi.waitFor(() => expect(get(downloads)['7:2']?.status).toBe('done'))
+
+    expect(storeShakaOffline).not.toHaveBeenCalled()
+    expect(calls('widevine_save')[0]?.[1]).toMatchObject({ id: '7:2', manifestUrl: shaka.url, dir: '/downloads', name: shaka.filename, maxHeight: 1080 })
+    expect(get(downloads)['7:2']).toMatchObject({
+      kind: 'drm-local', path: '/downloads/Test Anime - E2.protected', requiresOnlineLicense: true,
+      sourceOriginId: 'example.source', quality: '1080p', bytes: 600,
+    })
+    await vi.waitFor(() => expect(calls('ext_fetch')[0]?.[1]).toMatchObject({ url: shaka.drm.releaseUrl, method: 'DELETE' }))
+  })
+
+  it('pauses through the module and a cancel discards the folder', async () => {
+    downloads.set({ '7:2': { id: '7:2', mediaId: 7, episode: 2, title: 'x', bytes: 10, downloaded: 4, status: 'downloading', addedAt: 1, kind: 'drm-local', path: '/downloads/x.protected' } })
+    await pauseDownload('7:2')
+    expect(calls('widevine_save_cancel')[0]?.[1]).toEqual({ id: '7:2' })
+    expect(calls('download_delete')).toHaveLength(0)
+    await cancelDownload('7:2')
+    expect(calls('download_delete')[0]?.[1]).toEqual({ path: '/downloads/x.protected' })
+  })
+
+  it('keeps the webview path where the module does not play protected video', async () => {
+    resolveDownloadUrl.mockResolvedValue(shaka)
+    storeShakaOffline.mockResolvedValue({ offlineUri: 'offline:1', drmKeySystem: 'com.widevine.alpha', persistentLicense: false, bytes: 5 })
+    enqueue(media, 2)
+    await vi.waitFor(() => expect(get(downloads)['7:2']?.status).toBe('done'))
+    expect(calls('widevine_save')).toHaveLength(0)
+    expect(get(downloads)['7:2']?.kind).toBe('shaka')
   })
 })

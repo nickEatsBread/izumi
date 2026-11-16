@@ -15,7 +15,7 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import Check from '@lucide/svelte/icons/check'
   import Folder from '@lucide/svelte/icons/folder'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
 
   let { initialTab = 'community', targetCollection = '', targetFolder = '' }: { initialTab?: string; targetCollection?: string; targetFolder?: string } = $props()
   let tab = $state('community')
@@ -188,8 +188,8 @@
     {/if}
     <section aria-label={tab === 'covers' ? 'Cover gallery' : 'Collection gallery'} aria-busy={loading}>
       {#if loading && !items.length && (tab !== 'mine' || !mine.length)}
-        <p role="status" class="mb-4 flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Loading {tab === 'covers' ? 'covers' : 'collections'}…</p>
-        <div aria-hidden="true" class="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">{#each Array(8) as _}<div class="aspect-video animate-pulse rounded-xl bg-secondary motion-reduce:animate-none"></div>{/each}</div>
+        <p role="status" class="mb-4 flex items-center gap-2 text-sm text-muted-foreground"><Spinner />Loading {tab === 'covers' ? 'covers' : 'collections'}…</p>
+        <div aria-hidden="true" class="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">{#each Array(8) as _}<div class="skeloader aspect-video rounded-xl"></div>{/each}</div>
       {:else if tab === 'mine'}
         <div class="grid grid-cols-1 gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-3">
           {#each visibleMine as collection (collection.id)}
@@ -243,7 +243,7 @@
             </div>
           </div>
         {:else if detailLoading}
-          <p role="status" class="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground"><LoaderCircle class="size-5 animate-spin motion-reduce:animate-none" />Loading folders and sources…</p>
+          <p role="status" class="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground"><Spinner size="md" />Loading folders and sources…</p>
         {:else if preview}
           {#if selected.description}<p class="mb-6 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{selected.description}</p>{/if}
           {#each preview.collections as collection (collection.id)}
@@ -273,7 +273,7 @@
       </div>
       <footer class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4 sm:px-7"><span class="text-xs text-muted-foreground">{selected.kind === 'cover' ? 'Saved to your izumi folder' : 'Saved to Home in izumi'}</span>
         {#if selected.kind === 'cover'}<button data-focusable disabled={!selected.imageUrl || !coverFolders.some((folder) => folder.id === coverFolder)} onclick={applyCover} class="primary-button">Use {coverUse === 'focus' ? 'focus artwork' : 'cover'}</button>
-        {:else}<button data-focusable disabled={!preview || saving || findingSources} onclick={add} class="primary-button">{#if saving}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{/if}{saving ? 'Checking and adding…' : alreadyAdded ? 'Update in izumi' : 'Add to izumi'}</button>{/if}
+        {:else}<button data-focusable disabled={!preview || saving || findingSources} onclick={add} class="primary-button">{#if saving}<Spinner inline />{/if}{saving ? 'Checking and adding…' : alreadyAdded ? 'Update in izumi' : 'Add to izumi'}</button>{/if}
       </footer>
     </div>
   {/if}

@@ -1,5 +1,6 @@
 import { catalogLabel, isMergedScreen, mergedCatalogProviders, type CatalogSelection } from '$lib/settings/catalog'
 import type { CatalogHomeTarget } from './home-layout'
+import { isSourceSelection, sourceCatalogName, sourcePackageOf } from './source-catalogs'
 import { ANILIST_HOME_ROWS, CONTINUE_HOME_ROW, HERO_HOME_ROW } from './home-options'
 import type { CatalogHomeRowOption, CatalogProvider } from './types'
 
@@ -12,6 +13,9 @@ export async function loadCatalogProvider(selection: Exclude<CatalogSelection, '
   if (selection === 'kitsu') return (await import('./providers/kitsu')).kitsuCatalog
   if (selection === 'tmdb') return (await import('./providers/tmdb')).tmdbCatalog
   if (selection === 'jvm') return (await import('./providers/jvm')).jvmCatalog
+  if (isSourceSelection(selection)) {
+    return (await import('./providers/stremio')).sourceCatalogProvider(sourcePackageOf(selection), sourceCatalogName(selection))
+  }
   return (await import('./providers/stremio')).stremioCatalog
 }
 
@@ -26,7 +30,8 @@ export const mergedCatalogHomeRowId = (selection: CatalogSelection, rowId: strin
   `${selection}:${rowId}`
 
 export function decodeMergedCatalogHomeRowId(id: string): { selection: CatalogSelection; rowId: string } | null {
-  const split = id.indexOf(':')
+  // A source screen's own id has a colon (`source:<package>`).
+  const split = id.startsWith('source:') ? id.indexOf(':', 7) : id.indexOf(':')
   if (split < 1) return null
   const selection = id.slice(0, split) as CatalogSelection
   if (!mergedCatalogProviders([selection]).includes(selection)) return null

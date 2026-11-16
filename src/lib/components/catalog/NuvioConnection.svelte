@@ -4,7 +4,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right'
   import Link from '@lucide/svelte/icons/link'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   let mode = $state<'device' | 'email'>('device')
   let registering = $state(false), notice = $state('')
   let code = $state<DeviceCode | null>(null)
@@ -56,10 +56,10 @@
           <p class="mt-2 text-sm text-muted-foreground">Open Nuvio below and confirm this code. Return here after approving.</p>
           <p aria-label={`Sign-in code ${code.code}`} class="my-5 rounded-xl border border-border bg-background py-5 text-center font-mono text-3xl font-bold tracking-[0.15em]">{code.code}</p>
           <button data-focusable onclick={() => visit(code!.url)} class="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 font-bold text-primary-foreground">Open Nuvio to approve <ArrowUpRight class="size-4" /></button>
-          <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{code.completing ? 'Completing sign-in…' : 'Waiting for approval…'}</p>
+          <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner />{code.completing ? 'Completing sign-in…' : 'Waiting for approval…'}</p>
           <button data-focusable onclick={cancel} class="mt-3 min-h-10 w-full rounded-lg text-sm hover:bg-secondary">Cancel sign-in</button>
         {:else}
-          <button data-focusable disabled={busy} onclick={connect} class="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 font-bold text-primary-foreground disabled:opacity-50">{#if busy}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{/if}{busy ? 'Getting your code…' : 'Connect Nuvio account'}</button>
+          <button data-focusable disabled={busy} onclick={connect} class="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 font-bold text-primary-foreground disabled:opacity-50">{#if busy}<Spinner inline />{/if}{busy ? 'Getting your code…' : 'Connect Nuvio account'}</button>
           <p class="mt-3 text-center text-xs leading-relaxed text-muted-foreground">Continue on nuvio.tv using a short device code.</p>
           <button data-focusable disabled={busy} onclick={() => { mode = 'email'; error = '' }} class="mt-3 min-h-10 w-full rounded-lg text-sm font-bold hover:bg-secondary">Use email and password</button>
         {/if}

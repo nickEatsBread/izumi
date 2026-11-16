@@ -19,7 +19,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gilrs::{Axis, Button, EventType, GilrsBuilder};
 use serde::Serialize;
@@ -137,24 +137,70 @@ struct Dirs {
     dpad: [bool; 4], // up, down, left, right
     stick: [bool; 4],
     out: [bool; 4],
+    /// When a held direction next repeats, and when it first did (the repeat speeds up from there).
+    next_repeat: [Option<Instant>; 4],
+    first_repeat: [Option<Instant>; 4],
 }
 const NAMES: [&str; 4] = ["up", "down", "left", "right"];
+
+/// A held direction repeats from here, where the press and release times are the controller's own.
+/// Timed in the page, a release that reached it late (a step's layout stalling the Deck's webview)
+/// read as a held press, and one press moved two places.
+const REPEAT_INITIAL: Duration = Duration::from_millis(380);
+const REPEAT_START_MS: f32 = 220.0;
+const REPEAT_MIN_MS: f32 = 80.0;
+const REPEAT_RAMP_MS: f32 = 1200.0;
+const READ_BOUND: Duration = Duration::from_millis(250);
+
+#[derive(Serialize, Clone)]
+struct Repeat {
+    name: &'static str,
+}
 
 impl Dirs {
     /// Recompute merged state; return any (name, pressed) that changed.
     fn resolve(&mut self) -> Vec<Input> {
         let mut changed = Vec::new();
+        let now = Instant::now();
         for i in 0..4 {
-            let now = self.dpad[i] || self.stick[i];
-            if now != self.out[i] {
-                self.out[i] = now;
+            let pressed = self.dpad[i] || self.stick[i];
+            if pressed != self.out[i] {
+                self.out[i] = pressed;
+                self.next_repeat[i] = pressed.then(|| now + REPEAT_INITIAL);
+                self.first_repeat[i] = None;
                 changed.push(Input {
                     name: NAMES[i],
-                    pressed: now,
+                    pressed,
                 });
             }
         }
         changed
+    }
+
+    /// The held directions whose repeat is due at `now`, each rescheduled.
+    fn due(&mut self, now: Instant) -> Vec<&'static str> {
+        let mut names = Vec::new();
+        for i in 0..4 {
+            let Some(at) = self.next_repeat[i] else { continue };
+            if at > now {
+                continue;
+            }
+            let first = *self.first_repeat[i].get_or_insert(now);
+            let ramp = (now - first).as_secs_f32() * 1000.0 / REPEAT_RAMP_MS;
+            let interval = REPEAT_START_MS - (REPEAT_START_MS - REPEAT_MIN_MS) * ramp.min(1.0);
+            self.next_repeat[i] = Some(now + Duration::from_millis(interval as u64));
+            names.push(NAMES[i]);
+        }
+        names
+    }
+
+    /// How long the reader may block: until the next repeat, never past the stop bound.
+    fn wait(&self, now: Instant) -> Duration {
+        self.next_repeat
+            .iter()
+            .flatten()
+            .map(|at| at.saturating_duration_since(now))
+            .fold(READ_BOUND, Duration::min)
     }
 }
 
@@ -416,7 +462,7 @@ pub fn start(app: AppHandle) {
                 // 8ms for the lifetime of Game mode. The timeout only bounds gamepad_stop(); an
                 // input edge wakes immediately, so controller latency is unchanged. After the
                 // first edge, drain everything already queued before blocking again.
-                let mut pending = gilrs.next_event_blocking(Some(Duration::from_millis(250)));
+                let mut pending = gilrs.next_event_blocking(Some(dirs.wait(Instant::now())));
                 if !RUNNING.load(Ordering::SeqCst) || RUN_ID.load(Ordering::SeqCst) != run_id {
                     break;
                 }
@@ -579,6 +625,9 @@ pub fn start(app: AppHandle) {
                     }
                     pending = gilrs.next_event();
                 }
+                for name in dirs.due(Instant::now()) {
+                    let _ = app.emit("gamepad-repeat", Repeat { name });
+                }
             }
             if RUN_ID.load(Ordering::SeqCst) == run_id {
                 RUNNING.store(false, Ordering::SeqCst);
@@ -590,6 +639,29 @@ pub fn start(app: AppHandle) {
 pub fn stop() {
     RUNNING.store(false, Ordering::SeqCst);
     RUN_ID.fetch_add(1, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+mod repeat_tests {
+    use super::{Dirs, REPEAT_INITIAL};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_held_direction_repeats_only_after_the_hold_delay_and_stops_on_release() {
+        let mut dirs = Dirs::default();
+        dirs.dpad[1] = true;
+        assert_eq!(dirs.resolve().len(), 1);
+        let pressed = Instant::now();
+        assert!(dirs.due(pressed).is_empty());
+        assert!(dirs.wait(pressed) <= REPEAT_INITIAL);
+        let held = pressed + REPEAT_INITIAL + Duration::from_millis(5);
+        assert_eq!(dirs.due(held), vec!["down"]);
+        assert!(dirs.due(held).is_empty(), "rescheduled, not due twice");
+        dirs.dpad[1] = false;
+        assert_eq!(dirs.resolve().len(), 1);
+        assert!(dirs.due(held + Duration::from_secs(5)).is_empty());
+        assert_eq!(dirs.wait(held), Duration::from_millis(250));
+    }
 }
 
 #[cfg(test)]

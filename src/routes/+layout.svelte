@@ -14,13 +14,19 @@
   import { startThemeSync } from '$lib/theme'
   import { initPlatform } from '$lib/platform'
   import { scheduleBootWork } from '$lib/util/boot-work'
+  import { pauseOffscreenShimmer } from '$lib/util/offscreen-shimmer'
   import { initClientPerformance } from '$lib/performance/client'
   import { libraryStorageError } from '$lib/storage/library-db'
+  import { startEngineMigrationWriter } from '$lib/engine-migration'
   import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
   import {
     debridKey, torrentBindInterface, torrentPlaybackMode, torrentProxyEnabled, torrentProxyUrl,
   } from '$lib/settings/ui'
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
+  import StartupAnimation from '$lib/components/StartupAnimation.svelte'
+  import { dropPadKeyCopies } from '$lib/nav/pad-key-copies'
+  // Before any other key listener: Steam's keyboard copies of controller buttons never reach them.
+  if (typeof window !== 'undefined') dropPadKeyCopies()
   setContextClient(anilist)
   let { children } = $props()
   // Resolve TV mode before the app shell decides whether desktop-only chrome should mount.
@@ -33,6 +39,9 @@
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
     return !navigator.onLine || connection?.saveData === true
   }
+  // app.html's boot spinner goes once the app is up (and the startup animation's cover is gone).
+  onMount(() => document.documentElement.classList.add('booted'))
+  onMount(() => pauseOffscreenShimmer())
   onMount(() => {
     // The controls mirror is a deliberately inert second WebView. Starting the normal client
     // services here would duplicate sync, update, DHT and notification work while recording.
@@ -65,7 +74,10 @@
       } catch { /* invalid proxy is shown in Settings and playback fails closed */ }
     }, 4500)
     const stopTheme = startThemeSync()
-    return () => { stopPerformance(); stopTheme(); stopDolbySync() }
+    // Linux: leave this profile on disk for the move to the Chromium build (runs after +layout.ts
+    // has waited for the library stores).
+    const stopEngineMigration = startEngineMigrationWriter(localStorage)
+    return () => { stopPerformance(); stopTheme(); stopDolbySync(); stopEngineMigration() }
   })
 </script>
 {#if $libraryStorageError && !captureControlsWindow}
@@ -74,3 +86,4 @@
   </div>
 {/if}
 {@render children()}
+{#if !captureControlsWindow}<StartupAnimation />{/if}

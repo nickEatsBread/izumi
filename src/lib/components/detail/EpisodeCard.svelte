@@ -11,7 +11,7 @@
   import { episodeBarPercent, positions, progressKey } from '$lib/player/progress'
   import { absoluteEpisodeNumbers, hideSpoilers } from '$lib/settings/ui'
   import Download from '@lucide/svelte/icons/download'
-  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Pause from '@lucide/svelte/icons/pause'
   import Check from '@lucide/svelte/icons/check'
   import ListPlus from '@lucide/svelte/icons/list-plus'
@@ -132,7 +132,7 @@
          episode's own download button, which then shows the status itself). -->
     <span class="{cls} z-20 grid size-7 place-items-center rounded-full bg-black/70 text-white" title={dlTip}>
       {#if dl.status === 'error'}<Download size={14} class="text-destructive" />
-      {:else if dl.status === 'queued'}<Loader size={14} class="animate-spin" />
+      {:else if dl.status === 'queued'}<Spinner size="xs" inline />
       {:else if dl.status === 'downloading'}<span class="text-[0.55rem] font-black tabular-nums text-blue-300">{dlPct}</span>
       {:else if dl.status === 'paused'}<Pause size={13} class="text-amber-400" />
       {:else}<Check size={14} class="text-green-400" />{/if}

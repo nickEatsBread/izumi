@@ -46,7 +46,7 @@ describe('Steam Deck browse loading', () => {
     expect(scoped).toBeGreaterThan(-1)
     expect(global).toBeGreaterThan(scoped)
     expect(nav).toContain("targetRow.querySelector<HTMLElement>('[data-nav-row-default][data-focusable]')")
-    expect(nav).toContain("window.scrollTo({ top: 0, behavior })")
+    expect(nav).toContain('scrollByExact(window, -window.scrollY, 0, behavior, chase)')
   })
 
   it('never skips a loading row or chooses a horizontally clipped card on vertical input', () => {

@@ -2,6 +2,7 @@ import type { IzumiCatalogPackage } from '$lib/extensions/catalog'
 import { parseRelease, type ThemeRelease } from '$lib/themes/packages'
 import { SUPPORTED_STORE_KINDS, type ContentType, type SourceType, type StoreEntry, type StoreKind } from './types'
 import { canonicalStoreUrl } from './url'
+import { storePlatformKey } from './platform-key'
 
 // Parser for the native store index (spec §6.3). Pure: the caller fetches.
 
@@ -73,6 +74,7 @@ export function parseNativeStore(
   raw: unknown,
   storeUrl: string,
   storeId: string,
+  platform = storePlatformKey(),
 ): { meta: NativeStoreMeta; entries: StoreEntry[]; skipped: number } {
   if (!isNativeStore(raw)) throw new Error('That is not an izumi store index.')
   if (typeof raw.schemaVersion !== 'number' || !Number.isInteger(raw.schemaVersion) || raw.schemaVersion < 1) {
@@ -99,7 +101,7 @@ export function parseNativeStore(
   const seen = new Set<string>()
   let skipped = 0
   for (const item of raw.entries) {
-    const entry = parseEntry(item, storeUrl, storeId)
+    const entry = parseEntry(item, storeUrl, storeId, platform)
     if (entry === 'ignored') continue
     if (!entry || seen.has(entry.key)) {
       skipped += 1
@@ -111,7 +113,7 @@ export function parseNativeStore(
   return { meta, entries, skipped }
 }
 
-function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntry | null | 'ignored' {
+function parseEntry(item: unknown, storeUrl: string, storeId: string, platform: string): StoreEntry | null | 'ignored' {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return null
   const e = item as Record<string, unknown>
   if (typeof e.kind !== 'string' || !KINDS.includes(e.kind as StoreKind)) return 'ignored'
@@ -176,9 +178,20 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntr
   if (!sourceType) return 'ignored'
   const key = `${storeId}:source:${id}`
   if (sourceType === 'package') {
-    const url = httpsUrl(e.url, storeUrl)
-    const sha256 = sha(e.sha256)
-    const bytes = positive(e.bytes)
+    // A native package (a local service) is one build per platform: `builds` maps `<os>-<arch>` to
+    // the file, and an entry with no build for this device is not listed here at all.
+    let file: Record<string, unknown> = e
+    if (e.builds !== undefined) {
+      if (!e.builds || typeof e.builds !== 'object' || Array.isArray(e.builds)) return null
+      const builds = e.builds as Record<string, unknown>
+      const build = Object.hasOwn(builds, platform) ? builds[platform] : undefined
+      if (!build) return 'ignored'
+      if (typeof build !== 'object' || Array.isArray(build)) return null
+      file = build as Record<string, unknown>
+    }
+    const url = httpsUrl(file.url, storeUrl)
+    const sha256 = sha(file.sha256)
+    const bytes = positive(file.bytes)
     if (!url || !sha256 || !bytes || !common.version) return null
     const backend: IzumiCatalogPackage['backend'] = e.backend === 'aniyomi-jvm'
       ? 'aniyomi-jvm'

@@ -9,6 +9,12 @@
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
+  import LayoutGrid from '@lucide/svelte/icons/layout-grid'
+  import Shapes from '@lucide/svelte/icons/shapes'
+  import Bookmark from '@lucide/svelte/icons/bookmark'
+  import History from '@lucide/svelte/icons/clock-arrow-down'
+  import CalendarDays from '@lucide/svelte/icons/calendar-days'
+  import List from '@lucide/svelte/icons/list'
   import Download from '@lucide/svelte/icons/download'
   import Users from '@lucide/svelte/icons/users'
   import Settings from '@lucide/svelte/icons/settings'
@@ -25,9 +31,11 @@
   import { traktUserName, traktUserAvatar } from '$lib/trakt/config'
   import { page } from '$app/state'
   import { gameMode, playing } from '$lib/player/session'
+  import { startupAnimationPlaying } from '$lib/startup/animation'
   import { inputType } from '$lib/nav'
   import { controllerMode } from '$lib/nav/input'
   import { onPadButton } from '$lib/nav/pad-events'
+  import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
   import { bumperTabs, pageBumpers, stepSection } from '$lib/nav/bumpers'
   import { settingsControllerMode } from '$lib/settings/surface'
   import { stepPageTabs } from '$lib/nav/page-tabs'
@@ -36,7 +44,14 @@
   import { profileAvatarUrl } from '$lib/profiles/avatars'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
-  import { catalogScreen, catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
+  import {
+    catalogLabel, catalogProvider, catalogScreen, catalogSwitcherPlacement, customScreens, enabledCatalogScreens, resolveCatalogSwitcherPlacement, selectCatalogScreen,
+  } from '$lib/settings/catalog'
+  import { isSourceSelection, sourceAddon, sourcePackageOf } from '$lib/catalog/source-catalogs'
+  import { listingHref, sourceMenus, type SourceMenu } from '$lib/catalog/source-menus'
+  import { extensionServiceSettings } from '$lib/extensions/manager'
+  import { sourceProfiles } from '$lib/extensions/source-profiles'
+  import UserRound from '@lucide/svelte/icons/user-round'
   import { interfaceMode } from '$lib/settings/interface-mode'
   import { searchModeNav } from '$lib/settings/nav-rules'
   import * as h from '$lib/haptics'
@@ -44,9 +59,12 @@
   import { isTv } from '$lib/platform'
   import { themePresentation } from '$lib/themes/runtime'
 
-  let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' } = $props()
+  let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' | 'drawer' } = $props()
   const compact = $derived($themePresentation?.shell?.compact === true)
   const top = $derived(placement === 'top')
+  // `shell.nav: "drawer"` (API 7): no rail and no bar. Every destination, the screens and the account
+  // live in a drawer that Start, Left from the left edge or the menu button opens.
+  const drawerNav = $derived(placement === 'drawer')
   // `data-scrolled` once the page has scrolled, so a theme can keep the bar clear over the top of a page.
   let scrolled = $state(false)
   $effect(() => {
@@ -70,12 +88,36 @@
     { id: 'home', href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { id: 'schedule', href: '/app/schedule', icon: Calendar, label: m.nav_schedule(), anim: 'group-hover:animate-[swing_0.5s_ease]' },
     { id: 'search', href: '/app/search', icon: Search, label: m.nav_search(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
+    { id: 'browse', href: '/app/browse', icon: LayoutGrid, label: 'Browse', anim: '' },
     { id: 'downloads', href: '/app/downloads', icon: Download, label: m.nav_downloads(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { id: 'watch', href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
     { id: 'library', href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
   ]
   const settingsItem = { id: 'settings', href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }
   const shown = $derived($interfaceMode === 'search' ? searchModeNav(items) : searchField ? items.filter((it) => it.href !== '/app/search') : items)
+  // The drawer has room for Categories after Browse (the catalog's categories as a wall of chips);
+  // the rail and the top bar keep their set.
+  const categoriesItem = { id: 'categories', href: '/app/categories', icon: Shapes, label: 'Categories', anim: '' }
+  // A source screen adds the lists its source puts in the menu (its watchlist, history, seasons).
+  let menus = $state<SourceMenu[]>([])
+  // …and "Who's watching?" when its account has more than one profile of its own.
+  let manyProfiles = $state(false)
+  $effect(() => {
+    const selection = $catalogProvider
+    menus = []
+    manyProfiles = false
+    if (!isSourceSelection(selection)) return
+    let live = true
+    sourceAddon(sourcePackageOf(selection)).then((addon) => { if (live) menus = sourceMenus(addon.manifest) }).catch(() => {})
+    extensionServiceSettings(sourcePackageOf(selection)).then((document) => { if (live) manyProfiles = !!sourceProfiles(document) }).catch(() => {})
+    return () => { live = false }
+  })
+  const MENU_ICONS = { bookmark: Bookmark, history: History, calendar: CalendarDays, list: List }
+  const menuItems = $derived([
+    ...menus.map((menu) => ({ id: 'listing', href: listingHref(menu), icon: MENU_ICONS[menu.icon], label: menu.label, anim: '' })),
+    ...(manyProfiles ? [{ id: 'profiles', href: '/app/source-profiles', icon: UserRound, label: "Who's watching?", anim: '' }] : []),
+  ])
+  const drawerItems = $derived(shown.flatMap((item) => item.id === 'browse' ? [item, categoriesItem, ...menuItems] : [item]))
   // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
   // only its brand, search and trailing buttons); the menu button folds it away, and narrower
   // windows fall back to the drawer. Hidden while a video plays, like the rail goes inert.
@@ -174,15 +216,16 @@
   let drawerWasOpen = false
   $effect(() => {
     if (drawerWasOpen && !drawerOpen) {
-      if (!bumpers) menuBtn?.focus({ preventScroll: true })
-      else if (drawerReturn?.isConnected) drawerReturn.focus({ preventScroll: true })
+      if (!bumpers && !drawerNav) menuBtn?.focus({ preventScroll: true })
+      else if (drawerReturn) restoreFocus(drawerReturn)
       drawerReturn = null
     }
     drawerWasOpen = drawerOpen
   })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
-  const active = (href: string) => !$playing && (page.url.pathname.startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
+  // A menu list's address carries its query, so it lights up only on its own list.
+  const active = (href: string) => !$playing && ((page.url.pathname + page.url.search).startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
   // The tab L1/R1 steps from: the current page's, else the last one visited (a series page opened
   // from Home still steps from Home).
   let lastSection = $state<string | undefined>()
@@ -192,15 +235,17 @@
   })
   // Start opens the drawer from wherever focus is and closing it returns there (not to the menu
   // button, which is off the d-pad order under bumper tabs). A page change drops the return target.
-  let drawerReturn: HTMLElement | null = null
+  // Described, not held: the control can be re-rendered while the drawer is open (the banner's
+  // buttons change with its slide), and the same control, re-rendered, is where focus returns.
+  let drawerReturn: FocusDescriptor | null = null
   function toggleDrawer() {
-    if (!drawerOpen) drawerReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
+    if (!drawerOpen) drawerReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? describeFocus(document.activeElement) : null
     drawerOpen = !drawerOpen
   }
   $effect(() => {
     if (!bumpers) return
     return onPadButton(({ name, pressed }) => {
-      if (!pressed || get(playing)) return
+      if (!pressed || get(playing) || get(startupAnimationPlaying)) return
       rememberPad()
       const dialog = [...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)
       if (name === 'start') { if (!dialog || drawerOpen) toggleDrawer(); return }
@@ -214,13 +259,37 @@
       } else if (name === 'select') void goto('/app/search')
     })
   })
+  $effect(() => {
+    if (!drawerNav) return
+    const toggle = () => { if (!get(playing)) toggleDrawer() }
+    const show = () => { if (!get(playing) && !drawerOpen) toggleDrawer() }
+    window.addEventListener('nav-drawer-toggle', toggle)
+    window.addEventListener('nav-drawer-open', show)
+    // View opens Search, as on the top bar's handheld layout (and in the reference handheld app).
+    const stopView = onPadButton(({ name, pressed }) => {
+      if (!pressed || name !== 'select' || get(playing) || get(startupAnimationPlaying)) return
+      if ([...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)) return
+      drawerOpen = false
+      void goto('/app/search')
+    })
+    return () => {
+      window.removeEventListener('nav-drawer-toggle', toggle)
+      window.removeEventListener('nav-drawer-open', show)
+      stopView()
+    }
+  })
+  function openScreen(screen: typeof $enabledCatalogScreens[number]) {
+    selectCatalogScreen(screen)
+    drawerOpen = false
+    void goto('/app/home')
+  }
   // This component only mounts in the desktop shell. Automatic therefore makes the brand itself
   // the catalog trigger, while an explicit Below choice still gets its own rail row.
   const switcherPlacement = $derived(resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, false))
 </script>
 
 <!-- Browse: soft scrim so the banner shows through and fades into the page. Hidden while playing. -->
-{#if !$playing && !top}
+{#if !$playing && !top && !drawerNav}
   <div class="theme-sidebar-scrim pointer-events-none fixed inset-y-0 left-0 z-20 w-32 bg-gradient-to-r from-background/90 via-background/30 to-transparent"></div>
 {/if}
 
@@ -228,6 +297,13 @@
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
      overlays the content (fixed) rather than reflowing it. Selection uses a quiet active-row fill;
      keyboard/gamepad FOCUS fills the row more strongly (see app.css) — no squared ring. -->
+{#if drawerNav}
+  {#if !$playing && !padUi}
+    <button type="button" data-part="nav.menu" bind:this={menuBtn} data-focusable aria-label="Menu" aria-expanded={drawerOpen} onclick={toggleDrawer}
+      class="fixed left-3 z-30 grid size-10 place-items-center rounded-lg bg-background/70 text-foreground backdrop-blur transition-colors hover:bg-accent {$gameMode ? 'top-3' : 'top-10'}"><Menu size={20} /></button>
+  {/if}
+  <NavDrawer bind:open={drawerOpen} items={drawerItems} {active} head={drawerHead} after={drawerScreens} foot={drawerFoot} slide={288} duration={240} closeOnRight />
+{:else}
 <nav data-slot={top ? 'nav.top' : 'nav.side'} data-scrolled={top && scrolled || undefined} data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed z-30 flex gap-1 transition-[width] duration-200 ease-out
        {top ? 'inset-x-0 top-0 h-[var(--theme-top-bar)] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
@@ -268,9 +344,57 @@
     {@render accountButton()}
   {/if}
 </nav>
+{/if}
 {#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, settingsItem]} {active} />{/if}
 {#if panelShown}<NavPanel width={sideWidth} items={[...shown, settingsItem]} {active} />{/if}
 {#if $themePresentation?.shell?.hints}<ButtonHints />{/if}
+
+{#snippet drawerHead()}
+  <a data-part="nav.drawer.head" href="/app/home" tabindex={-1} onclick={() => (drawerOpen = false)} class="mb-3 flex items-center gap-3 px-2">
+    <CatalogBrandLogo platform={$catalogScreen} />
+    <BrandText weight={800} />
+  </a>
+{/snippet}
+
+{#snippet drawerScreens()}
+  {#if !$offlineMode && $enabledCatalogScreens.length > 1}
+    <div data-part="nav.drawer.heading" class="mt-4 px-3 pb-1 text-[0.625rem] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">Screens</div>
+    {#each $enabledCatalogScreens as screen (screen)}
+      {@const on = $catalogScreen === screen}
+      <button type="button" data-part="nav.item" data-variant="screen" data-screen={screen} data-active={on || undefined} data-focusable onclick={() => openScreen(screen)}
+        class="flex h-11 shrink-0 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold transition-colors hover:bg-accent {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
+        <!-- The brand mark pins its own transform, so the scale is on a wrapper. -->
+        <span data-part="nav.item.icon" class="grid w-6 place-items-center"><span class="grid scale-75"><CatalogBrandLogo platform={screen} /></span></span>
+        <span data-part="nav.item.label" class="truncate">{catalogLabel(screen, $customScreens)}</span>
+      </button>
+    {/each}
+  {/if}
+{/snippet}
+
+{#snippet drawerFoot()}
+  <div data-part="nav.drawer.foot" class="mt-auto flex shrink-0 items-center gap-1 border-t border-border/50 pt-3">
+    <button type="button" data-part="nav.action" data-action="account" data-focusable title={accountLabel}
+      onclick={() => { drawerOpen = false; if ($profilesEnabled) $profileSwitcherOpen = true; else void goto('/app/settings/accounts') }}
+      class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-2 text-left text-sm font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+      <span data-part="nav.action.icon" class="grid size-8 shrink-0 place-items-center">
+        {#if $profilesEnabled}<img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />
+        {:else if accountAvatar}<img src={accountAvatar} alt="" class="size-8 rounded-full object-cover" />
+        {:else}<LogIn size={20} />{/if}
+      </span>
+      <span data-part="nav.action.label" class="truncate">{accountLabel}</span>
+    </button>
+    <button type="button" data-part="nav.action" data-action="incognito" data-active={$incognito || undefined} data-focusable aria-pressed={$incognito} title={m.nav_incognito()} onclick={toggleIncognito}
+      class="grid size-10 shrink-0 place-items-center rounded-lg transition-colors hover:bg-accent {$incognito ? 'text-violet-400' : 'text-muted-foreground'}">
+      <span data-part="nav.action.icon" class="grid place-items-center"><VenetianMask size={20} /></span>
+      <span data-part="nav.action.label" class="sr-only">{m.nav_incognito()}</span>
+    </button>
+    <a data-part="nav.action" data-action="settings" data-active={active('/app/settings') || undefined} data-focusable href="/app/settings" title={m.nav_settings()} onclick={() => (drawerOpen = false)}
+      class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+      <span data-part="nav.action.icon" class="grid place-items-center"><Settings size={20} /></span>
+      <span data-part="nav.action.label" class="sr-only">{m.nav_settings()}</span>
+    </a>
+  </div>
+{/snippet}
 
 {#snippet menuButton()}
   {#if top && (topBar.menu === 'drawer' || sideMenu)}
@@ -291,9 +415,10 @@
         <CatalogBrandLogo platform={$catalogScreen} />
       </a>
     {/if}
-    {#if top}<BrandText className="whitespace-nowrap font-black" />{/if}
+    {#if top}<BrandText />{/if}
     {#if !top}
-      <BrandText className="whitespace-nowrap font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
+      <!-- The text pins its own opacity, so the rail's fade is on a wrapper. -->
+      <span class="flex transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}"><BrandText /></span>
     {/if}
   </div>
 {/snippet}
