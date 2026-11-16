@@ -33,7 +33,7 @@
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { homeCollections } from '$lib/catalog/collections/store'
   import { collectionIdOf, collectionRowOptions } from '$lib/catalog/collections/rows'
-  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { homeLayoutFor, openThemeScreen } from '$lib/themes/layout-state'
   import { themePresentation } from '$lib/themes/runtime'
   import { isThemeBlockId, resolveThemeHome, themeHomeHas } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
@@ -52,6 +52,8 @@
   import { densityScale, resolveRow } from '$lib/themes/presentation'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
 
+  // API 8: on a theme screen its entries replace the theme's Home (layout-state.ts homeLayoutFor).
+  const activeThemeLayout = homeLayoutFor(openThemeScreen())
   // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
   // keyed carousels a fresh proxy identity on every progressive update; in dev builds the sixth
   // replacement triggers an extremely expensive stack capture for every card. Keep the snapshot

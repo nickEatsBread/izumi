@@ -510,6 +510,19 @@ export interface ThemeNav {
    *  as a header shortcut (a search icon beside a Search tab); older packages keep them apart. */
   top?: NavDestination[]
 }
+/** API 8: the icons a theme screen's navigation entry may use. */
+export const THEME_SCREEN_ICONS = ['star', 'heart', 'flame', 'sparkles', 'trophy', 'compass', 'clock', 'calendar', 'tv', 'film', 'grid', 'list'] as const
+export type ThemeScreenIcon = (typeof THEME_SCREEN_ICONS)[number]
+/** API 8: the most screens a theme may add. A package with more is refused; the client never shows more. */
+export const MAX_THEME_SCREENS = 4
+/** API 8: a screen of the theme's own, a navigation entry and a page of Home entries (rows by role, blocks). */
+export interface ThemeLayoutScreen {
+  /** 1–24 lowercase letters, digits or dashes, unique in the theme: the page is `/app/screen/<id>`. */
+  id: string
+  title: string
+  icon?: ThemeScreenIcon
+  home: ThemeLayoutEntry[]
+}
 /** API 3: the theme's Home and navigation, applied while the theme is active and its layout switch is on. */
 export interface ThemeLayout {
   home?: ThemeLayoutEntry[]
@@ -521,6 +534,8 @@ export interface ThemeLayout {
   /** The main-column row the side column starts beside; the rows before it span the whole width. */
   asideStart?: number
   nav?: ThemeNav
+  /** API 8: up to four screens of the theme's own (not in the phone block). */
+  screens?: ThemeLayoutScreen[]
 }
 export interface ThemePresentation {
   density?: ThemeDensity
@@ -1078,27 +1093,45 @@ function destinationList(value: unknown, max: number): NavDestination[] {
     return destination
   })
 }
-function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout {
-  const raw = record(value); only(raw, ['home', 'browse', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
-  const result: ThemeLayout = {}
-  if (raw.home !== undefined) {
-    if (!Array.isArray(raw.home) || raw.home.length < 1 || raw.home.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
-    let hero = false
-    result.home = raw.home.map((entry): ThemeLayoutEntry => {
-      const item = record(entry)
-      if (item.role !== undefined) {
-        only(item, ['role'])
-        if (typeof item.role !== 'string' || !/^\S{1,300}$/.test(item.role)) throw new Error('Invalid theme row role.')
-        if (item.role === 'hero') {
-          if (hero) throw new Error('A theme home layout can place the hero once.')
-          hero = true
-        }
-        return { role: item.role }
+/** A Home's entries: catalog rows by role (the hero at most once) and blocks. Theme screens use the same. */
+function parseHomeEntries(value: unknown, api: ThemeApi): ThemeLayoutEntry[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
+  let hero = false
+  return value.map((entry): ThemeLayoutEntry => {
+    const item = record(entry)
+    if (item.role !== undefined) {
+      only(item, ['role'])
+      if (typeof item.role !== 'string' || !/^\S{1,300}$/.test(item.role)) throw new Error('Invalid theme row role.')
+      if (item.role === 'hero') {
+        if (hero) throw new Error('A theme home layout can place the hero once.')
+        hero = true
       }
-      const { type, ...settings } = parseThemeBlock(item, api)
-      return { block: type, ...settings } as ThemeLayoutEntry
-    })
-  }
+      return { role: item.role }
+    }
+    const { type, ...settings } = parseThemeBlock(item, api)
+    return { block: type, ...settings } as ThemeLayoutEntry
+  })
+}
+function parseScreens(value: unknown, api: ThemeApi): ThemeLayoutScreen[] {
+  if (!Array.isArray(value) || value.length < 1) throw new Error('A theme screens list needs at least one screen.')
+  if (value.length > MAX_THEME_SCREENS) throw new Error(`A theme can add up to ${MAX_THEME_SCREENS} screens.`)
+  const ids = new Set<string>()
+  return value.map((entry) => {
+    const raw = record(entry); only(raw, ['id', 'title', 'icon', 'home'])
+    if (typeof raw.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,23}$/.test(raw.id)) throw new Error('A theme screen needs an id of up to 24 lowercase letters, digits or dashes.')
+    if (ids.has(raw.id)) throw new Error('A theme lists a screen twice.')
+    ids.add(raw.id)
+    if (typeof raw.title !== 'string' || !raw.title.trim() || raw.title.trim().length > 24) throw new Error('A theme screen needs a title of up to 24 characters.')
+    const screen: ThemeLayoutScreen = { id: raw.id, title: raw.title.trim(), home: parseHomeEntries(raw.home, api) }
+    if (raw.icon !== undefined) screen.icon = choice(raw.icon, THEME_SCREEN_ICONS)
+    return screen
+  })
+}
+function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout {
+  const raw = record(value); only(raw, ['home', 'browse', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav', ...api8(api, ['screens'])])])
+  const result: ThemeLayout = {}
+  if (raw.home !== undefined) result.home = parseHomeEntries(raw.home, api)
+  if (raw.screens !== undefined) result.screens = parseScreens(raw.screens, api)
   if (raw.browse !== undefined) {
     if (!Array.isArray(raw.browse) || raw.browse.length > 8) throw new Error('A theme browse layout takes up to 8 blocks.')
     result.browse = raw.browse.map((entry) => { const { type, ...settings } = parseThemeBlock(record(entry), api); return { block: type, ...settings } as ThemeLayoutEntry })

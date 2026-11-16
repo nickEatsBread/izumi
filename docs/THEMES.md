@@ -215,6 +215,17 @@ A package declares `themeApi: 8` to use the keys below; the validator refuses th
   ] } }
   ```
 
+- **Theme screens (`layout.screens`).** Up to four screens of the theme's own. Each is a navigation entry and a page (`/app/screen/<id>`, the `screen` slot with a `screen.title` heading) built from the same entries as a theme Home: catalog rows by role and Home blocks, on whatever catalog is open, drawn by Home itself (so rows and blocks keep every hook and the row and card templates). `id` is 1–24 lowercase letters, digits or dashes, unique in the theme; `title` 1–24 characters; `icon` one of `star`, `heart`, `flame`, `sparkles`, `trophy`, `compass`, `clock`, `calendar`, `tv`, `film`, `grid` (the default) or `list`; `home` 1–30 entries under the rules of `layout.home` (the hero at most once). A package with more than four screens is refused, and the client never shows more than four. The screens follow the destinations on the side rail, the top bar, the drawer and the pinned side panel (`nav.item` with `data-dest="screen"` and `data-screen`), and on a phone they are icons in the Home header (`home.header.action`, the same attributes). Like the rest of `layout` they apply while the theme's layout switch is on (Settings → Home); a screen the active theme no longer offers returns to Home. `screens` sits in the shared layout or the `tv` block's, not the phone block (phones show the shared screens). A theme only arranges what izumi already draws: behaviour (new data, controls that do something new) belongs to plugins, delivered in a pack beside the theme.
+
+  ```json
+  "layout": { "screens": [
+    { "id": "picks", "title": "Picks", "icon": "star", "home": [
+      { "block": "ranked-list", "title": "Top this season", "tabs": [{ "label": "Season", "role": "season" }, { "label": "Trending", "role": "trending" }] },
+      { "role": "popular" }
+    ] }
+  ] }
+  ```
+
 ### Theme API 7
 
 A package declares `themeApi: 7` to use the drawer navigation and the player keys `player.trackButtons`, `player.rating`, `player.endTime` and the `fit` button in `player.buttons`; the validator refuses them in an older package.
@@ -393,7 +404,7 @@ State values:
 | `nav.side` | slot | The side navigation rail. |  |
 | `nav.top` | slot | The top navigation bar (`shell.nav: "top"`). `data-scrolled` once the page has scrolled from its top (a bar clear over the top of a page, solid below it). | `data-scrolled` |
 | `nav.bottom` | slot | The bottom tab bar (phones, or `shell.nav: "bottom"`). `data-state` is the scroll-chrome state, the same as `data-chrome` on `<html>`. `data-count` and the `--nav-items` custom property are the number of destinations on it, Home included, so a pill can be sized to them (`width: calc(var(--nav-items) * 56px)`) without counting links. | `data-state`, `data-count` |
-| `nav.item` | part | A navigation destination link, the Categories menu button (`data-variant="menu"`), or a catalog screen in the drawer navigation (`data-variant="screen"`, the screen named by `data-screen`). `data-dest` names the destination on every bar, rail, drawer and panel. | `data-active`, `data-variant`, `data-dest`, `data-screen` |
+| `nav.item` | part | A navigation destination link, the Categories menu button (`data-variant="menu"`), or a catalog screen in the drawer navigation (`data-variant="screen"`, the screen named by `data-screen`). A theme screen (API 8 `layout.screens`) has `data-dest="screen"` and its id in `data-screen`. `data-dest` names the destination on every bar, rail, drawer and panel. | `data-active`, `data-variant`, `data-dest`, `data-screen` |
 | `nav.item.icon` | part | The icon of a navigation destination. |  |
 | `nav.item.label` | part | The label of a navigation destination. |  |
 | `nav.item.indicator` | part | The active destination's marker on the bottom bar (`data-variant` `line`, `pill` or `dot`, as `shell.bottomNav.indicator`). | `data-variant` |
@@ -765,6 +776,8 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
+| `screen` | slot | API 8 `layout.screens`: a page of the theme's own (`/app/screen/<id>`), named by `data-screen`: its title (`screen.title`) over its Home entries, drawn by Home itself (`home`, `row`, the blocks). | `data-screen` |
+| `screen.title` | part | The heading of a theme screen. |  |
 | `search` | slot | The search page. | `data-variant` |
 | `search.header` | slot | The Search page header: the title and the filter bar; on another catalog's page also the streaming service; on the all-catalogs page the field (or the chosen catalog's filter bar) under the catalog chips. It is a `display: contents` box, so the parts inside lay out (and stick) as they always did, until a theme gives it one: `display: block; position: sticky; top: 0` pins the whole header, and `:scope[data-chrome="hidden"]` can slide it away. |  |
 | `search.title` | part | The Search page heading: "Search" in the app language, visually hidden (`sr-only`) until a theme shows it, or with `data-variant="explore"` the genre, studio or voice actor being explored, shown. On the all-catalogs page it is the visible "Search" heading. | `data-variant` |
