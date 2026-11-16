@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeNativeTracks, usesNativeDrm, type NativeDrmSession } from './native-drm'
+import { drmCapabilities, mergeNativeTracks, usesNativeDrm, type NativeDrmSession } from './native-drm'
 
 function session(overrides: Partial<NativeDrmSession> = {}): NativeDrmSession {
   return {
@@ -21,6 +21,34 @@ describe('native protected playback', () => {
     expect(usesNativeDrm({ ...drm, keySystem: 'com.microsoft.playready' }, true)).toBe(false)
     expect(usesNativeDrm({ keySystem: 'com.widevine.alpha' }, true)).toBe(false)
     expect(usesNativeDrm(null, true)).toBe(false)
+  })
+
+  // Saving and playing are separate capabilities: every platform with the module host saves through
+  // it, only Linux plays through it. Playback is routed on `playback`, saves on `supported`.
+  describe('routes playback and saving on their own capability, per platform', () => {
+    const drm = { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1/v/a/license' }
+    const route = (status: Parameters<typeof drmCapabilities>[0]) => {
+      const can = drmCapabilities(status)
+      return { save: usesNativeDrm(drm, can.save), play: usesNativeDrm(drm, can.playback) }
+    }
+
+    it('Linux saves and plays through its own player', () => {
+      expect(route({ supported: true, playback: true, installed: null })).toEqual({ save: true, play: true })
+    })
+
+    it('Windows and macOS save through the module but keep playback in the webview', () => {
+      expect(route({ supported: true, playback: false, installed: '4.10.3112.0' })).toEqual({ save: true, play: false })
+    })
+
+    it('never infers playback from support alone (a status without the field)', () => {
+      expect(route({ supported: true, installed: null })).toEqual({ save: true, play: false })
+    })
+
+    it('uses neither where the module host is not built, or the status could not be read', () => {
+      expect(route({ supported: false, playback: false, installed: null })).toEqual({ save: false, play: false })
+      expect(route({ supported: false, playback: true, installed: null })).toEqual({ save: false, play: false })
+      expect(route(null)).toEqual({ save: false, play: false })
+    })
   })
 
   it('lists presentation choices instead of the single audio track mpv sees', () => {

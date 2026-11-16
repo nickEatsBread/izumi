@@ -1,6 +1,7 @@
 /** Protected streams played by izumi's own player (Linux): the Rust side hosts the Widevine module
  *  and mpv renders the result, so everything except presentation switching and previews is the
- *  ordinary mpv path. Windows and macOS keep the webview (Shaka) path in DrmSurface. */
+ *  ordinary mpv path. Windows and macOS keep the webview (Shaka) path in DrmSurface for playback and
+ *  use the module host only to save protected episodes. */
 import { invoke } from '@tauri-apps/api/core'
 import { writable, get } from 'svelte/store'
 import { nearestBifFrame, parseBif, type DrmTrack, type StreamDrm } from './drm'
@@ -8,27 +9,49 @@ import { nearestBifFrame, parseBif, type DrmTrack, type StreamDrm } from './drm'
 export const WIDEVINE = 'com.widevine.alpha'
 /** Error text the Rust side returns when the module has not been downloaded and accepted yet. */
 export const NOT_INSTALLED = 'widevine-not-installed'
+/** What a protected download says when this device has nothing that can decrypt it (no module set up,
+ *  and no Widevine device of the user's own). Points at the one place that fixes it. */
+export const PROTECTED_SAVE_SETUP = "Protected episodes can't be saved on this device yet. Set up Protected video in Settings › Playback, then try again."
 /** Track ids for alternate presentations, above any id mpv assigns. */
 export const NATIVE_SWITCH_ID = 20_000
 
+/** The Rust side's `widevine_status`. Two different capabilities — keep them apart:
+ *  - `supported`: izumi hosts the module on this build, so protected episodes can be SAVED through it
+ *    (Linux, Windows, macOS).
+ *  - `playback`: protected streams also PLAY through izumi's own player (Linux only). Windows and macOS
+ *    play them in the webview; routing their playback on `supported` sends it to a native surface
+ *    those builds do not have. */
 export interface WidevineStatus {
   supported: boolean
+  playback?: boolean
   installed: string | null
+  /** A browser's own module version on this device (Windows, macOS): setting it up downloads nothing. */
+  available?: string | null
 }
 
-/** True when this build plays protected streams through its own player. Resolved once at boot. */
+/** True when this build can save protected episodes through its own module host. Resolved once at boot. */
 export const nativeDrmSupported = writable(false)
+/** True when this build also plays protected streams through its own player (Linux). Resolved once at boot. */
+export const nativeDrmPlayback = writable(false)
+
+/** The two capabilities a status grants. Playback is never assumed from `supported`. */
+export function drmCapabilities(status: Partial<WidevineStatus> | null | undefined): { save: boolean; playback: boolean } {
+  const save = !!status?.supported
+  return { save, playback: save && !!status?.playback }
+}
 
 export async function initNativeDrm(): Promise<void> {
+  let status: WidevineStatus | null = null
   try {
-    const status = await invoke<WidevineStatus>('widevine_status')
-    nativeDrmSupported.set(!!status.supported)
-  } catch {
-    nativeDrmSupported.set(false)
-  }
+    status = await invoke<WidevineStatus>('widevine_status')
+  } catch { /* no module host on this build */ }
+  const capable = drmCapabilities(status)
+  nativeDrmSupported.set(capable.save)
+  nativeDrmPlayback.set(capable.playback)
 }
 
-/** Whether `drm` goes to the native player rather than the webview. */
+/** Whether `drm` goes through izumi's module host rather than the webview, given the capability that
+ *  applies: pass `nativeDrmPlayback` for playback routing; saving uses the default (`nativeDrmSupported`). */
 export function usesNativeDrm(drm: StreamDrm | null | undefined, supported = get(nativeDrmSupported)): boolean {
   if (!drm || !supported) return false
   if ((drm.keySystem || WIDEVINE) !== WIDEVINE) return false
