@@ -804,6 +804,8 @@
   // API 8 `loading.episode`: the theme's screen over the black cover until the first frame (the opening
   // screen hands over to it). Not over Game mode's frozen frame, where a source switch keeps the picture.
   const episodeScreen = $derived($themePresentation?.loading?.episode)
+  // While it is drawn it is the black cover, so the loading layer over it stops painting its own.
+  const episodeCover = $derived(!!episodeScreen && !!$nowPlayingMedia && !(gmBitmapMode && $gmFrozenFrame != null))
   const ratingLabel = $derived(ratingIntro ? ($nowPlayingStream.rating?.label ?? $nowPlayingMedia?.media?.sourceFacts?.rating ?? '') : '')
   const ratingDetail = $derived(ratingIntro ? ($nowPlayingStream.rating?.descriptors ?? []).join(' · ') : '')
   let ratingShownAt = $state(0)
@@ -2231,7 +2233,7 @@
     </button>
   {/if}
 
-  {#if episodeScreen && $nowPlayingMedia && !(gmBitmapMode && $gmFrozenFrame != null)}
+  {#if episodeScreen && episodeCover && $nowPlayingMedia}
     <LoadingScreen screen={episodeScreen} episode loading={!firstFrame} variant="player" class="izumi-hud pointer-events-none absolute inset-0 bg-black"
       model={episodeLoadingModel($nowPlayingMedia.media, $nowPlayingMedia.episode)} />
   {/if}
@@ -2245,7 +2247,7 @@
          which suspends transition frames and can leave an outro spinner mounted forever. -->
     <div
       class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
-      class:bg-black={!firstFrame}
+      class:bg-black={!firstFrame && !episodeCover}
     >
       <!-- One ring for every playback wait, the same as the connecting screen's and in the same
            place, so starting playback shows one loader from the press to the picture. -->
@@ -2255,7 +2257,7 @@
     <!-- Game mode before mpv's window is up (a protected stream fetches its licence first): mpv's
          own spinner cannot draw yet, so the page draws the same ring in the same place, colour and
          turn (Spinner `player`) and the handover to it does not show. -->
-    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
+    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center" class:bg-black={!episodeCover}>
       <Spinner size="player" />
     </div>
   {/if}

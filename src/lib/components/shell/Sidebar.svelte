@@ -229,7 +229,8 @@
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
   // A menu list's address carries its query, so it lights up only on its own list.
-  const active = (href: string) => !$playing && ((page.url.pathname + page.url.search).startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
+  // A theme screen matches its own page only: `/app/screen/a` is not active on `/app/screen/ab`.
+  const active = (href: string) => !$playing && ((href.startsWith('/app/screen/') ? page.url.pathname === href : (page.url.pathname + page.url.search).startsWith(href)) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
   // The tab L1/R1 steps from: the current page's, else the last one visited (a series page opened
   // from Home still steps from Home).
   let lastSection = $state<string | undefined>()

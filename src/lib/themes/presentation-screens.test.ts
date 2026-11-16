@@ -64,5 +64,6 @@ describe('theme screens (API 8)', () => {
     const sidebar = read('../components/shell/Sidebar.svelte')
     expect(sidebar).toContain('const screenItems = $derived($themeScreens.map(screenDestination))')
     expect(sidebar).toContain('...screenItems])')
+    expect(sidebar).toContain("href.startsWith('/app/screen/') ? page.url.pathname === href")
   })
 })

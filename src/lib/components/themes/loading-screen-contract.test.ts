@@ -24,7 +24,10 @@ describe('loading screens (API 8) are mounted where each wait happens', () => {
     const player = read('../player/PlayerOverlay.svelte')
     expect(player).toContain('<LoadingScreen screen={episodeScreen} episode loading={!firstFrame} variant="player"')
     expect(player.indexOf('<LoadingScreen')).toBeLessThan(player.indexOf('<!-- Loading/buffering.'))
-    expect(player).toContain('{#if episodeScreen && $nowPlayingMedia && !(gmBitmapMode && $gmFrozenFrame != null)}')
+    expect(player).toContain('const episodeCover = $derived(!!episodeScreen && !!$nowPlayingMedia && !(gmBitmapMode && $gmFrozenFrame != null))')
+    // The loading layers over it stop painting their own black, or the screen would sit under a black box.
+    expect(player).toContain('class:bg-black={!firstFrame && !episodeCover}')
+    expect(player).toContain('justify-center" class:bg-black={!episodeCover}>')
   })
 
   it('animates nothing itself and holds the exit with data-state="done"', () => {

@@ -394,7 +394,7 @@
   const titleScreenHint = $derived($detailHints[compatibilityMediaId(ref)])
 </script>
 
-{#if titleScreen}<LoadingScreen screen={titleScreen} {loading} variant="catalog" model={titleScreenHint ? mediaDisplayModel(titleScreenHint) : {}} class="fixed inset-0 z-[25] bg-background" />{/if}
+{#if titleScreen}<LoadingScreen screen={titleScreen} {loading} variant="catalog" model={titleScreenHint ? mediaDisplayModel(titleScreenHint) : {}} class="fixed inset-y-0 left-[var(--theme-shell-left,0px)] right-0 z-[25] bg-background" />{/if}
 
 {#if loading}
   <!-- The page's shape while it loads: the artwork with the title, synopsis and Play over it, then the

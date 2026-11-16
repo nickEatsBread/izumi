@@ -867,7 +867,7 @@
   }
 </script>
 
-{#if titleScreen}<LoadingScreen screen={titleScreen} loading={pending} variant="series" model={titleScreenModel} class="fixed inset-0 z-[25] bg-background" />{/if}
+{#if titleScreen}<LoadingScreen screen={titleScreen} loading={pending} variant="series" model={titleScreenModel} class="fixed inset-y-0 left-[var(--theme-shell-left,0px)] right-0 z-[25] bg-background" />{/if}
 
 <svelte:window onscroll={$isMobile ? onHeroScroll : undefined} onkeydown={(e) => { if (e.key === 'Escape' && (showMore || actionsOpen)) closeMenu() }} />
 
