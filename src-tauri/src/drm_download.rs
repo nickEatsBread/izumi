@@ -379,19 +379,34 @@ async fn fetch_plan(plan_url: &str) -> Result<PlanResponse, String> {
 /// message is a stable, detectable prefix.
 pub const LICENSE_FORBIDDEN_PREFIX: &str = "licence-forbidden:";
 
-/// Run the Widevine L3 licence exchange and return kid -> key. The device comes from
-/// `widevine_device` (override → cached pool member → fresh pool member → bundled seed); a refused
-/// device is rotated away from once inside this job before `licence-forbidden:` reaches the client.
+/// Run the Widevine L3 licence exchange and return kid -> key. The device is OPTIONAL and comes
+/// from `widevine_device` (override → cached pool member → fresh pool member → optional bundled
+/// file); a refused device is rotated away from once inside this job.
+///
+/// When no device is available — the ordinary case, since no identity ships — or every available
+/// device is refused, there are no keys to fetch here: this returns the stable `licence-forbidden:`
+/// signal so the client uses the normal path (the module, else Shaka). It is not a hard failure.
 async fn fetch_keys<R: Runtime>(
     app: &AppHandle<R>,
     pssh_b64: &str,
     license_url: &str,
 ) -> Result<HashMap<[u8; 16], [u8; 16]>, String> {
     let supply = crate::widevine_device::DeviceSupply::from_app(app);
-    crate::widevine_device::exchange_with_rotation(&supply, |device| async move {
+    let outcome = crate::widevine_device::exchange_with_rotation(&supply, |device| async move {
         fetch_keys_with_device(&device, pssh_b64, license_url).await
     })
-    .await
+    .await?;
+    // `None` = no usable device. The accelerator path is simply not taken; fall back to the normal
+    // path through the same detectable signal the client already routes on.
+    outcome.ok_or_else(no_device_available)
+}
+
+/// The stable "no usable device" signal: the client falls back to the normal path (module, else
+/// Shaka) on it, exactly as it does for a licence refusal. Not an error the user must act on.
+fn no_device_available() -> String {
+    format!(
+        "{LICENSE_FORBIDDEN_PREFIX} no Widevine device is available; using the normal path."
+    )
 }
 
 /// The stable refusal error: `widevine_device` rotates on it, the client falls back to Shaka on it.
