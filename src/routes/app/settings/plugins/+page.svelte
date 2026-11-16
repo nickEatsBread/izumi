@@ -170,7 +170,7 @@
         <input data-focusable bind:value={url} type="url" placeholder="https://…/plugin.json" class="min-w-0 flex-1 rounded-md bg-input px-3 py-2 text-sm" />
         <button data-focusable disabled={busy || !url.trim()} class="rounded-md bg-secondary px-4 py-2 text-sm font-bold disabled:opacity-50">Add</button>
       </form>
-      <p class="mt-2 text-xs text-muted-foreground">For plugin authors: <label class="cursor-pointer underline">pick plugin.json and its .js file<input bind:this={files} type="file" multiple accept=".json,.js,.mjs" class="sr-only" onchange={fromFiles} /></label>.</p>
+      <p class="mt-2 text-xs text-muted-foreground">For plugin authors: <button type="button" data-focusable class="underline" onclick={() => files?.click()}>pick plugin.json and its .js file</button>.<input bind:this={files} type="file" multiple accept=".json,.js,.mjs" class="hidden" onchange={fromFiles} /></p>
       {#if error}<p class="mt-2 text-sm text-destructive" role="alert">{error}</p>{/if}
     </section>
   </div>
