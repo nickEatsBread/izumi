@@ -1,7 +1,8 @@
-//! The Widevine module lives on ONE process-wide thread: the C++ host is single-threaded by design,
-//! like Chromium's and Firefox's CDM hosts. That thread is seccomp-filtered before the module is
-//! loaded and does nothing but call the module: licence requests and responses travel as bytes to and
-//! from the async runtime, which does the HTTP. Each playback opens its own CDM instance on it.
+//! The Widevine module is driven from dedicated threads ("lanes"); each host is single-threaded by
+//! design, like Chromium's and Firefox's CDM hosts, so every instance stays on the one lane that opened
+//! it. Lane threads are seccomp-filtered before they touch the module and do nothing but call it:
+//! licence requests and responses travel as bytes to and from the async runtime, which does the HTTP.
+//! Playback uses lane 0 only; a save spreads its instances over several lanes (see `max_lanes`).
 use anyhow::{anyhow, bail, Result};
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -154,18 +155,23 @@ enum Job {
     Close { id: u64 },
 }
 
-/// The module runs on dedicated threads ("lanes"). Lane 0 is the default (and the only one the Linux
-/// streaming player uses). A save opens its audio and video instances on separate lanes so their
-/// module work — the scarce, serial-per-instance resource — runs in parallel instead of back-to-back.
-/// Each lane is an independent CDM-host thread; the module (loaded once, process-wide) tolerates
-/// several concurrent instances the way a browser runs its audio and video decoders at once.
+/// The module runs on dedicated threads ("lanes"), one instance per lane. Lane 0 is the default (and
+/// the only one playback uses). The module throttles each instance after its first ~2,000 calls, so a
+/// save spreads its work over several instances on their own lanes. Lanes start lazily, so a
+/// one-instance playback still starts exactly one thread.
 ///
-/// Lanes are created lazily on first use, so a one-instance playback still starts exactly one thread.
-/// The count is capped (so a small device is not thrashed) and overridable with IZUMI_WIDEVINE_LANES.
+/// How many lanes a save may use: `IZUMI_WIDEVINE_LANES` when set (1 = one instance doing audio then
+/// video, for weak machines), else half the machine's hardware threads, at most 6. Measured on a
+/// 22-thread laptop the save stops getting faster at 8 lanes (the video encoder and module CPU use
+/// ~70% of the machine there) and each lane costs ~35-40 MB, so 6 stays well under that; a 4-core,
+/// 8-thread handheld gets 4. The hard cap is 16.
 pub fn max_lanes() -> usize {
-    std::env::var("IZUMI_WIDEVINE_LANES").ok().and_then(|v| v.parse().ok()).filter(|n| *n >= 1).unwrap_or(5).min(8)
+    if let Some(n) = std::env::var("IZUMI_WIDEVINE_LANES").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|n| *n >= 1) {
+        return n.min(16);
+    }
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+    (threads / 2).clamp(1, 6)
 }
-
 fn lanes() -> &'static Mutex<Vec<mpsc::Sender<Job>>> {
     static LANES: OnceLock<Mutex<Vec<mpsc::Sender<Job>>>> = OnceLock::new();
     LANES.get_or_init(|| Mutex::new(Vec::new()))
@@ -201,8 +207,21 @@ fn instance(map: &mut HashMap<u64, Instance>, id: u64) -> Result<&mut Instance> 
     map.get_mut(&id).ok_or_else(|| anyhow!("CDM instance closed"))
 }
 
+/// Asks Windows not to run this thread in its power-saving mode (EcoQoS: efficiency cores at low
+/// clocks), which it may apply to work in a background or idle-display session. A save is work the
+/// user asked for; measured on a hybrid laptop, the same save ran ~4x slower while throttled.
+#[cfg(windows)]
+pub fn full_speed_thread() {
+    use windows::Win32::System::Threading::{GetCurrentThread, SetThreadInformation, ThreadPowerThrottling, THREAD_POWER_THROTTLING_CURRENT_VERSION, THREAD_POWER_THROTTLING_EXECUTION_SPEED, THREAD_POWER_THROTTLING_STATE};
+    let state = THREAD_POWER_THROTTLING_STATE { Version: THREAD_POWER_THROTTLING_CURRENT_VERSION, ControlMask: THREAD_POWER_THROTTLING_EXECUTION_SPEED, StateMask: 0 };
+    // SAFETY: a valid pseudo-handle for this thread and a correctly sized state struct.
+    let _ = unsafe { SetThreadInformation(GetCurrentThread(), ThreadPowerThrottling, &state as *const _ as *const c_void, std::mem::size_of::<THREAD_POWER_THROTTLING_STATE>() as u32) };
+}
+#[cfg(not(windows))]
+pub fn full_speed_thread() {}
+
 fn run(rx: mpsc::Receiver<Job>) {
-    match super::seccomp::confine_current_thread() {
+    full_speed_thread();    match super::seccomp::confine_current_thread() {
         Ok(mode) => eprintln!("[widevine] module thread sandbox: {mode}"),
         Err(e) => eprintln!("[widevine] module thread sandbox unavailable: {e}"),
     }
@@ -210,11 +229,10 @@ fn run(rx: mpsc::Receiver<Job>) {
     let mut next_id = 1u64;
     loop {
         // With no instance open there are no module timers to fire: sleep until the next job.
-        let tick_ms: u64 = std::env::var("IZUMI_WIDEVINE_TICK_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
         let next = if instances.is_empty() {
             rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
         } else {
-            rx.recv_timeout(Duration::from_millis(tick_ms))
+            rx.recv_timeout(Duration::from_millis(50))
         };
         let job = match next {
             Ok(job) => job,

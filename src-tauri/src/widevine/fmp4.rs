@@ -403,6 +403,24 @@ pub fn to_annex_b(data: &mut [u8], subsamples: &[(u32, u32)]) -> Result<()> {
     Ok(())
 }
 
+/// Whether a length-prefixed H.264 sample (as stored in the fragment, before `to_annex_b`) carries an
+/// IDR slice. CENC keeps NAL headers in the clear, so this reads correctly on still-encrypted data. A
+/// fragment that opens on an IDR decodes on its own, which is what lets saving split video by fragment.
+pub fn has_idr(data: &[u8]) -> bool {
+    let mut off = 0usize;
+    while off + 5 <= data.len() {
+        let len = u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as usize;
+        if data[off + 4] & 0x1f == 5 {
+            return true;
+        }
+        match off.checked_add(4 + len) {
+            Some(next) => off = next,
+            None => return false,
+        }
+    }
+    false
+}
+
 fn read_senc(frag: &[u8], p: usize, iv_size: u8) -> Result<Vec<(Vec<u8>, Vec<(u32, u32)>)>> {
     let flags = u32be(frag, p)? & 0xff_ffff;
     let count = u32be(frag, p + 4)? as usize;
@@ -468,6 +486,18 @@ mod tests {
             sidx.extend(0x9000_0000u32.to_be_bytes());
         }
         [bx(b"ftyp", b"isom"), moov, full(b"sidx", 0, &sidx)].concat()
+    }
+
+    #[test]
+    fn idr_detection_walks_nal_lengths() {
+        // AUD (9), then an IDR slice (5): an IDR.
+        let idr = [&[0, 0, 0, 2, 9, 0xf0][..], &[0, 0, 0, 3, 0x65, 0xaa, 0xbb][..]].concat();
+        assert!(has_idr(&idr));
+        // AUD, then a non-IDR slice (1): not an IDR, even with 0x65 inside the payload.
+        let p = [&[0, 0, 0, 2, 9, 0xf0][..], &[0, 0, 0, 3, 0x41, 0x65, 0x65][..]].concat();
+        assert!(!has_idr(&p));
+        assert!(!has_idr(&[]));
+        assert!(!has_idr(&[0, 0, 0, 1])); // a bare length with no NAL header
     }
 
     #[test]
