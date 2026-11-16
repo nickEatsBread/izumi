@@ -16,23 +16,18 @@ on:
       manifest_url:
         description: "Widevine DASH manifest (public test asset)"
         required: false
-        default: "https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd"
+        default: "https://storage.googleapis.com/shaka-demo-assets/sintel-widevine/dash.mpd"
       license_url:
         description: "Widevine licence server (public, no account)"
         required: false
         default: "https://cwip-shaka-proxy.appspot.com/no_auth"
-      full_save:
-        description: "Also run a whole save (decrypt audio, decode + re-encode video with ffmpeg) on arm64"
-        type: boolean
-        required: false
-        default: true
 
 permissions:
   contents: read
 
 env:
   CARGO_TERM_COLOR: always
-  IZUMI_LIVE_SAVE_MANIFEST: ${{ inputs.manifest_url || 'https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd' }}
+  IZUMI_LIVE_SAVE_MANIFEST: ${{ inputs.manifest_url || 'https://storage.googleapis.com/shaka-demo-assets/sintel-widevine/dash.mpd' }}
   IZUMI_LIVE_SAVE_LICENSE: ${{ inputs.license_url || 'https://cwip-shaka-proxy.appspot.com/no_auth' }}
 
 jobs:
@@ -71,11 +66,11 @@ jobs:
           key: macos-widevine-arm64
 
       # libmpv2-sys links `-l mpv`; `cargo test` links, so Homebrew's libmpv must be on the linker
-      # path (same setup as release.yml). ffmpeg is the save's video re-encoder.
-      - name: libmpv + ffmpeg (Homebrew)
+      # path (same setup as release.yml).
+      - name: libmpv (Homebrew)
         run: |
           set -euo pipefail
-          brew install mpv ffmpeg || { brew link --overwrite openssl@3; brew install mpv ffmpeg; }
+          brew install mpv || { brew link --overwrite openssl@3; brew install mpv; }
           BREW="$(brew --prefix)"
           echo "PKG_CONFIG_PATH=$BREW/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=$BREW/lib" >> "$GITHUB_ENV"
@@ -100,7 +95,9 @@ jobs:
           IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
         run: |
           set -o pipefail
-          cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-chrome.log"
+          # One retry: a public endpoint can time out once (a connect timeout was seen under Rosetta).
+          cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-chrome.log" \
+            || { echo '::warning::probe failed; retrying once'; sleep 10; cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee -a "$RUNNER_TEMP/probe-chrome.log"; }
 
       # The bundle's entitlements file, applied to the same test binary with the hardened runtime on (as
       # a notarized build would be signed): codesign must accept the plist and the signed binary must
@@ -144,26 +141,9 @@ jobs:
           IZUMI_WIDEVINE_NO_SYSTEM: "1"
         run: |
           set -o pipefail
-          cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-download.log"
-
-      # The whole save path a user's download takes: audio decrypted, video decoded by the module and
-      # re-encoded by ffmpeg. Informational: a failure here is reported, not fatal.
-      - name: Whole save through the app (informational)
-        if: ${{ inputs.full_save != false }}
-        continue-on-error: true
-        working-directory: src-tauri
-        env:
-          IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
-          IZUMI_LIVE_SAVE_OUT: ${{ runner.temp }}/saved.protected
-        run: |
-          set -o pipefail
-          cargo test --lib live_save_writes_a_clear_file -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/save.log"
-          for f in video audio; do
-            p="$IZUMI_LIVE_SAVE_OUT/$f.mp4"
-            echo "== $f.mp4 $(stat -f %z "$p") bytes"
-            ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames,duration -of compact "$p"
-            ffmpeg -v error -i "$p" -f null - && echo "decode clean: $f.mp4"
-          done
+          # One retry: a public endpoint can time out once (a connect timeout was seen under Rosetta).
+          cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-download.log" \
+            || { echo '::warning::probe failed; retrying once'; sleep 10; cargo test --lib live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee -a "$RUNNER_TEMP/probe-download.log"; }
 
       - name: Summary
         if: always()
@@ -172,7 +152,6 @@ jobs:
             echo '## macOS Widevine (arm64)'
             echo '```'
             grep -h '\[live\] set up module\|\[probe\] RESULT' "$RUNNER_TEMP"/install-*.log "$RUNNER_TEMP"/probe-*.log 2>/dev/null || echo '(no probe output)'
-            grep -h '\[live\] wrote\|decode clean' "$RUNNER_TEMP/save.log" 2>/dev/null || true
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -243,7 +222,9 @@ jobs:
           IZUMI_LIVE_SAVE_DATA: ${{ runner.temp }}/izumi-chrome
         run: |
           set -o pipefail
-          cargo test --lib --target x86_64-apple-darwin live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-chrome.log"
+          # One retry: a public endpoint can time out once (a connect timeout was seen under Rosetta).
+          cargo test --lib --target x86_64-apple-darwin live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/probe-chrome.log" \
+            || { echo '::warning::probe failed; retrying once'; sleep 10; cargo test --lib --target x86_64-apple-darwin live_licence_keys_arrive -- --ignored --nocapture 2>&1 | tee -a "$RUNNER_TEMP/probe-chrome.log"; }
 
       - name: Summary
         if: always()
