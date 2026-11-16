@@ -94,7 +94,7 @@
     "@types/node": "^24.19.2",
     "autoprefixer": "^10.6.2",
     "fake-indexeddb": "^6.2.8",
-    "jsdom": "^30.0.1",
+    "jsdom": "^31.0.1",
     "postcss": "^8.5.33",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
