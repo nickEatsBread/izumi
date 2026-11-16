@@ -17,7 +17,7 @@ describe('seek bar styling hooks', () => {
     expect(seekbar).toContain('data-scrubbing={seeking || undefined}')
     expect(seekbar).toContain('const knobX = $derived((barW * (seeking ? hoverPct : progressPct)) / 100)')
     // After the release the knob holds the target until the reported playhead reaches it.
-    expect(seekbar).toContain('const progressPct = $derived(pct(heldT ?? pos))')
+    expect(seekbar).toContain('const progressPct = $derived(pct(seeking ? hoverT : heldT ?? pos))')
     expect(seekbar).toContain('heldT = hoverT')
   })
 

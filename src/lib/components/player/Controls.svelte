@@ -22,6 +22,12 @@
   import Bookmark from '@lucide/svelte/icons/bookmark'
   import Gauge from '@lucide/svelte/icons/gauge'
   import Ratio from '@lucide/svelte/icons/ratio'
+  import Scan from '@lucide/svelte/icons/scan'
+  import Crop from '@lucide/svelte/icons/crop'
+  import RectangleHorizontal from '@lucide/svelte/icons/rectangle-horizontal'
+  import Sparkles from '@lucide/svelte/icons/sparkles'
+  import PluginPanel from './PluginPanel.svelte'
+  import { openPluginPanel, pluginRuns } from '$lib/plugins/host'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
@@ -55,7 +61,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, seekDuration, hideSpoilers, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, sceneBookmarksEnabled, playerHiddenControls, hotkeyBindings } from '$lib/settings/ui'
+  import { videoFit, VIDEO_FITS, VIDEO_FIT_MPV, type VideoFit, seekDuration, hideSpoilers, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, sceneBookmarksEnabled, playerHiddenControls, hotkeyBindings } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
@@ -167,10 +173,11 @@
   // readout, so while this bar is up the titlebar yields its pointer events and the bar carries
   // the window-drag strip instead.
   const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && ($shellNav !== 'top' || $playerCoversWindow))
-  // Keep Back clear of the titlebar's leading slot (macOS traffic lights, or the GIF indicator
-  // over the sidebar) when the player starts at the window's left edge.
+  // Keep Back clear of the titlebar's leading slot when the player starts at the window's left edge,
+  // but only while that slot holds something: macOS's traffic lights always, elsewhere the GIF
+  // indicator while recording. Otherwise Back keeps the bar's own 16px edge, as Navigator's does.
   const backInset = $derived.by(() => {
-    if (!underTitlebar) return undefined
+    if (!underTitlebar || (!$isMacOS && $gifRecordingStart == null)) return undefined
     const slot = $isMacOS ? 7 : 3.5
     const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0
     return `${Math.max(1, slot + 0.5 - playerLeft)}rem`
@@ -277,7 +284,7 @@
     if (gmSettingsPage === 'subs') return 2 + gmSubTracks.length
     if (gmSettingsPage === 'speed') return 1 + speeds.length
     if (gmSettingsPage === 'quality') return 2 + qualityInfo.heights.length
-    if (gmSettingsPage === 'fit') return 3
+    if (gmSettingsPage === 'fit') return 1 + VIDEO_FITS.length
     return 6 + ($sceneBookmarksEnabled ? 1 : 0)
   }
   function gmMove(delta: number) {
@@ -318,7 +325,7 @@
     else if (gmSettingsPage === 'quality') {
       if (i === 0) void setVideoQuality('auto')
       else void setVideoQuality(qualityInfo.heights[i - 1] ?? 'auto')
-    } else if (gmSettingsPage === 'fit') setFit(i === 0 ? 'best' : 'fill')
+    } else if (gmSettingsPage === 'fit') setFit(VIDEO_FITS[i]?.id ?? 'best')
     else if (gmSettingsPage === 'tools') {
       if ($sceneBookmarksEnabled && i === 0) void bookmarkScene()
       else {
@@ -418,9 +425,25 @@
     swapping = false
   }
 
-  // Video fit: 'best' = letterbox (panscan 0); 'fill' = crop-to-fill (panscan 1),
-  // aspect preserved either way (never stretched). Persisted + applied live.
-  function setFit(f: 'best' | 'fill') { videoFit.set(f); cmd('set', ['panscan', f === 'fill' ? '1.0' : '0.0']) }
+  // Video fit: 'best' = letterbox, 'fill' = crop to fill (panscan 1), 'stretch' = drop the aspect
+  // ratio (keepaspect no). Persisted + applied live.
+  function setFit(f: VideoFit) {
+    videoFit.set(f)
+    const [keepaspect, panscan] = VIDEO_FIT_MPV[f]
+    cmd('set', ['keepaspect', keepaspect])
+    cmd('set', ['panscan', panscan])
+  }
+  const fitIndex = $derived(Math.max(0, VIDEO_FITS.findIndex((fit) => fit.id === $videoFit)))
+  const fitLabel = $derived(VIDEO_FITS[fitIndex].label)
+  // Theme API 7 `buttons: ["fit"]`: one button cycles the framing, as Navigator's does (Scan, Crop and
+  // RectangleHorizontal are its icons for Fit, Fill / crop and Stretch).
+  const FIT_ICONS = { best: Scan, fill: Crop, stretch: RectangleHorizontal }
+  const FitIcon = $derived(FIT_ICONS[VIDEO_FITS[fitIndex].id])
+  const nextFit = $derived(VIDEO_FITS[(fitIndex + 1) % VIDEO_FITS.length])
+  // Theme API 7 `endTime`: when the episode ends at normal speed, in Navigator's wording and 12-hour clock.
+  const endsAt = $derived(controls.endTime && !gm && dur > 0 && pos >= 0
+    ? new Date(Date.now() + Math.max(0, dur - pos) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
+    : '')
 
   // Screenshot the current frame (with subtitles) → app Pictures/izumi folder.
   async function screenshot() {
@@ -568,10 +591,30 @@
     cmd('set', ['mute', volLatest === 0 ? 'yes' : 'no'])
   }
   function setVolume(e: Event) {
-    volume = Number((e.target as HTMLInputElement).value)
+    applyVolume(Number((e.target as HTMLInputElement).value))
+  }
+  function applyVolume(value: number) {
+    volume = value
     muted = volume === 0
     volLatest = volume
     if (!volPending) { volPending = true; requestAnimationFrame(flushVolume) }
+  }
+  // The range input's own drag ignores a finger (Chromium jumps to the touch point, then drops the
+  // moves). Capture the pointer and follow it, as the seek bar does, for every pointer type.
+  function volumeAtPointer(e: PointerEvent) {
+    const input = e.currentTarget as HTMLInputElement
+    const box = input.getBoundingClientRect()
+    if (box.width <= 0) return
+    const value = Math.round(Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * Number(input.max))
+    input.value = String(value)
+    applyVolume(value)
+  }
+  function onVolumePointerDown(e: PointerEvent) {
+    try { (e.currentTarget as HTMLInputElement).setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+    volumeAtPointer(e)
+  }
+  function onVolumePointerMove(e: PointerEvent) {
+    if ((e.currentTarget as HTMLInputElement).hasPointerCapture(e.pointerId)) volumeAtPointer(e)
   }
   function toggleMute() {
     muted = !muted
@@ -921,8 +964,10 @@
   // Keep Controls mounted (and the overlay full-viewport) while a popover is open. Reset on
   // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
-    playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt)
+    playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt || !!$openPluginPanel)
   })
+  // A closed player never reopens with a plugin panel up.
+  $effect(() => () => openPluginPanel.set(null))
 </script>
 
 <!-- Now-playing title, reused above the seek bar (default) or at the top (Game-mode option). -->
@@ -965,9 +1010,11 @@
         <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
       {/if}
       {#if !gm && !hideBack}
-        <button data-part="button" data-variant="ghost" data-control="back" data-focusable onclick={onclose} aria-label="Back"
-                class="pointer-events-auto relative flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
-          <ArrowLeft size={icSize} /><span>Back</span>
+        <!-- Navigator's Back: a 36px filled near-black circle with a 20px white arrow and no label; the
+             hover lightens it on Navigator's 120ms ease-out. -->
+        <button data-part="button" data-variant="ghost" data-control="back" data-focusable onclick={onclose} aria-label="Back" title="Back"
+                class="pointer-events-auto relative grid size-9 shrink-0 select-none place-items-center rounded-full bg-[#1a1a1a] text-white transition-colors duration-[120ms] ease-[cubic-bezier(.23,1,.32,1)] hover:bg-[color-mix(in_oklab,#1a1a1a_85%,white_15%)]">
+          <ArrowLeft size={20} />
         </button>
       {/if}
       {#if titleTop}<div class="min-w-0 flex-1">{@render titleBlock(true)}</div>{/if}
@@ -987,7 +1034,14 @@
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
-      <div class="mb-2">{@render titleBlock(gm)}</div>
+      {#if endsAt}
+        <div class="mb-2 flex min-w-0 items-center justify-between gap-4">
+          <div class="min-w-0 flex-1">{@render titleBlock(gm)}</div>
+          <span data-part="player.endtime" class="shrink-0 whitespace-nowrap text-sm text-white/70">Ends at {endsAt}</span>
+        </div>
+      {:else}
+        <div class="mb-2">{@render titleBlock(gm)}</div>
+      {/if}
     {/if}
 
     <!-- Game mode: flank the bar with current + total time (Crunchy-Deck style) so the bar itself
@@ -1077,12 +1131,28 @@
             data-part="player.volume"
             data-focusable
             type="range"
-            class="h-1 w-0 cursor-pointer accent-white opacity-0 transition-all duration-200 group-hover/vol:w-20 group-hover/vol:opacity-100"
+            class="h-1 w-0 cursor-pointer touch-none accent-white opacity-0 transition-all duration-200 group-focus-within/vol:w-20 group-focus-within/vol:opacity-100 group-hover/vol:w-20 group-hover/vol:opacity-100"
             min="0" max="130" step="1" value={muted ? 0 : volume}
             oninput={setVolume}
+            onpointerdown={onVolumePointerDown}
+            onpointermove={onVolumePointerMove}
             aria-label="Volume"
           />
         </div>
+        {/if}
+
+        <!-- Plugin panels (permission player.panel): one button per running plugin that has one. -->
+        {#if !gm}
+          {#each $pluginRuns.filter((run) => run.panel) as run (run.id)}
+            <button data-part="player.control" data-control="plugin" data-plugin={run.id} data-focusable class={iconBtn}
+                    onclick={() => openPluginPanel.update((open) => (open === run.id ? null : run.id))}
+                    title={run.panel?.label} aria-label={run.panel?.label} aria-expanded={$openPluginPanel === run.id}><Sparkles size={icSize} /></button>
+          {/each}
+        {/if}
+
+        {#if controls.buttons.includes('fit') && !gm}
+          <button data-part="player.control" data-control="fit" data-focusable class={iconBtn} onclick={() => setFit(nextFit.id)}
+                  title="Video framing: {fitLabel}" aria-label="Video framing: {fitLabel}. Switch to {nextFit.label}"><FitIcon size={icSize} /></button>
         {/if}
 
         <!-- Playback options: speed, audio/subtitle delay, subtitle size. In Game mode it sits to
@@ -1126,7 +1196,7 @@
                       <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                         <Ratio size={16} class="row-span-2 shrink-0 text-white/55" />
                         <span class="text-xs uppercase tracking-wide text-white/45">Video fit</span>
-                        <span class="truncate">{$videoFit === 'fill' ? 'Fill' : 'Best fit'}</span>
+                        <span class="truncate">{fitLabel}</span>
                       </span>
                       <ChevronRight size={18} class="shrink-0 text-white/40" />
                     </button>
@@ -1178,9 +1248,9 @@
                           </button>
                         {/each}
                       {:else if optionsPage === 'fit'}
-                        {#each [['best', 'Best fit'], ['fill', 'Fill']] as [value, label]}
-                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { setFit(value as 'best' | 'fill'); optionsPage = 'root' }}>
-                            <span>{label}</span>{#if $videoFit === value}<Check size={18} class="shrink-0 text-primary" />{/if}
+                        {#each VIDEO_FITS as fit (fit.id)}
+                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { setFit(fit.id); optionsPage = 'root' }}>
+                            <span>{fit.label}</span>{#if $videoFit === fit.id}<Check size={18} class="shrink-0 text-primary" />{/if}
                           </button>
                         {/each}
                       {:else if optionsPage === 'timing'}
@@ -1564,7 +1634,7 @@
             <span class="opacity-50">{qualityInfo.mode === 'auto' ? `Auto${qualityInfo.activeHeight ? ` (${qualityInfo.activeHeight}p)` : ''}` : `${qualityInfo.mode}p`} ›</span>
           </button>
         {/if}
-        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('fit')} class:text-black={gmSetIdx === gmRootKeys.indexOf('fit')} onclick={() => gmOpenPage('fit')}><span>Video fit</span><span class="opacity-50">{$videoFit === 'fill' ? 'Fill' : 'Best fit'} ›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('fit')} class:text-black={gmSetIdx === gmRootKeys.indexOf('fit')} onclick={() => gmOpenPage('fit')}><span>Video fit</span><span class="opacity-50">{fitLabel} ›</span></button>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('position')} class:text-black={gmSetIdx === gmRootKeys.indexOf('position')} onclick={openSubtitleEditor}><span>Move subtitles</span><span class="opacity-50">Position ›</span></button>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('tools')} class:text-black={gmSetIdx === gmRootKeys.indexOf('tools')} onclick={() => gmOpenPage('tools')}><span>Tools</span><span class="opacity-50">›</span></button>
       {:else}
@@ -1590,8 +1660,9 @@
             <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 2} class:text-black={gmSetIdx === i + 2} onclick={() => setVideoQuality(height)}>{height}p</button>
           {/each}
         {:else if gmSettingsPage === 'fit'}
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => setFit('best')}>Best fit</button>
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2} class:text-black={gmSetIdx === 2} onclick={() => setFit('fill')}>Fill</button>
+          {#each VIDEO_FITS as fit, i (fit.id)}
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => setFit(fit.id)}>{fit.label}</button>
+          {/each}
         {:else}
           {#if $sceneBookmarksEnabled}
             <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => void bookmarkScene()}>Save scene bookmark</button>
@@ -1615,5 +1686,12 @@
 
   {#if menuAt && root && !gm}
     <PlayerContextMenu at={menuAt} {root} items={contextItems} onclose={() => (menuAt = null)} />
+  {/if}
+
+  <!-- An open plugin panel floats centred over the bottom of the video, as Navigator's Ask panel does. -->
+  {#if !gm}
+    {#each $pluginRuns as run (run.id)}
+      {#if $openPluginPanel === run.id}<PluginPanel {run} />{/if}
+    {/each}
   {/if}
 </div>

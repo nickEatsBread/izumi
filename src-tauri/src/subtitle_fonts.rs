@@ -33,13 +33,13 @@ pub fn dir() -> Option<&'static Path> {
     DIR.get().map(PathBuf::as_path)
 }
 
-const EBML: u64 = 0x1A45_DFA3;
-const SEGMENT: u64 = 0x1853_8067;
+pub(crate) const EBML: u64 = 0x1A45_DFA3;
+pub(crate) const SEGMENT: u64 = 0x1853_8067;
 const SEEK_HEAD: u64 = 0x114D_9B74;
 const SEEK: u64 = 0x4DBB;
 const SEEK_ID: u64 = 0x53AB;
 const SEEK_POSITION: u64 = 0x53AC;
-const CLUSTER: u64 = 0x1F43_B675;
+pub(crate) const CLUSTER: u64 = 0x1F43_B675;
 const ATTACHMENTS: u64 = 0x1941_A469;
 const ATTACHED_FILE: u64 = 0x61A7;
 const FILE_NAME: u64 = 0x466E;
@@ -57,7 +57,7 @@ struct Element {
 }
 
 /// One EBML variable-length integer at `buf[at..]`: (value, length). IDs keep their marker bit.
-fn vint(buf: &[u8], at: usize, keep_marker: bool) -> Option<(u64, usize)> {
+pub(crate) fn vint(buf: &[u8], at: usize, keep_marker: bool) -> Option<(u64, usize)> {
     let first = *buf.get(at)?;
     let len = first.leading_zeros() as usize + 1;
     if len > 8 {
@@ -95,7 +95,7 @@ fn body_end(element: &Element) -> Option<usize> {
 }
 
 /// The complete child elements of an element body.
-fn children(body: &[u8]) -> Vec<(u64, &[u8])> {
+pub(crate) fn children(body: &[u8]) -> Vec<(u64, &[u8])> {
     let mut out = Vec::new();
     let mut at = 0;
     while let Some(el) = element(body, at) {
@@ -109,7 +109,7 @@ fn children(body: &[u8]) -> Vec<(u64, &[u8])> {
     out
 }
 
-fn uint(bytes: &[u8]) -> u64 {
+pub(crate) fn uint(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0, |value, b| (value << 8) | *b as u64)
 }
 

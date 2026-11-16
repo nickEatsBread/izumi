@@ -64,7 +64,7 @@ describe('right-click menu', () => {
   it('closes on click-away and on a pick, and keeps the bar up while open', () => {
     expect(menu).toContain('onclick={onclose} aria-label="Close menu"')
     expect(menu).toMatch(/function choose\(run: \(\) => void\) \{\s+onclose\(\)\s+run\(\)/)
-    expect(controls).toContain('playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt)')
+    expect(controls).toContain('playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt || !!$openPluginPanel)')
   })
 
   it("runs the bar buttons' own handlers with the user's hotkey hints", () => {

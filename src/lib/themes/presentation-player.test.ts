@@ -25,7 +25,7 @@ describe('player controls (API 6)', () => {
   })
 
   it('resolves defaults, and the TV block can change them', () => {
-    expect(resolvePlayerControls(undefined)).toEqual({ seekButtons: false, time: 'default', title: 'default', paused: 'none', buttons: [], window: 'app', trackButtons: 'icon', rating: 'none' })
+    expect(resolvePlayerControls(undefined)).toEqual({ seekButtons: false, time: 'default', title: 'default', paused: 'none', buttons: [], window: 'app', trackButtons: 'icon', rating: 'none', endTime: false })
     const layout = parsePresentation({ player: { time: 'remaining' }, tv: { player: { time: 'split', paused: 'summary' } } })
     expect(resolvePlayerControls(resolvePresentation(layout, false))).toMatchObject({ time: 'remaining', paused: 'none' })
     expect(resolvePlayerControls(resolvePresentation(layout, false, true))).toMatchObject({ time: 'split', paused: 'summary' })
@@ -40,5 +40,13 @@ describe('API 7 player keys', () => {
   it('refuses them before API 7 and refuses unknown values', () => {
     expect(() => parsePresentation({ player: { trackButtons: 'text' } }, 6)).toThrow()
     expect(() => parsePresentation({ player: { rating: 'always' } }, 7)).toThrow()
+  })
+  it('adds the framing button and the end time, refused before API 7', () => {
+    const player = { buttons: ['fit', 'restart'], endTime: true }
+    expect(parsePresentation({ player }).player).toEqual(player)
+    expect(resolvePlayerControls(parsePresentation({ player }))).toMatchObject({ buttons: ['fit', 'restart'], endTime: true })
+    expect(() => parsePresentation({ player: { buttons: ['fit'] } }, 6)).toThrow()
+    expect(() => parsePresentation({ player: { endTime: true } }, 6)).toThrow('unsupported')
+    expect(parsePresentation({ player: { buttons: ['restart'] } }, 6).player).toEqual({ buttons: ['restart'] })
   })
 })

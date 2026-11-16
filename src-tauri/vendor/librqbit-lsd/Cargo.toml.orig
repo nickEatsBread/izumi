@@ -1,0 +1,25 @@
+[package]
+name = "librqbit-lsd"
+version.workspace = true
+edition = "2024"
+description = "Local Service Discovery implementation used by rqbit."
+license = "Apache-2.0"
+repository = "https://github.com/ikatson/rqbit"
+
+[dependencies]
+anyhow.workspace = true
+librqbit-dualstack-sockets.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tokio-util.workspace = true
+librqbit-core.workspace = true
+rand.workspace = true
+futures.workspace = true
+bstr.workspace = true
+parking_lot.workspace = true
+httparse.workspace = true
+atoi.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+tracing-subscriber = { workspace = true, features = ["fmt"] }

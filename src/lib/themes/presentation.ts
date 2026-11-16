@@ -230,7 +230,7 @@ export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7
  *  choice, the kind of title and the Continue Watching empty state. API 6 adds the TV block (applied on
  *  Android TV and in Game mode), the freshness badge field, artwork on card templates and the Suggested
  *  tab name; later API 6 keys add player controls, the expanding preview, trailer backgrounds, anchored
- *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`). */
+ *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. */
 export const LATEST_THEME_API: ThemeApi = 7
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
@@ -419,8 +419,12 @@ export interface PlayerPresentation {
   /** API 6: `summary` shows a "You're watching" summary after five seconds paused with no input. */
   paused?: 'none' | 'summary'
   /** API 6: `restart` (seek to the start) and `next` (the next episode) buttons beside Play. The desktop
-   *  player has its own Next, so it shows `restart` only. */
+   *  player has its own Next, so it shows `restart` only. API 7 adds `fit`: a desktop button among the
+   *  actions that cycles the video framing (Best fit, Fill, Stretch). */
   buttons?: PlayerButton[]
+  /** API 7: "Ends at 9:41 PM" (when the episode finishes at normal speed) at the right of the desktop
+   *  player's title line. */
+  endTime?: boolean
   /** API 6: `full` gives the windowed desktop player the whole window, as full screen does: the navigation
    *  hides while a video plays. `app` (the default) keeps the video beside or under the navigation. */
   window?: 'app' | 'full'
@@ -431,7 +435,7 @@ export interface PlayerPresentation {
    *  3.6 s and fades it out, as TV apps show their rating card. */
   rating?: 'none' | 'intro'
 }
-export type PlayerButton = 'restart' | 'next'
+export type PlayerButton = 'restart' | 'next' | 'fit'
 /** API 6, TV block only: how the Search page takes text. */
 export interface SearchPresentation {
   /** `grid` docks an A–Z / 0–9 keyboard beside the results. */
@@ -981,7 +985,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window']), ...api7(api, ['trackButtons', 'rating'])])
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window']), ...api7(api, ['trackButtons', 'rating', 'endTime'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
@@ -1003,7 +1007,8 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.time !== undefined) result.time = choice(raw.time, ['default', 'remaining', 'split'])
   if (raw.title !== undefined) result.title = choice(raw.title, ['default', 'episode'])
   if (raw.paused !== undefined) result.paused = choice(raw.paused, ['none', 'summary'])
-  if (raw.buttons !== undefined) result.buttons = uniqueChoices(raw.buttons, ['restart', 'next'], 'player.buttons', 0)
+  if (raw.buttons !== undefined) result.buttons = uniqueChoices(raw.buttons, api >= 7 ? ['restart', 'next', 'fit'] : ['restart', 'next'], 'player.buttons', 0)
+  if (raw.endTime !== undefined) result.endTime = flag(raw.endTime)
   if (raw.window !== undefined) result.window = choice(raw.window, ['app', 'full'])
   if (raw.trackButtons !== undefined) result.trackButtons = choice(raw.trackButtons, ['icon', 'text'])
   if (raw.rating !== undefined) result.rating = choice(raw.rating, ['none', 'intro'])
@@ -1387,11 +1392,12 @@ export interface ResolvedPlayerControls {
   window: NonNullable<PlayerPresentation['window']>
   trackButtons: NonNullable<PlayerPresentation['trackButtons']>
   rating: NonNullable<PlayerPresentation['rating']>
+  endTime: boolean
 }
 /** API 6 player control choices with their defaults (izumi's own player). */
 export function resolvePlayerControls(layout?: ThemePresentation): ResolvedPlayerControls {
   const player = layout?.player
-  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [], window: player?.window ?? 'app', trackButtons: player?.trackButtons ?? 'icon', rating: player?.rating ?? 'none' }
+  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [], window: player?.window ?? 'app', trackButtons: player?.trackButtons ?? 'icon', rating: player?.rating ?? 'none', endTime: player?.endTime ?? false }
 }
 /** API 6: how the Search page takes text on this surface (only a TV block can ask for the grid). */
 export function resolveSearch(layout?: ThemePresentation): { keyboard: NonNullable<SearchPresentation['keyboard']> } {

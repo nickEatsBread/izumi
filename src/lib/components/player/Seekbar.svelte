@@ -266,7 +266,9 @@
     const t = setTimeout(() => { heldT = undefined }, 1500)
     return () => clearTimeout(t)
   })
-  const progressPct = $derived(pct(heldT ?? pos))
+  // While a drag is held the played fill follows the pointer, both ways (the preview bar sits under the
+  // fill, so a drag back towards the start showed nothing moving), as Navigator's slider range does.
+  const progressPct = $derived(pct(seeking ? hoverT : heldT ?? pos))
   const bufferPct = $derived(pct(buffer))
   const hoverPct = $derived(pct(hoverT))
   const seekActive = $derived(hovering || seeking)

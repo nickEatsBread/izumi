@@ -27,7 +27,7 @@ const SECRET_KEYS: ReadonlySet<string> = new Set([
 ])
 /** Every key of these services is account data, apart from the reviewed and transient trakt keys
  *  listed below. */
-const SECRET_PREFIXES = ['opensubtitles-', 'simkl-', 'trakt-'] as const
+const SECRET_PREFIXES = ['opensubtitles-', 'simkl-', 'trakt-', 'plugin-secret-'] as const
 
 /** Sign-in in flight and session state: never exported, never restored. The last three live in
  *  sessionStorage today; they are listed so that moving one to localStorage cannot leak it. */
@@ -39,7 +39,7 @@ const TRANSIENT_KEYS: ReadonlySet<string> = new Set([
 /** This install's identity (owner decision 15): never exported, even with secrets. A restore never
  *  carries another device's sync membership or TV pairing; the user rejoins sync and pairs the TV again. */
 const DEVICE_KEYS: ReadonlySet<string> = new Set([
-  'izumi-active-profile-v1', 'watch-party-device-id-v1', 'nuvio-client-id-v1',
+  'izumi-active-profile-v1', 'watch-party-device-id-v1', 'nuvio-client-id-v1', 'installed-plugins-v1', 'plugins-enabled-v1',
   'cloudflare-sync-config-v1', 'cloudflare-sync-setup-secret-v1', 'sync-provider-v1', 'sync-device-name',
   'paired-tizen-companions-v1', 'paired-tizen-progress-applied-v1', 'companion-discovery-saves-v1',
   'izumi-pin-throttle-v1',

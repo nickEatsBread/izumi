@@ -14,6 +14,8 @@ mod doh;
 #[cfg(not(target_os = "android"))]
 mod doh_socks;
 mod download;
+#[cfg(not(target_os = "android"))]
+mod embedded_subtitles;
 // Decrypting DRM downloads produce a clear local file (no CDM/licence at playback). Desktop-only:
 // Android keeps the Shaka offline path.
 #[cfg(not(target_os = "android"))]
@@ -6069,6 +6071,7 @@ pub fn run() {
             http_get,
             opensubtitles_moviehash,
             subtitle_fonts::subtitle_fonts_save,
+            embedded_subtitles::embedded_subtitle_cues,
             http_post,
             ext_fetch,
             http_cancel,

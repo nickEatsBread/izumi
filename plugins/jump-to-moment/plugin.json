@@ -1,0 +1,61 @@
+{
+  "app": "izumi",
+  "kind": "plugin",
+  "schemaVersion": 1,
+  "pluginApi": 1,
+  "id": "watch.izumi.jump-to-moment",
+  "name": "Jump to a moment",
+  "version": "1.0.0",
+  "author": "Izumi",
+  "description": "Describe a scene and the player jumps to it. Uses the episode's subtitles and a chat model you choose, on your computer or with your own key.",
+  "main": {
+    "path": "main.js",
+    "sha256": "27c701ca1a5c20db92c00a75ef1822881de535a291506eab7bc75ab119b98007"
+  },
+  "permissions": {
+    "scopes": [
+      "network",
+      "player.events",
+      "player.subtitles",
+      "player.control",
+      "player.panel"
+    ],
+    "network": {
+      "domains": [],
+      "fromSetting": "endpoint",
+      "reason": "Sends your question, the title and the episode's subtitle lines to the model address you enter, and nowhere else."
+    }
+  },
+  "settings": [
+    {
+      "id": "endpoint",
+      "type": "url",
+      "label": "Model address",
+      "description": "An OpenAI-compatible chat API, such as a local model server's /v1 address or your provider's API base.",
+      "placeholder": "http://localhost:11434/v1"
+    },
+    {
+      "id": "model",
+      "type": "text",
+      "label": "Model",
+      "description": "The model's name at that address."
+    },
+    {
+      "id": "apiKey",
+      "type": "secret",
+      "label": "API key",
+      "description": "Leave empty for a model on this computer. Stays on this device."
+    },
+    {
+      "id": "watchedOnly",
+      "type": "toggle",
+      "label": "Only search what I've watched",
+      "description": "Skips everything after where you are now, so a search never spoils what's ahead.",
+      "default": false
+    }
+  ],
+  "panel": {
+    "label": "Jump to a moment",
+    "placeholder": "Describe a moment…"
+  }
+}

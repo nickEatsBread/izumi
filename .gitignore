@@ -23,6 +23,7 @@ src-tauri/gen/
 !/docs/drm-offline-downloads.md
 !/docs/drm-device-provisioning.md
 !/docs/recommendation-evaluation/
+!/docs/navigator-player-and-ai-jump.md
 
 /distnet/
 

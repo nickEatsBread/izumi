@@ -35,7 +35,7 @@
     type TorrentDeliveryState,
   } from '$lib/player/recovery-watchdog'
   import {
-    autoSkip, skipPreviews, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
+    autoSkip, skipPreviews, seekDuration, videoFit, VIDEO_FIT_MPV, uiScale, keepAwakeWhilePlaying,
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
@@ -317,6 +317,22 @@
     visible || (firstFrame && !quietPadSeek && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen
   ))
   $effect(() => { if (firstFrame) untrack(poke) })
+  // Navigator's chrome fade (200 ms, see `[data-player-hud]` below): once the controls hide, Controls
+  // stays mounted through the fade-out and then unmounts as before. A reveal mid-fade reverses it.
+  const CHROME_FADE_MS = 200
+  let hudFadingOut = $state(false)
+  let hudWasMounted = false
+  // `.pre`: it must run before the `{#if}` below re-evaluates, or the block drops for one flush and
+  // remounts already transparent (no fade).
+  $effect.pre(() => {
+    const mounted = controlsVisible
+    const was = hudWasMounted
+    hudWasMounted = mounted
+    if (mounted || !was) { hudFadingOut = false; return }
+    hudFadingOut = true
+    const t = setTimeout(() => (hudFadingOut = false), CHROME_FADE_MS)
+    return () => clearTimeout(t)
+  })
   // The windowed titlebar's buttons fade with the controls; never leave them hidden after playback.
   // A docked player sits inside the page, where the bar serves the page rather than the video.
   $effect(() => { playerChromeVisible.set(controlsVisible || docked) })
@@ -358,22 +374,56 @@
     else if (currentSeg) seekTo(currentSeg.end + 0.5)
   }
 
-  // WebKit also sends a mousemove when the page changes under a cursor that has not moved: the
-  // player appearing under the Deck's parked, hidden cursor brought its controls up over black.
-  // Only a pointer that really moved shows them.
-  let lastPointer = ''
-  function onPointerMove(event: MouseEvent) {
-    const at = `${event.screenX},${event.screenY}`
-    const moved = !!lastPointer && at !== lastPointer
-    lastPointer = at
-    if (moved) poke()
+  // Navigator's auto-hide: 3 s after the last input the controls go, unless the pointer rests on a
+  // control or keyboard focus sits in them, which re-checks every second. Game mode keeps Crunchy
+  // Deck's 3.5 s hold.
+  const HIDE_AFTER_MS = 3000
+  const HIDE_RECHECK_MS = 1000
+  function controlsBusy() {
+    if (!overlayRoot) return false
+    // The controls layer is pointer-transparent, so it only matches :hover through an actual control.
+    if (overlayRoot.querySelector('[data-slot="player.controls"]:hover')) return true
+    const focused = document.activeElement
+    return !!focused && !!focused.closest?.('[data-slot="player.controls"]') && overlayRoot.contains(focused) && focused.matches(':focus-visible')
   }
   function poke() {
     untrack(() => { inputTick++ })
     visible = true
     clearTimeout(hideT)
-    // Match Crunchy Deck's breathing room: the chrome itself fades for 300ms after this hold.
-    hideT = setTimeout(() => (visible = false), 3500)
+    if (gmMode) {
+      hideT = setTimeout(() => (visible = false), 3500)
+      return
+    }
+    const hideWhenIdle = () => {
+      if (controlsBusy()) hideT = setTimeout(hideWhenIdle, HIDE_RECHECK_MS)
+      else visible = false
+    }
+    hideT = setTimeout(hideWhenIdle, HIDE_AFTER_MS)
+  }
+  // Navigator: while playing, the controls go as soon as the mouse leaves the player or the window,
+  // unless a menu is open or a button is held (a seek or volume drag that strays off the player keeps
+  // going; its release re-arms the idle wait). The titlebar over the video counts as the player.
+  function onOverlayPointerLeave(e: PointerEvent) {
+    if (gmMode || e.pointerType !== 'mouse' || e.buttons) return
+    if ((e.relatedTarget as Element | null)?.closest?.('[data-player-chrome]')) return
+    if (transportPaused || get(playerMenuOpen) || get(trackMenuOpen) || subtitleEditorOpen || controlsBusy()) return
+    clearTimeout(hideT)
+    visible = false
+  }
+  // Mouse moves bring the controls back only over the player (and the titlebar above it), so leaving
+  // for the sidebar or a docked rail lets them go. Game mode keeps the window-wide reveal.
+  // WebKit also sends a mousemove when the page changes under a cursor that has not moved: the
+  // player appearing under the Deck's parked, hidden cursor brought its controls up over black.
+  // Only a pointer that really moved shows them.
+  let lastPointer = ''
+  function onWindowMouseMove(e: MouseEvent) {
+    const at = `${e.screenX},${e.screenY}`
+    const moved = !!lastPointer && at !== lastPointer
+    lastPointer = at
+    if (!moved) return
+    const target = e.target as Element | null
+    if (gmMode || (target && (overlayRoot?.contains(target) || target.closest?.('[data-player-chrome]')))) poke()
+    else untrack(() => { inputTick++ })
   }
   const drmActive = $derived(!!$nowPlayingStream.drm)
   // Linux plays protected streams in izumi's own mpv player: the mpv-side features (subtitle
@@ -905,11 +955,13 @@
     return () => clearTimeout(t)
   })
 
-  // Apply the saved video fit once the first frame is up (and re-apply per episode).
-  // 'fill' = mpv panscan 1 (crop to fill, aspect preserved — never stretched);
-  // 'best' = panscan 0 (letterbox). keepaspect stays yes so quality is never distorted.
+  // Apply the saved video fit once the first frame is up (and re-apply per episode): Best fit
+  // letterboxes, Fill crops (panscan 1), Stretch drops the aspect ratio (keepaspect no).
   $effect(() => {
-    if (firstFrame) cmd('set', ['panscan', $videoFit === 'fill' ? '1.0' : '0.0'])
+    if (!firstFrame) return
+    const [keepaspect, panscan] = VIDEO_FIT_MPV[$videoFit] ?? VIDEO_FIT_MPV.best
+    cmd('set', ['keepaspect', keepaspect])
+    cmd('set', ['panscan', panscan])
   })
 
   // Re-select once the file is actually loaded. A per-series semantic preference (language,
@@ -1414,7 +1466,7 @@
      advances instead of looping a keyframe). Keys are handled by the CAPTURE-phase listener in
      onMount (above) — NOT here — so they never leak to the spatial nav and move focus. -->
 <!-- Keys and presses that poke() never sees (an unbound key, a click on the scrim) still count as input for the paused summary. -->
-<svelte:window onmousemove={onPointerMove} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
+<svelte:window onmousemove={onWindowMouseMove} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
@@ -1490,6 +1542,7 @@
   ontouchstart={onOverlayTouchStart}
   ontouchmove={onOverlayTouchMove}
   onpointerdown={onOverlayPointerDown}
+  onpointerleave={onOverlayPointerLeave}
   onpointermove={pipDragMove}
   onpointerup={endPipDrag}
   onpointercancel={endPipDrag}
@@ -1625,8 +1678,8 @@
         <span class="text-[0.65rem] tabular-nums text-white/70">{Math.floor(transportPos / 60)}:{String(Math.floor(transportPos % 60)).padStart(2, '0')}</span>
       </div>
     </div>
-  {:else if controlsVisible}
-    <div class="izumi-hud">
+  {:else if controlsVisible || hudFadingOut}
+    <div class="izumi-hud" data-player-hud data-visible={controlsVisible || undefined} inert={!controlsVisible}>
       <Controls pos={controlsPos} dur={transportDur} {buffer} paused={transportPaused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} hideBack={hides('back')} hideTitle={hides('title')} />
     </div>
   {/if}
@@ -1697,3 +1750,24 @@
   </aside>
 {/if}
 </div>
+
+<style>
+  /* Navigator's controls fade: opacity over 200 ms on its ease-out curve (`--ease-out`,
+     cubic-bezier(.23,1,.32,1)), 100 ms under reduced motion. The bar fades in from its first frame. */
+  :global([data-player-hud]) {
+    transition: opacity 200ms cubic-bezier(.23, 1, .32, 1);
+  }
+  :global([data-player-hud]:not([data-visible])) {
+    opacity: 0;
+  }
+  @starting-style {
+    :global([data-player-hud]) {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global([data-player-hud]) {
+      transition-duration: 100ms;
+    }
+  }
+</style>
