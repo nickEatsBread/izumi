@@ -9,6 +9,7 @@ import {
   subtitleShadow, subtitlePosition, sourcePriority, sourcePriorityMode,
 } from '$lib/settings/ui'
 import { enabledAddonUrls } from '$lib/stremio/sources'
+import { catalogLanguages, languagesFor, rankingLanguages } from '$lib/settings/catalog-languages'
 import { providerMeta } from '$lib/stremio/debrid'
 import type { CloudflareResolverProfile } from '$lib/sync/cloudflare'
 import { cloudflareAllowLanSources } from '$lib/sync/cloudflare'
@@ -24,7 +25,8 @@ export function currentCloudflareCompanionProfile(connectedDeviceFallback: boole
     household: get(profileHousehold),
     addons: [...get(enabledAddonUrls)],
     subtitleServices: cloudSubtitleServices(),
-    subtitleLang: get(preferredSubLang),
+    // The TV takes one code each; it plays the anime catalog's order.
+    subtitleLang: rankingLanguages(languagesFor('anime')).subtitleLang ?? 'eng',
     subtitleStyle: {
       enabled: get(subtitleStyleEnabled), scope: get(subtitleOverrideScope), font: get(subtitleFont),
       bold: get(subtitleBold), fontSize: get(subtitleFontSize), textColor: get(subtitleTextColor),
@@ -32,7 +34,7 @@ export function currentCloudflareCompanionProfile(connectedDeviceFallback: boole
     },
     quality: get(preferredQuality),
     sort: get(preferredStreamSort),
-    audioLang: get(preferredAudioLang),
+    audioLang: rankingLanguages(languagesFor('anime')).audioLang ?? 'jpn',
     // Origin-id fingerprints, never URLs: the Worker recognises its own configured add-ons by the
     // same ids, so the desktop trust order carries to the TV without copying credentials.
     sourcePriority: [...get(sourcePriority)],
@@ -54,7 +56,7 @@ export function currentCloudflareCompanionProfile(connectedDeviceFallback: boole
 export function watchCloudflareCompanionProfile(onChange: () => void): () => void {
   const stores: Readable<unknown>[] = [
     enabledSubtitleProviders, preferredSubLang, cloudSubtitleSession, subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor, subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
-    enabledAddonUrls, preferredQuality, preferredStreamSort, preferredAudioLang, sourcePriority, sourcePriorityMode,
+    enabledAddonUrls, preferredQuality, preferredStreamSort, preferredAudioLang, catalogLanguages, sourcePriority, sourcePriorityMode,
     debridProvider, debridKey, enabledCatalogScreens, catalogScreen, tmdbReadToken,
     showAdult, hideSpoilers,
     cloudflareAllowLanSources,

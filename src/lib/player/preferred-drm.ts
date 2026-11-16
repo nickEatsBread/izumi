@@ -1,5 +1,4 @@
-import type { AudioLang, SubLang } from '$lib/settings/ui'
-import { normalizeLang } from '$lib/stremio/sublang'
+import { langsEqual, normalizeLang } from '$lib/stremio/sublang'
 import { pickSubtitleTrackId } from './track-policy'
 import type { DrmAudioChoice, DrmSubtitle, StreamDrm } from './drm'
 
@@ -56,17 +55,11 @@ export function offlineManifestUrl(target: string, preferredHeight?: number): st
 
 export function downloadAudioLang(
   downloadAudio: 'any' | 'sub' | 'dub' | undefined,
-  preferredAudio: AudioLang,
-): AudioLang {
-  if (downloadAudio === 'dub') return 'eng'
-  if (downloadAudio === 'sub') return 'jpn'
+  preferredAudio: string[],
+): string[] {
+  if (downloadAudio === 'dub') return ['eng']
+  if (downloadAudio === 'sub') return ['jpn']
   return preferredAudio
-}
-
-function matchesAudioLang(lang: string | undefined, wanted: AudioLang): boolean {
-  const iso = normalizeLang(lang)
-  if (wanted === 'eng') return iso === 'eng'
-  return iso === 'jpn'
 }
 
 function asSubtitle(track: DrmSubtitle & { language?: string }): DrmSubtitle {
@@ -121,23 +114,27 @@ export function preferredDrmPresentation(input: {
   audioLang?: string
   subtitles?: DrmSubtitle[]
   audioTracks?: DrmAudioChoice[]
-  preferredAudio: AudioLang
-  preferredSub: SubLang
+  /** Audio languages, most wanted first. */
+  preferredAudio: string[]
+  /** Subtitle languages, most wanted first; `['none']` = off. */
+  preferredSub: string[]
   switchAudio?: boolean
 }): { url: string; audioLang?: string; subtitles: DrmSubtitle[] } {
   let url = input.url
   let audioLang = input.audioLang
   if (input.switchAudio !== false) {
-    const audio = (input.audioTracks ?? []).find((track) =>
-      track.switchUrl && matchesAudioLang(track.lang, input.preferredAudio),
-    )
-    if (audio?.switchUrl) {
-      url = audio.switchUrl
-      audioLang = audio.lang ?? audioLang
+    // Alternate audio is a separate manifest. Walk the wanted languages: the current audio stops the
+    // walk, the first other language with a manifest is switched to.
+    for (const lang of input.preferredAudio) {
+      if (langsEqual(audioLang, lang)) break
+      const audio = (input.audioTracks ?? []).find((track) => track.switchUrl && langsEqual(track.lang, lang))
+      if (audio?.switchUrl) {
+        url = audio.switchUrl
+        audioLang = audio.lang ?? audioLang
+        break
+      }
     }
   }
-
-  const playingAudio: AudioLang = normalizeLang(audioLang) === 'eng' ? 'eng' : 'jpn'
 
   const choices = (input.subtitles ?? []).map((track, id) => ({
     id,
@@ -146,7 +143,7 @@ export function preferredDrmPresentation(input: {
     title: track.title,
     switchUrl: track.switchUrl,
   }))
-  const picked = pickSubtitleTrackId(choices, playingAudio, input.preferredSub)
+  const picked = pickSubtitleTrackId(choices, audioLang ?? input.preferredAudio[0], input.preferredSub)
   if (picked === 'no' || typeof picked !== 'number') {
     return { url: withManifestQuery(url, { hard: undefined }), audioLang, subtitles: [] }
   }
@@ -168,7 +165,7 @@ export function preferredDrmPresentation(input: {
 
 export function selectOfflineTracks(
   tracks: Array<Record<string, any>>,
-  resolution: { preferredHeight?: number; audioLang?: string; preferredSubLang?: SubLang },
+  resolution: { preferredHeight?: number; audioLang?: string; preferredSubLang?: string | string[] },
 ): Array<Record<string, any>> {
   const variants = tracks.filter((track) => track.type === 'variant')
   const target = resolution.preferredHeight ?? Number.POSITIVE_INFINITY
@@ -186,9 +183,11 @@ export function selectOfflineTracks(
     || (Number(b.bandwidth) || 0) - (Number(a.bandwidth) || 0),
   )[0]
   const texts = tracks.filter((track) => track.type === 'text')
-  const preferred = resolution.preferredSubLang
-  const keptTexts = !preferred || preferred === 'none'
-    ? (preferred === 'none' ? [] : texts)
-    : texts.filter((track) => normalizeLang(String(track.language ?? '')) === preferred)
+  // A single code is what an older resolution carried.
+  const preferred = typeof resolution.preferredSubLang === 'string' ? [resolution.preferredSubLang] : resolution.preferredSubLang ?? []
+  // Keep the first wanted language the manifest carries; none of them (or no order) keeps every text track.
+  const wanted = preferred.map((lang) => texts.filter((track) => langsEqual(String(track.language ?? ''), lang)))
+    .find((matches) => matches.length)
+  const keptTexts = preferred[0] === 'none' ? [] : wanted ?? texts
   return [...(best ? [best] : []), ...keptTexts]
 }

@@ -310,7 +310,7 @@ describe('resolveDownloadUrl source preference', () => {
     expect(resolved).toMatchObject({
       kind: 'shaka',
       audioLang: 'ja-JP',
-      preferredSubLang: 'eng',
+      preferredSubLang: ['eng'],
       subtitles: [english],
     })
   })

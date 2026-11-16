@@ -2,7 +2,7 @@
   import { onDestroy, untrack } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import {
-    preferredAudioLang, preferredSubLang, preferredQuality, videoFit,
+    preferredQuality, videoFit,
     gifScale, gifMaxSeconds,
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont as savedSubtitleFont, subtitleBold as savedSubtitleBold, subtitleFontSize as savedSubtitleFontSize,
     subtitleTextColor, subtitleBorderColor as savedSubtitleBorderColor,
@@ -22,7 +22,8 @@
     warmCapturePresentation,
     type CapturePresentation,
   } from '$lib/player/capture-presentation'
-  import { nowPlaying, playerNotice } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, playerNotice } from '$lib/player/session'
+  import { languagesForMedia } from '$lib/settings/catalog-languages'
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
   import { listenSafe } from '$lib/util/listen'
   import {
@@ -548,8 +549,8 @@
       audioLang: liveAudioLang || audioLang,
       subtitles: liveSubs,
       audioTracks: liveAudio,
-      preferredAudio: get(preferredAudioLang),
-      preferredSub: get(preferredSubLang),
+      preferredAudio: languagesForMedia(get(nowPlayingMedia)?.media).audio,
+      preferredSub: languagesForMedia(get(nowPlayingMedia)?.media).subtitle,
       switchAudio: false,
     }).url
   }
@@ -761,9 +762,8 @@
     const remembered = matchRememberedTrack(textTracks, rememberedSeriesTrack(get(nowPlaying).id, 'subtitle'))
     if (remembered === null) { setSid(-1); return }
     if (remembered) { remembered.type === 'caption' ? setCcid(remembered.id) : setSid(remembered.id); return }
-    const audioPref = (liveAudioLang || audioLang || get(preferredAudioLang) || '').toLowerCase()
-    const audioCode = audioPref.startsWith('en') ? 'eng' : 'jpn'
-    const id = pickSubtitleTrackId(textTracks, audioCode, get(preferredSubLang))
+    const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+    const id = pickSubtitleTrackId(textTracks, liveAudioLang || audioLang || languages.audio[0], languages.subtitle)
     if (id === undefined) return
     if (typeof id === 'number' && id >= SWITCH_ID && !shouldAutoReloadHardsub({
       preferredId: id,

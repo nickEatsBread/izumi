@@ -21,6 +21,7 @@
   import Spinner from '$lib/components/Spinner.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState, type ResolveSession } from '$lib/stremio/play'
+  import { catalogLanguages, languagesForMedia, rankingLanguages, sourceAccountLanguages } from '$lib/settings/catalog-languages'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, preferredSubLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority, adaptiveSourceMode } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
@@ -120,10 +121,15 @@
 
   // Ranking inputs the ordering can't derive from a stream alone: the language the user asked to
   // hear, the group the previous episode of THIS title played from, and the curated recommendation.
+  // The title's catalog decides the languages (see catalog-languages.ts).
+  const languages = $derived.by(() => {
+    // languagesForMedia reads its stores once; name them so a change re-ranks the open list.
+    void $catalogLanguages; void $sourceAccountLanguages; void $preferredAudioLang; void $preferredSubLang
+    return rankingLanguages(languagesForMedia(pick?.media))
+  })
   const rankOpts = $derived({
     runtimeSeconds: pick?.media.duration && pick.media.duration > 0 ? pick.media.duration * 60 : undefined,
-    audioLang: $preferredAudioLang,
-    subtitleLang: $preferredSubLang,
+    ...languages,
     previousGroup: $bingeSource?.mediaId === pick?.media.id ? $bingeSource?.group : undefined,
     directP2p,
     seadexHashes,
@@ -203,8 +209,7 @@
     ? planSources(baselineCandidates, {
         directP2p,
         policy: $adaptiveSourceMode === 'shadow' ? 'preview' : 'active',
-        audioLang: $preferredAudioLang,
-        subtitleLang: $preferredSubLang,
+        ...languages,
         sourcePriority: $sourcePriority,
         outcomeOf: sourceOutcomeSummary,
       })
@@ -625,8 +630,7 @@
     recoveryOrder = $adaptiveSourceMode === 'active'
       ? planRecoveryCandidates(remaining, info.stream, failureClass, {
           directP2p,
-          audioLang: $preferredAudioLang,
-          subtitleLang: $preferredSubLang,
+          ...languages,
           sourcePriority: $sourcePriority,
         })
       : remaining
