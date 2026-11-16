@@ -144,15 +144,24 @@ form, `encv`→`avc1` and `enca`→`mp4a`, so a player never treats the clear fi
 
 ## Device supply
 
-`src-tauri/src/widevine_device.rs` picks the device for each licence exchange, first hit wins:
+**No Widevine device identity ships, and none is required.** The normal decrypt path is izumi's own
+Widevine module, which needs no `.wvd` at all; where the module is unavailable (macOS and the webview
+builds, or a machine without it) playback falls back to Shaka through platform EME — the pre-DRM
+behaviour, with no save. A `.wvd` device is only an **optional accelerator** for the module path: it
+lets the engine skip the decode/encode and write a clear fMP4 copy losslessly and near-instantly.
+Users supply their own device via `IZUMI_WVD_PATH` or the pool; everything still works without one.
+
+`src-tauri/src/widevine_device.rs` picks that optional device for each licence exchange, first hit
+wins. With none of the four present it returns a typed "no device" outcome (not an error), which the
+caller treats as "use the normal path":
 
 1. `IZUMI_WVD_PATH` — an explicit device; never rotated away from.
 2. A **cached pool member** in `<app data>/widevine/devices/<id>.wvd`, fewest refusals first, then
    newest `verifiedAt`.
 3. A **fresh pool member**, fetched and cached when the pool is configured and nothing usable is
    cached.
-4. The bundled `resources/widevine/device.wvd` — the seed for first run, offline use, and builds
-   without a pool.
+4. An **optional** bundled `resources/widevine/device.wvd`, only if a build ships one or a user drops
+   one in — always last, and skipped (never fatal) when absent, as it is by default.
 
 **The pool.** A separate provisioning job publishes Android-class L3 identities behind a gate:
 `GET <base>/api/index` returns `index.json` (`schema: 1`, `cdmVersion`, and per device an `id`,
@@ -164,8 +173,9 @@ timeout.
 
 **Build values.** The base URL and the secret are baked in at compile time from
 `IZUMI_CDM_BASE_URL` and `IZUMI_CDM_KEY` (`option_env!`); runtime env vars of the same names
-override them for development. A build without both has **no pool** and behaves exactly as before:
-override, then the bundled seed.
+override them for development. A build without both has **no pool**: only an explicit override and an
+optional bundled file are considered, and with neither present resolution returns "no device" and the
+normal path is used.
 
 **The cache.** At most two members, 64 KB each. An index entry is used only if its id is 16 hex
 digits, its platform starts with `linux` or `win`, and its hashes and sizes are present and sane
@@ -174,14 +184,15 @@ assembled into a `.wvd` **in memory**; only the assembled device is written, via
 rename. `state.json` holds `{id, cdmVersion, fetchedAt, lastUsedAt, failures, verifiedAt}` per
 member and when the index was last read — no keys, no secret. When that read is older than 24 h the
 index is re-read (at most once per process) and members it no longer lists are dropped. Any index
-failure — network, `401`, malformed or empty — means "pool unavailable": the cache and the seed stay
-in play and the download carries on.
+failure — network, `401`, malformed or empty — means "pool unavailable": the cache and any bundled
+file stay in play and the download carries on.
 
 **Rotation on refusal.** A refused licence (above) adds one to the member's `failures` and the same
-job retries once with the next device — another cached member, a fresh one, or the seed — so a dead
-member costs one extra licence round trip. A member is deleted at two refusals; an accepted licence
-resets its count, so only consecutive refusals count. A second refusal in the job is terminal and
-goes to the Shaka path.
+job retries once with the next device — another cached member, a fresh one, or a bundled file — so a
+dead member costs one extra licence round trip. A member is deleted at two refusals; an accepted
+licence resets its count, so only consecutive refusals count. When every available device is refused
+(or none was available to begin with), the exchange yields the typed "no device" outcome and the job
+uses the normal path (the module, else Shaka) — it is not a hard failure.
 
 ## Scheme support
 
@@ -217,11 +228,14 @@ The queue was then driven through the running app itself (enqueue from the serie
 file and fifteen subtitle sidecars, carrying **no** `offlineUri` and **no** `drmKeySystem`, and it
 decodes with zero errors.
 
-Device supply (2026-11-15): unit tests in `widevine_device.rs` cover resolution order, the disabled
-pool, atomic writes, the SHA-256 and 64 KB checks, the two-member cap, index validation, the `sig`
-vector, a `401`/malformed index keeping the cache, refusal counting and deletion, and the single
-rotation retry. The real pool was not published yet, so the HTTP path was proved against a local
-stub enforcing the same gate (wrong key or signature → `401`) and serving a pair split from the seed:
+Device supply: unit tests in `widevine_device.rs` cover resolution order, the disabled pool, atomic
+writes, the SHA-256 and 64 KB checks, the two-member cap, index validation, the `sig` vector, a
+`401`/malformed index keeping the cache, refusal counting and deletion, and the single rotation
+retry. They mint their own valid `.wvd` in-process (a generated RSA key plus a minimal client id), so
+the suite needs **no** bundled device file and passes with none present — including a test proving
+resolution succeeds with no env, no cache and no bundle, and one proving a present bundle is still
+preferred. The real pool was not published yet, so the HTTP path was proved against a local stub
+enforcing the same gate (wrong key or signature → `401`) and serving a synthesised pair:
 the ignored `live_pool_fetch_caches_a_member` fetched, verified and cached it, and
 `live_command_writes_a_clear_file` with no `IZUMI_WVD_PATH` downloaded a real episode through the
 sidecar using that pool member — 986,191,192-byte clear MP4, four content keys, nine subtitle
