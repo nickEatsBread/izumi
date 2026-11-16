@@ -1,16 +1,28 @@
-//! Where the decrypting downloader's Widevine device comes from.
+//! Where the decrypting downloader's Widevine device *optionally* comes from.
 //!
-//! Resolution order (first hit wins):
-//!   1. `IZUMI_WVD_PATH` — an explicit user-supplied device, unchanged from before.
+//! A device is NOT required. The primary decrypt path is izumi's own Widevine module, which needs
+//! no `.wvd` identity at all; where the module is unavailable (macOS and the webview builds, or a
+//! machine without it), playback falls back to Shaka through platform EME — the pre-DRM behaviour.
+//! A resolved device is only an *accelerator* for the module path: it lets the engine skip the
+//! decode/encode and write a clear fMP4 copy losslessly and near-instantly. So "no device" is an
+//! ordinary, expected outcome — never a degraded mode — and nothing here may become a hard
+//! dependency on a shipped identity.
+//!
+//! Resolution order (first hit wins), used only when a device is wanted:
+//!   1. `IZUMI_WVD_PATH` — an explicit user-supplied device.
 //!   2. A cached pool member under `<app data>/widevine/devices/<id>.wvd`, tracked in
 //!      `<app data>/widevine/state.json` (fewest refusals first, then newest verified).
 //!   3. A fresh pool member fetched from the gated device pool and cached (only when the pool is
 //!      configured and no usable cache entry exists).
-//!   4. The bundled `resources/widevine/device.wvd` — the offline / first-run seed, always last.
+//!   4. A bundled `resources/widevine/device.wvd`, if a build or a user drops one in — always last
+//!      and entirely OPTIONAL. No identity ships by default; a missing bundle is skipped, not fatal.
+//!
+//! With none of the four present, resolution returns a typed "no device" outcome ([`Resolution::None`]),
+//! which the caller treats as "use the normal path" (module, else Shaka) — not as an error.
 //!
 //! The pool is configured by two build-time values, `IZUMI_CDM_BASE_URL` and `IZUMI_CDM_KEY`
 //! (runtime env vars of the same names win, for development). Without both, the pool is disabled and
-//! only the override and the seed are used — so a fork build behaves exactly as before.
+//! only the override and any bundle are considered — so a fork build behaves exactly as before.
 //!
 //! A pool fetch failure never breaks a download: it is logged and resolution carries on. A member
 //! the licence server refuses (403/429) is counted, rotated away from for one automatic retry, and
@@ -555,41 +567,53 @@ impl DeviceSupply<HttpPool> {
     }
 }
 
-/// The error that sends the client to the Shaka path: there is simply no device to use.
-fn no_device() -> String {
-    format!(
-        "{LICENSE_FORBIDDEN_PREFIX} no Widevine device is available — reinstall izumi or set \
-         IZUMI_WVD_PATH."
-    )
+/// The outcome of a resolution: either a device to accelerate the module path, or none available.
+///
+/// `None` is not an error — it is the expected result on a machine with no override, no cache, no
+/// configured pool and no bundled file. The caller simply uses the normal path (the module, else
+/// Shaka). A genuine misconfiguration (`IZUMI_WVD_PATH` pointing at nothing, an unreadable file) is
+/// still reported as `Err` so it is not silently ignored.
+#[derive(Debug)]
+pub(crate) enum Resolution {
+    /// A usable device was found; use it to skip the module's decode/encode.
+    Device(ResolvedDevice),
+    /// No device is available. Decrypt through the module, falling back to Shaka — never an error.
+    None,
 }
 
 impl<P: PoolSource> DeviceSupply<P> {
     /// Resolve the device to use, skipping origins already tried in this job.
-    pub(crate) async fn resolve(&self, exclude: &[DeviceOrigin]) -> Result<ResolvedDevice, String> {
+    ///
+    /// Returns [`Resolution::None`] (never an `Err`) when no device is available, so the caller is
+    /// not forced to unwrap a stringly-typed "no device" error. An `Err` means a real problem the
+    /// user should see, e.g. `IZUMI_WVD_PATH` set but unreadable.
+    pub(crate) async fn resolve(&self, exclude: &[DeviceOrigin]) -> Result<Resolution, String> {
         let _guard = cache_lock().lock().await;
         if let Some(path) = &self.override_path {
             // An explicit device is authoritative: never silently swap it for another one.
             if exclude.contains(&DeviceOrigin::Override) {
-                return Err(no_device());
+                return Ok(Resolution::None);
             }
             if !path.is_file() {
                 return Err("IZUMI_WVD_PATH is set but does not point at a readable device file.".into());
             }
             let bytes = std::fs::read(path)
                 .map_err(|e| format!("Could not read the Widevine device: {e}"))?;
-            return Ok(ResolvedDevice { bytes, origin: DeviceOrigin::Override });
+            return Ok(Resolution::Device(ResolvedDevice { bytes, origin: DeviceOrigin::Override }));
         }
         if let Some(dir) = &self.cache_dir {
             if let Some(device) = self.from_pool(dir, exclude).await {
-                return Ok(device);
+                return Ok(Resolution::Device(device));
             }
         }
+        // The bundled seed is entirely optional: a missing resource is simply skipped here, never a
+        // failure. No identity ships by default.
         if !exclude.contains(&DeviceOrigin::Seed) {
             if let Some(bytes) = self.seed.as_ref().and_then(|p| std::fs::read(p).ok()) {
-                return Ok(ResolvedDevice { bytes, origin: DeviceOrigin::Seed });
+                return Ok(Resolution::Device(ResolvedDevice { bytes, origin: DeviceOrigin::Seed }));
             }
         }
-        Err(no_device())
+        Ok(Resolution::None)
     }
 
     /// Cache first, then a fresh fetch. `None` means "fall through to the seed".
@@ -782,23 +806,35 @@ fn is_refusal(error: &str) -> bool {
     error.starts_with(LICENSE_FORBIDDEN_PREFIX)
 }
 
-/// Run `exchange` with the resolved device. If the licence server refuses it, charge the refusal,
-/// and retry exactly once with the next device so a dead member costs one extra round trip instead
-/// of a failed download. A second refusal is returned as-is (`licence-forbidden:` → Shaka path).
+/// Run `exchange` with a resolved device, if one is available.
+///
+/// `Ok(None)` is the typed "no device — use the normal path" outcome: it is returned when nothing
+/// resolves (no override, cache, pool or bundle), and also when the only device(s) are refused by
+/// the licence server. The caller treats it exactly like the licence-forbidden path: decrypt with
+/// the module, falling back to Shaka. It is NOT an error.
+///
+/// `Ok(Some(value))` is a successful licence exchange. If the licence server refuses the first
+/// device, the refusal is charged and the exchange is retried exactly once with the next device, so
+/// a dead member costs one extra round trip instead of a failed download. A non-refusal error (a
+/// genuine failure) is surfaced as `Err`.
 pub(crate) async fn exchange_with_rotation<P, T, F, Fut>(
     supply: &DeviceSupply<P>,
     mut exchange: F,
-) -> Result<T, String>
+) -> Result<Option<T>, String>
 where
     P: PoolSource,
     F: FnMut(Vec<u8>) -> Fut,
     Fut: Future<Output = Result<T, String>>,
 {
-    let first = supply.resolve(&[]).await?;
+    // No device at all is the normal case: hand straight back to the module / Shaka path.
+    let first = match supply.resolve(&[]).await? {
+        Resolution::Device(device) => device,
+        Resolution::None => return Ok(None),
+    };
     let first_error = match exchange(first.bytes).await {
         Ok(value) => {
             supply.accepted(&first.origin).await;
-            return Ok(value);
+            return Ok(Some(value));
         }
         Err(error) => error,
     };
@@ -806,8 +842,11 @@ where
         return Err(first_error);
     }
     supply.refused(&first.origin).await;
-    let Ok(next) = supply.resolve(std::slice::from_ref(&first.origin)).await else {
-        return Err(first_error);
+    // The refused device had no replacement: there is effectively no usable device, so route to the
+    // normal path rather than surfacing a refusal the caller would have to pattern-match on a string.
+    let next = match supply.resolve(std::slice::from_ref(&first.origin)).await {
+        Ok(Resolution::Device(device)) => device,
+        Ok(Resolution::None) | Err(_) => return Ok(None),
     };
     eprintln!(
         "[wvd] {} was refused; retrying once with {}",
@@ -817,11 +856,13 @@ where
     match exchange(next.bytes).await {
         Ok(value) => {
             supply.accepted(&next.origin).await;
-            Ok(value)
+            Ok(Some(value))
         }
         Err(error) => {
             if is_refusal(&error) {
                 supply.refused(&next.origin).await;
+                // The second device was also refused: no usable device remains → normal path.
+                return Ok(None);
             }
             Err(error)
         }
@@ -839,12 +880,74 @@ mod tests {
 
     // ---- fixtures ---------------------------------------------------------------------------
 
+    /// A `getrandom`-backed RNG so the test can mint an RSA key without pulling in `rand`. It is
+    /// cryptographically sound (every byte comes from the OS CSPRNG), which satisfies the
+    /// `CryptoRngCore` bound `RsaPrivateKey::new` requires.
+    struct OsCsprng;
+
+    impl rsa::rand_core::RngCore for OsCsprng {
+        fn next_u32(&mut self) -> u32 {
+            let mut b = [0u8; 4];
+            self.fill_bytes(&mut b);
+            u32::from_le_bytes(b)
+        }
+        fn next_u64(&mut self) -> u64 {
+            let mut b = [0u8; 8];
+            self.fill_bytes(&mut b);
+            u64::from_le_bytes(b)
+        }
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            getrandom::fill(dest).expect("OS CSPRNG");
+        }
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rsa::rand_core::Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
+    }
+    impl rsa::rand_core::CryptoRng for OsCsprng {}
+
+    /// A minimal but non-empty `ClientIdentification` protobuf: one `client_info` NameValue entry
+    /// (`name = "izumi"`, `value = "test"`). Hand-encoded so the test needs no proto crate; it is a
+    /// valid message that round-trips byte-for-byte through the encoder, and crucially it is
+    /// non-empty, so the pool index's `bytes.clientId` stays within the `> 0` range the resolver
+    /// requires. `client_info` is field 3 (length-delimited); NameValue uses field 1/2 strings.
+    fn minimal_client_id() -> Vec<u8> {
+        /// A length-delimited protobuf field: `(field_number << 3) | 2`, then a varint length, then
+        /// the bytes. Lengths here are tiny, so a single-byte varint is enough.
+        fn ld(field: u8, bytes: &[u8]) -> Vec<u8> {
+            assert!(bytes.len() < 0x80, "fixture fields stay single-byte-length");
+            let mut out = vec![(field << 3) | 2, bytes.len() as u8];
+            out.extend_from_slice(bytes);
+            out
+        }
+        let mut name_value = ld(1, b"izumi"); // NameValue.name
+        name_value.extend(ld(2, b"test")); // NameValue.value
+        ld(3, &name_value) // ClientIdentification.client_info[0]
+    }
+
+    /// A valid `.wvd` minted in-process, independent of any repo file. The identity is a freshly
+    /// generated RSA private key plus the minimal `ClientIdentification` above, serialised exactly
+    /// like a real Android L3 device. Generated once per test run — keygen is not free — and reused,
+    /// standing in for the old bundled seed everywhere.
     fn seed_bytes() -> Vec<u8> {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("widevine")
-            .join("device.wvd");
-        std::fs::read(path).expect("bundled seed present")
+        use std::sync::OnceLock;
+        use widevine::device::{DeviceType, SecurityLevel};
+        static WVD: OnceLock<Vec<u8>> = OnceLock::new();
+        WVD.get_or_init(|| {
+            // 2048-bit matches a real device; the `.wvd` stays ~1.2 KB, well under the size cap.
+            let key = rsa::RsaPrivateKey::new(&mut OsCsprng, 2048).expect("generate an RSA key");
+            let device = widevine::Device::new(
+                DeviceType::ANDROID,
+                SecurityLevel::L3,
+                key,
+                &minimal_client_id(),
+            )
+            .expect("build a device");
+            let mut wvd = Vec::new();
+            device.write_wvd(&mut wvd).expect("serialise the device");
+            wvd
+        })
+        .clone()
     }
 
     /// Split a v2 `.wvd` back into the pool's published pair: (client_id.bin, PKCS#1 PEM).
@@ -959,6 +1062,25 @@ mod tests {
             pool,
             // A fresh gate per test so the once-per-process refresh rule is observable.
             refresh_done: Box::leak(Box::new(AtomicBool::new(false))),
+        }
+    }
+
+    /// Resolve and expect a device, so tests that assert an origin stay terse.
+    async fn resolve_device<P: PoolSource>(
+        s: &DeviceSupply<P>,
+        exclude: &[DeviceOrigin],
+    ) -> ResolvedDevice {
+        match s.resolve(exclude).await.expect("resolution did not error") {
+            Resolution::Device(device) => device,
+            Resolution::None => panic!("expected a device, got no device"),
+        }
+    }
+
+    /// Resolve and expect the typed "no device" outcome.
+    async fn resolve_none<P: PoolSource>(s: &DeviceSupply<P>, exclude: &[DeviceOrigin]) {
+        match s.resolve(exclude).await.expect("resolution did not error") {
+            Resolution::None => {}
+            Resolution::Device(device) => panic!("expected no device, got {:?}", device.origin),
         }
     }
 
@@ -1137,20 +1259,22 @@ mod tests {
         std::fs::write(&override_path, seed_bytes()).unwrap();
 
         let all = supply(Some(override_path), Some(&cache), Some(seed.clone()), None);
-        assert_eq!(all.resolve(&[]).await.unwrap().origin, DeviceOrigin::Override);
+        assert_eq!(resolve_device(&all, &[]).await.origin, DeviceOrigin::Override);
 
         let no_override = supply(None, Some(&cache), Some(seed.clone()), None);
         assert_eq!(
-            no_override.resolve(&[]).await.unwrap().origin,
+            resolve_device(&no_override, &[]).await.origin,
             DeviceOrigin::Pool("aa00000000000021".into())
         );
 
+        // A bundled file present on disk is still preferred over having no device at all.
         let empty = dir.0.join("empty-cache");
         let seed_only = supply(None, Some(&empty), Some(seed), None);
-        assert_eq!(seed_only.resolve(&[]).await.unwrap().origin, DeviceOrigin::Seed);
+        assert_eq!(resolve_device(&seed_only, &[]).await.origin, DeviceOrigin::Seed);
 
+        // Nothing at all: the typed "no device" outcome, not an error.
         let nothing = supply(None, Some(&empty), None, None);
-        assert!(nothing.resolve(&[]).await.unwrap_err().starts_with(LICENSE_FORBIDDEN_PREFIX));
+        resolve_none(&nothing, &[]).await;
     }
 
     #[tokio::test]
@@ -1158,7 +1282,7 @@ mod tests {
         let dir = TestDir::new("disabled");
         let cache = dir.0.join("cache");
         let s = supply(None, Some(&cache), Some(seed_file(&dir.0)), None);
-        assert_eq!(s.resolve(&[]).await.unwrap().origin, DeviceOrigin::Seed);
+        assert_eq!(resolve_device(&s, &[]).await.origin, DeviceOrigin::Seed);
         assert!(!cache.exists(), "no cache directory is created without a pool");
     }
 
@@ -1175,13 +1299,13 @@ mod tests {
             vec![("aa00000000000031", cid.clone(), pem.clone()), ("aa00000000000032", cid, pem)],
         );
         let s = supply(None, Some(&cache), Some(seed_file(&dir.0)), Some(pool));
-        let first = s.resolve(&[]).await.unwrap();
+        let first = resolve_device(&s, &[]).await;
         // Newest verified first.
         assert_eq!(first.origin, DeviceOrigin::Pool("aa00000000000032".into()));
         assert!(member_path(&cache, "aa00000000000032").is_file());
         assert_eq!(*s.pool.as_ref().unwrap().index_calls.lock().unwrap(), 1, "one index read");
         // The second resolution is served from the cache, with no more requests.
-        let again = s.resolve(&[]).await.unwrap();
+        let again = resolve_device(&s, &[]).await;
         assert_eq!(again.origin, first.origin);
         assert_eq!(*s.pool.as_ref().unwrap().pair_calls.lock().unwrap(), 1);
         let state = load_state(&cache);
@@ -1201,7 +1325,7 @@ mod tests {
             vec![("aa00000000000041", bad, pem)],
         );
         let s = supply(None, Some(&cache), Some(seed_file(&dir.0)), Some(pool));
-        assert_eq!(s.resolve(&[]).await.unwrap().origin, DeviceOrigin::Seed);
+        assert_eq!(resolve_device(&s, &[]).await.origin, DeviceOrigin::Seed);
         assert!(!member_path(&cache, "aa00000000000041").exists());
     }
 
@@ -1218,7 +1342,7 @@ mod tests {
             vec![("aa00000000000045", cid, pem)],
         );
         let s = supply(None, Some(&cache), Some(seed_file(&dir.0)), Some(pool));
-        let device = s.resolve(&[]).await.unwrap();
+        let device = resolve_device(&s, &[]).await;
         assert_eq!(device.origin, DeviceOrigin::Pool("aa00000000000045".into()));
         assert!(load_state(&cache).members.is_empty(), "not recorded as cached");
     }
@@ -1235,7 +1359,7 @@ mod tests {
 
         let pool = FakePool::new(Err("HTTP 401".into()), vec![]);
         let s = supply(None, Some(&cache), Some(seed_file(&dir.0)), Some(pool));
-        let device = s.resolve(&[]).await.unwrap();
+        let device = resolve_device(&s, &[]).await;
         assert_eq!(device.origin, DeviceOrigin::Pool("aa00000000000051".into()));
         assert_eq!(*s.pool.as_ref().unwrap().index_calls.lock().unwrap(), 1);
         assert!(member_path(&cache, "aa00000000000051").is_file(), "cache untouched");
@@ -1243,7 +1367,7 @@ mod tests {
         let garbled = FakePool::new(Ok(b"{\"schema\":1,\"devices\":[]}".to_vec()), vec![]);
         let s = supply(None, Some(&cache), None, Some(garbled));
         assert_eq!(
-            s.resolve(&[]).await.unwrap().origin,
+            resolve_device(&s, &[]).await.origin,
             DeviceOrigin::Pool("aa00000000000051".into())
         );
     }
@@ -1262,7 +1386,7 @@ mod tests {
             vec![("aa00000000000062", cid, pem)],
         );
         let s = supply(None, Some(&cache), None, Some(pool));
-        let device = s.resolve(&[]).await.unwrap();
+        let device = resolve_device(&s, &[]).await;
         assert_eq!(device.origin, DeviceOrigin::Pool("aa00000000000062".into()));
         assert!(!member_path(&cache, "aa00000000000061").exists(), "retired member deleted");
         assert!(load_state(&cache).index_checked_at > 0);
@@ -1270,7 +1394,7 @@ mod tests {
         let mut state = load_state(&cache);
         state.index_checked_at = 0;
         save_state(&cache, &state);
-        s.resolve(&[]).await.unwrap();
+        resolve_device(&s, &[]).await;
         assert_eq!(*s.pool.as_ref().unwrap().index_calls.lock().unwrap(), 1);
     }
 
@@ -1286,15 +1410,15 @@ mod tests {
         let a = DeviceOrigin::Pool("aa00000000000071".into());
         let b = DeviceOrigin::Pool("aa00000000000072".into());
 
-        assert_eq!(s.resolve(&[]).await.unwrap().origin, a, "newest verified first");
+        assert_eq!(resolve_device(&s, &[]).await.origin, a, "newest verified first");
         s.refused(&a).await;
         assert_eq!(load_state(&cache).members.iter().find(|m| m.id == "aa00000000000071").unwrap().failures, 1);
-        assert_eq!(s.resolve(&[]).await.unwrap().origin, b, "a refused member goes to the back");
+        assert_eq!(resolve_device(&s, &[]).await.origin, b, "a refused member goes to the back");
 
         s.refused(&a).await;
         assert!(!member_path(&cache, "aa00000000000071").exists(), "deleted at two refusals");
         assert_eq!(load_state(&cache).members.len(), 1);
-        assert_eq!(s.resolve(&[]).await.unwrap().origin, b);
+        assert_eq!(resolve_device(&s, &[]).await.origin, b);
 
         // An acceptance clears the count, so refusals must be consecutive to delete.
         s.refused(&b).await;
@@ -1323,29 +1447,31 @@ mod tests {
             async move { if n == 1 { Err(forbidden()) } else { Ok("keys") } }
         })
         .await;
-        assert_eq!(out.unwrap(), "keys");
+        assert_eq!(out.unwrap(), Some("keys"), "the next device served the licence");
         assert_eq!(*calls.lock().unwrap(), 2, "exactly one extra licence round trip");
         assert_eq!(load_state(&cache).members[0].failures, 1);
     }
 
     #[tokio::test]
-    async fn a_second_refusal_is_terminal() {
+    async fn a_second_refusal_hands_back_to_the_normal_path() {
         let dir = TestDir::new("terminal");
         let cache = dir.0.join("cache");
         cache_member(&cache, "aa00000000000091", 0, "2026-11-12");
         let s = supply(None, Some(&cache), Some(seed_file(&dir.0)), None);
         let calls = Mutex::new(0u32);
-        let out: Result<(), String> = exchange_with_rotation(&s, |_| {
+        let out: Result<Option<()>, String> = exchange_with_rotation(&s, |_| {
             *calls.lock().unwrap() += 1;
             async { Err(forbidden()) }
         })
         .await;
-        assert!(out.unwrap_err().starts_with(LICENSE_FORBIDDEN_PREFIX));
-        assert_eq!(*calls.lock().unwrap(), 2, "retried once, then handed to the Shaka path");
+        // Every device was refused, so there is no accelerator to use: the typed "no device"
+        // outcome, which the caller routes to the normal path (module, else Shaka).
+        assert_eq!(out.unwrap(), None);
+        assert_eq!(*calls.lock().unwrap(), 2, "retried once, then handed to the normal path");
 
-        // Other failures are not rotated.
+        // Other failures are not rotated and remain real errors.
         let calls = Mutex::new(0u32);
-        let out: Result<(), String> = exchange_with_rotation(&s, |_| {
+        let out: Result<Option<()>, String> = exchange_with_rotation(&s, |_| {
             *calls.lock().unwrap() += 1;
             async { Err("licence HTTP 400".to_string()) }
         })
@@ -1360,13 +1486,51 @@ mod tests {
         let override_path = seed_file(&dir.0);
         let s = supply(Some(override_path), None, Some(seed_file(&dir.0)), None);
         let calls = Mutex::new(0u32);
-        let out: Result<(), String> = exchange_with_rotation(&s, |_| {
+        let out: Result<Option<()>, String> = exchange_with_rotation(&s, |_| {
             *calls.lock().unwrap() += 1;
             async { Err(forbidden()) }
         })
         .await;
-        assert!(out.is_err());
+        // The override is refused and never swapped; with no second device the outcome is the
+        // typed "no device" value, not an error — and the override was tried exactly once.
+        assert_eq!(out.unwrap(), None);
         assert_eq!(*calls.lock().unwrap(), 1);
+    }
+
+    /// The headline requirement: a machine with no env override, no cache, no pool and no bundled
+    /// file resolves cleanly to the typed "no device" outcome — never an error.
+    #[tokio::test]
+    async fn resolves_with_no_env_no_cache_and_no_bundle() {
+        let dir = TestDir::new("no-device");
+        let empty = dir.0.join("empty-cache");
+        let s = supply(None, Some(&empty), None, None);
+        resolve_none(&s, &[]).await;
+        // And the exchange simply hands back to the normal path without calling the licence server.
+        let calls = Mutex::new(0u32);
+        let out: Result<Option<()>, String> = exchange_with_rotation(&s, |_| {
+            *calls.lock().unwrap() += 1;
+            async { Ok(()) }
+        })
+        .await;
+        assert_eq!(out.unwrap(), None, "no device → no accelerator, use the normal path");
+        assert_eq!(*calls.lock().unwrap(), 0, "no licence exchange is attempted without a device");
+        assert!(!empty.exists(), "no cache directory is created when the pool is disabled");
+    }
+
+    /// A bundled file is still preferred when one is actually present (whether shipped by a build or
+    /// dropped in by the user). Written in the test so it never depends on a repo resource.
+    #[tokio::test]
+    async fn a_present_bundle_is_still_preferred() {
+        let dir = TestDir::new("present-bundle");
+        let empty = dir.0.join("empty-cache");
+        // Drop a real device file in, exactly as a user supplying their own would.
+        let bundle = seed_file(&dir.0);
+        let s = supply(None, Some(&empty), Some(bundle), None);
+        assert_eq!(
+            resolve_device(&s, &[]).await.origin,
+            DeviceOrigin::Seed,
+            "a present bundle is used in preference to no device"
+        );
     }
 
     /// Fetch one member from a real pool (or a local stub) into `target/wvd-live`. Ignored by
@@ -1383,7 +1547,7 @@ mod tests {
             pool: Some(HttpPool { config }),
             refresh_done: Box::leak(Box::new(AtomicBool::new(false))),
         };
-        let device = s.resolve(&[]).await.expect("a pool member");
+        let device = resolve_device(&s, &[]).await;
         let DeviceOrigin::Pool(id) = &device.origin else {
             panic!("expected a pool member, got {:?}", device.origin);
         };
