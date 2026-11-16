@@ -126,7 +126,7 @@
       <button data-part="preview.action" data-action="play" aria-label={reading ? 'Information' : 'Play'} onclick={(e) => { e.stopPropagation(); openDetail() }}
               class="grid size-9 place-items-center rounded-full bg-white text-black">{#if reading}<BookOpen size={16} />{:else}<Play size={16} fill="currentColor" />{/if}</button>
       {#if !reading}
-        <button data-part="preview.action" data-action="list" aria-label={inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'} onclick={bookmark}
+        <button data-part="preview.action" data-action="list" aria-label={inWatchlist ? 'In Watchlist' : 'Watchlist'} title={inWatchlist ? 'In Watchlist' : 'Watchlist'} aria-pressed={inWatchlist} onclick={bookmark}
                 class="grid size-9 place-items-center rounded-full border-2 border-white/50 bg-black/40 text-white">{#if inWatchlist}<Check size={16} />{:else}<Plus size={16} />{/if}</button>
         {#if canFavourite}
           <button data-part="preview.action" data-action="favorite" aria-label="Favourite" onclick={favourite} disabled={busy}
@@ -171,8 +171,8 @@
                 class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground disabled:opacity-40">
           <Heart size={16} />
         </button>
-        <button aria-label={inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'} onclick={bookmark}
-                title={inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
+        <button aria-label={inWatchlist ? 'In Watchlist' : 'Watchlist'} onclick={bookmark} aria-pressed={inWatchlist}
+                title={inWatchlist ? 'In Watchlist' : 'Watchlist'}
                 class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground">
           <Bookmark size={16} class={inWatchlist ? 'fill-current text-theme' : ''} />
         </button>

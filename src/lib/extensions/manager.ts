@@ -269,6 +269,13 @@ async function finishPackageInstall(installed: InstalledExtensionPackage): Promi
   }
   if (installed.backend === 'izumi-service') {
     await invoke('extension_service_stop', { id: installed.id }).catch(() => {})
+    // A restarted service gets a new port; a source catalog reads its address again.
+    const sources = await import('$lib/catalog/source-catalogs')
+    sources.forgetSourceAddon(installed.id)
+    // A newly installed source that serves a catalog becomes a screen the user can switch on.
+    if (!get(sources.sourceCatalogs).some((item) => item.packageId === installed.id)) {
+      void sources.registerSourceCatalog(installed.id).catch(() => {})
+    }
   }
   installedRevision += 1
   resetRunning()
@@ -290,6 +297,7 @@ function scheduleJvmWarm(delayMs = 1_500): void {
 export async function removeInstalledExtension(id: string): Promise<void> {
   await invoke('extension_service_stop', { id }).catch(() => {})
   await invoke('extension_remove', { id })
+  ;(await import('$lib/catalog/source-catalogs')).unregisterSourceCatalog(id)
   // Gone, so no store is its origin any more.
   forgetPackageOrigin(id)
   await invoke('jvm_extension_reload').catch(() => {})
@@ -1167,13 +1175,19 @@ export interface ServiceSettingOption {
   submittingLabel?: string
   intent?: 'primary' | 'danger'
   hideSubmit?: boolean
+  /** A small square picture beside the label (a profile avatar, say). */
+  image?: string
+  /** A wide picture behind the option, dimmed under the text. */
+  backdrop?: string
 }
 export interface ServiceSettingField {
   key: string
   label: string
   description?: string
   type: 'text' | 'password' | 'number' | 'boolean' | 'select'
-  role?: 'action'
+  /** `action`: the account action selector. `profile`: the account's profiles, which izumi also
+   *  offers as a "Who's watching?" picker outside the settings sheet. */
+  role?: 'action' | 'profile'
   visibleWhen?: ServiceSettingCondition
   required?: boolean
   placeholder?: string
@@ -1194,10 +1208,14 @@ export interface ServiceSettingsDocument {
   version: 1
   title?: string
   description?: string
+  /** A picture shown beside the description (the signed-in account's avatar, say). */
+  image?: string
   submitLabel?: string
   submittingLabel?: string
   notice?: ServiceSettingsNotice
   refreshAfterMs?: number
+  /** The service's own "set up and ready" signal (signed in, for example). Pack setup steps use it. */
+  complete?: boolean
   fields: ServiceSettingField[]
   values: Record<string, ServiceSettingValue>
 }
@@ -1208,6 +1226,7 @@ export interface ServiceSettingsSaveResult {
   version?: 1
   title?: string
   description?: string
+  image?: string
   submitLabel?: string
   submittingLabel?: string
   notice?: ServiceSettingsNotice

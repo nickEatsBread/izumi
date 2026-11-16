@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { isCustomScreen, type CatalogScreen } from '$lib/settings/catalog'
+  import { isCustomScreen, catalogLabel, type CatalogScreen } from '$lib/settings/catalog'
+  import { isSourceSelection, sourceCatalogLogo } from '$lib/catalog/source-catalogs'
   import Sparkles from '@lucide/svelte/icons/sparkles'
   import Coffee from '@lucide/svelte/icons/coffee'
   import Layers3 from '@lucide/svelte/icons/layers-3'
@@ -20,6 +21,15 @@
 {#if platform === 'merged'}
   <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-600 text-white shadow-inner" aria-hidden="true">
     <Layers3 size={23} strokeWidth={2.5} />
+  </span>
+{:else if isSourceSelection(platform)}
+  {@const logo = sourceCatalogLogo(platform)}
+  <span class="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-secondary" aria-hidden="true">
+    {#if logo && !imageFailed}
+      <img src={logo} alt="" class="absolute inset-0 size-10 object-cover" onerror={showFallback} />
+    {:else}
+      <span class="text-sm font-black">{catalogLabel(platform).slice(0, 1).toUpperCase()}</span>
+    {/if}
   </span>
 {:else if isCustomScreen(platform)}
   <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-fuchsia-400 via-rose-500 to-orange-400 text-white shadow-inner" aria-hidden="true">

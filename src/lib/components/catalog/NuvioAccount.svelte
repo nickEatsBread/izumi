@@ -7,7 +7,7 @@
   import NuvioCloudCollections from './NuvioCloudCollections.svelte'
   import NuvioCloudSettings from './NuvioCloudSettings.svelte'
   import NuvioCloudStatus from './NuvioCloudStatus.svelte'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import LockKeyhole from '@lucide/svelte/icons/lock-keyhole'
   import './nuvio.css'
   let profiles = $state.raw<CloudProfile[]>([]), selected = $state(0), section = $state('collections')
@@ -64,7 +64,7 @@
   </div>
   {#if notice}<p class="nv-notice" role="status">{notice}</p>{/if}
   {#if error && !profileDialog?.open}<p class="nv-error" role="alert">{error}</p>{/if}
-  {#if loading}<p class="nv-help flex items-center gap-2 py-8" role="status"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Loading profiles…</p>
+  {#if loading}<p class="nv-help flex items-center gap-2 py-8" role="status"><Spinner />Loading profiles…</p>
   {:else if !profiles.length}<p class="nv-empty">Create your first Nuvio profile to start using cloud storage.</p>
   {:else}
     <p class="nv-help mb-5 text-xs">Save changes to Nuvio, or copy selected data between Nuvio and izumi.</p>

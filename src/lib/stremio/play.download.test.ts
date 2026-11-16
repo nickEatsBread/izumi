@@ -113,7 +113,7 @@ vi.mock('$lib/player/session', () => ({
   playbackRecovery: writable(null),
 }))
 
-const { resolveDownloadUrl } = await import('./play')
+const { resolveDownloadUrl, savedProtectedStream } = await import('./play')
 
 const media = {
   id: 1,
@@ -334,5 +334,38 @@ describe('resolveDownloadUrl failure copy', () => {
 
     await expect(resolveDownloadUrl(1, 2)).rejects.toThrow(/no downloadable link|no source found/i)
     await expect(resolveDownloadUrl(1, 2)).rejects.not.toThrow(/debrid|key/i)
+  })
+})
+
+describe('a protected episode saved on this device', () => {
+  const fresh = {
+    kind: 'shaka' as const,
+    url: 'http://127.0.0.1:4000/v/1/manifest.mpd',
+    filename: 'Test Anime - E2.mkv',
+    audioLang: 'ja-JP',
+    drm: { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1:4000/v/1/license', releaseUrl: 'http://127.0.0.1:4000/v/1/session', refreshUrl: 'http://127.0.0.1:4000/v/1/source' },
+    subtitles: [
+      { url: 'http://127.0.0.1:4000/v/1/subs/en.ass', lang: 'en' },
+      { url: '', lang: 'en', switchUrl: 'http://127.0.0.1:4000/v/1/manifest.mpd?hard=en' },
+    ],
+  }
+
+  it('plays its folder with the fresh licence, never a presentation that would stream instead', () => {
+    const stream = savedProtectedStream('/downloads/Test Anime - E2.protected', fresh)
+    expect(stream.url).toBe('file:///downloads/Test%20Anime%20-%20E2.protected')
+    expect(savedProtectedStream('/downloads/Q&A #1? 100%.protected', fresh).url).toBe('file:///downloads/Q%26A%20%231%3F%20100%25.protected')
+    expect(stream.__drm).toMatchObject({ licenseUrl: fresh.drm.licenseUrl, releaseUrl: fresh.drm.releaseUrl })
+    expect(stream.__drm?.refreshUrl).toBeUndefined()
+    expect(stream.__subtitles).toEqual([fresh.subtitles[0]])
+    expect(stream.__audioLang).toBe('ja-JP')
+  })
+
+  it('holds the connecting screen from the click while the source licenses it again', async () => {
+    const { readFileSync } = await import('node:fs')
+    const play = readFileSync(new URL('./play.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+    const branch = play.slice(play.indexOf("'completed protected download hit"), play.indexOf('savedProtectedStream(local.path, fresh)'))
+    expect(branch.indexOf('connecting.set({')).toBeLessThan(branch.indexOf('await resolveDownloadUrl('))
+    expect(branch).toContain("cancel: () => { connecting.set(null); abort.abort(); onState({ status: 'idle' }) }")
+    expect(branch).toContain('if (!signal.aborted) connecting.set(null)\n      throw error')
   })
 })

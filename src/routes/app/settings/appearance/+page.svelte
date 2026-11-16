@@ -16,6 +16,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import { catalogLabel, catalogScreen, customScreens } from '$lib/settings/catalog'
   import { screenThemeName, setScreenTheme } from '$lib/themes/screen-theme'
+  import { playStartupAnimationNow, startupAnimationEnabled, startupAnimationInfo } from '$lib/startup/animation'
 
   const presets = [
     { value: 'izumi', label: 'Izumi', description: 'Dark, rose accent' },
@@ -37,6 +38,7 @@
 {#snippet hapticsSwitch()}<SettingsSwitch value={$haptics} onToggle={() => ($haptics = !$haptics)} label={m.settings_haptics()} interactive={false} />{/snippet}
 {#snippet wheelSwitch()}<SettingsSwitch value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} label="Wheel-scroll carousels" interactive={false} />{/snippet}
 {#snippet trailersSwitch()}<SettingsSwitch value={$backdropTrailers} onToggle={() => ($backdropTrailers = !$backdropTrailers)} label="Theme trailers" interactive={false} />{/snippet}
+{#snippet startupSwitch()}<SettingsSwitch value={$startupAnimationEnabled} onToggle={() => ($startupAnimationEnabled = !$startupAnimationEnabled)} label="Startup intro" interactive={false} />{/snippet}
 {#snippet dragSwitch()}<SettingsSwitch value={$dragCarousels} onToggle={() => ($dragCarousels = !$dragCarousels)} label="Mouse-drag carousels" interactive={false} />{/snippet}
 {#snippet scaleControl()}
   <span class="flex w-full items-center gap-3 sm:w-auto">
@@ -63,6 +65,10 @@
     <!-- Android never plays them (BackdropTrailer is desktop only). -->
     {#if !$isAndroid}
       <SettingsRow settingKey="theme-trailers" title="Theme trailers" description="Play the trailer some themes show behind the Home banner and series art" control={trailersSwitch} onActivate={() => ($backdropTrailers = !$backdropTrailers)} pressed={$backdropTrailers} />
+    {/if}
+    {#if $startupAnimationInfo}
+      <SettingsRow settingKey="startup-animation" title="Startup intro" description="The short video a pack plays when izumi starts. Off opens straight to Home" learnMore="Any key, click, tap or controller button skips it. Removing the pack removes it too." control={startupSwitch} onActivate={() => ($startupAnimationEnabled = !$startupAnimationEnabled)} pressed={$startupAnimationEnabled} />
+      <SettingsRow title="Play startup intro" description="Watch it now" onActivate={playStartupAnimationNow} />
     {/if}
   </SettingsSubcategory>
 

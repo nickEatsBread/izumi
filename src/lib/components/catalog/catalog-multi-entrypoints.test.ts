@@ -90,13 +90,13 @@ describe('multi-platform catalog entry points', () => {
     expect(catalogHome).toContain('loading = !initialHome')
     expect(catalogHome).toContain('cached?.complete && initialHome')
     expect(catalogHome).toContain('provider.home(abort.signal, undefined, publish)')
-    expect(catalogHome).toContain('publish(result, result.partial !== true)')
+    expect(catalogHome).toContain('publish(result, result.partial !== true && !isSourceSelection(selection))')
     expect(catalogHome).toContain('if (result.hero.length || result.sections.length) loading = false')
     // The hero placeholder shows while loading on every provider (a theme that hides the hero has none).
     expect(catalogHome).toContain('{:else if loading && !$themePresentation?.hero?.hidden}')
     expect(catalogHome).not.toContain("loading && $catalogProvider !== 'jvm'")
     expect(catalogHome).not.toContain("class:deferred-skeleton={$catalogProvider === 'jvm'}")
-    expect(catalogHome).toContain("showCatalogSource={$catalogProvider !== 'jvm'}")
+    expect(catalogHome).toContain("showCatalogSource={$catalogProvider !== 'jvm' && !sourceScreen}")
     expect(read('./MergedCatalogHome.svelte')).toContain('let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})')
   })
 

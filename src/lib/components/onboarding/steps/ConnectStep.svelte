@@ -3,7 +3,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right'
   import Check from '@lucide/svelte/icons/check'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { m } from '$lib/paraglide/messages.js'
@@ -263,7 +263,7 @@
           <li class="flex min-w-0 items-center gap-2 text-xs">
             {#if task.state.status === 'done'}<Check size={14} class="shrink-0 text-muted-foreground" />
             {:else if task.state.status === 'failed'}<TriangleAlert size={14} class="shrink-0 text-destructive" />
-            {:else}<LoaderCircle size={14} class="tile-spinner shrink-0 text-muted-foreground" />{/if}
+            {:else}<Spinner size="xs" inline class="mx-px text-muted-foreground" />{/if}
             <!-- A failure wraps: its message is the one thing the user needs to read in full. -->
             <span class="min-w-0 flex-1 {task.state.status === 'failed' ? 'break-words' : 'truncate'}">
               <span class="font-semibold">{label(task.id)}</span>
@@ -300,7 +300,7 @@
         <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{m.onboarding_stremio_code_body()}</p>
         <p aria-label={m.onboarding_stremio_code_label({ code: connections.stremio.code })} class="my-4 rounded-xl border border-border bg-background py-4 text-center font-mono text-2xl font-bold tracking-[0.15em]">{connections.stremio.code}</p>
         <button type="button" data-focusable onclick={() => visit(connections.stremio.status === 'code' ? connections.stremio.url : '')} class="setup-inline-button w-full bg-foreground text-background">{m.onboarding_stremio_open()}<ArrowUpRight size={15} /></button>
-        <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={15} class="tile-spinner" />{connections.stremio.completing ? m.onboarding_stremio_completing() : m.onboarding_stremio_waiting()}</p>
+        <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner inline />{connections.stremio.completing ? m.onboarding_stremio_completing() : m.onboarding_stremio_waiting()}</p>
         <button type="button" data-focusable onclick={() => cancel('stremio')} class="mt-3 min-h-10 w-full rounded-lg text-sm font-semibold hover:bg-secondary">{m.onboarding_stremio_cancel()}</button>
       {:else if stremioMode === 'code'}
         <button type="button" data-focusable onclick={connectStremioLink} class="setup-inline-button w-full bg-foreground text-background">{m.onboarding_stremio_connect()}</button>
@@ -328,7 +328,7 @@
         <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{m.onboarding_nuvio_code_body()}</p>
         <p aria-label={m.onboarding_nuvio_code_label({ code: connections.nuvio.code })} class="my-4 rounded-xl border border-border bg-background py-4 text-center font-mono text-2xl font-bold tracking-[0.15em]">{connections.nuvio.code}</p>
         <button type="button" data-focusable onclick={() => visit(connections.nuvio.status === 'code' ? connections.nuvio.url : '')} class="setup-inline-button w-full bg-foreground text-background">{m.onboarding_nuvio_open()}<ArrowUpRight size={15} /></button>
-        <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={15} class="tile-spinner" />{connections.nuvio.completing ? m.onboarding_nuvio_completing() : m.onboarding_nuvio_waiting()}</p>
+        <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner inline />{connections.nuvio.completing ? m.onboarding_nuvio_completing() : m.onboarding_nuvio_waiting()}</p>
         <button type="button" data-focusable onclick={() => cancel('nuvio')} class="mt-3 min-h-10 w-full rounded-lg text-sm font-semibold hover:bg-secondary">{m.onboarding_nuvio_cancel()}</button>
       {:else}
         {#if nuvioMode === 'device'}

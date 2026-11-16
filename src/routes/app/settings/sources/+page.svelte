@@ -8,6 +8,7 @@
   import { trackerFeedUrls } from '$lib/extensions/tracker-feeds'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
+  import PacksSettings from '$lib/components/settings/PacksSettings.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import TorrentDebridSettings from '$lib/components/settings/TorrentDebridSettings.svelte'
@@ -70,6 +71,7 @@
   <SettingsSubcategory id="store">
     <SettingsRow title="Store" description="Find sources, packages and themes to install" href="/app/settings/store" chevron />
     <SettingsRow title="Plugins (beta)" description="Add features, like asking the player to find a moment" href="/app/settings/plugins" chevron />
+    <PacksSettings />
   </SettingsSubcategory>
 
   <SettingsSubcategory id="debrid">

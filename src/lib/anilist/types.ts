@@ -82,6 +82,32 @@ export interface MediaVideo {
   /** Source-supplied episode annotations used by Aniyomi catalogs. */
   filler?: boolean
   group?: string
+  /** Progress a source catalog reports for this episode (0..1), its playhead and whether it's watched. */
+  progress?: number
+  playhead?: number
+  watched?: boolean
+  durationSec?: number
+  /** The AniList (and MyAnimeList) entry a source catalog says this episode is, and its number
+   *  there: a source's own title is tracked on that entry. */
+  track?: { anilist: number; mal?: number; episode: number }
+}
+
+/** What a source catalog says about a title beyond plain metadata. Every field is optional. */
+export interface MediaSourceFacts {
+  /** Age rating as the source shows it ("14+"). */
+  rating?: string
+  /** Audio versions in a word or two ("Sub | Dub"). */
+  audio?: string
+  /** This card stands for one episode: its label ("S2 E1"), video and, when resumable, progress. */
+  card?: { videoId?: string; label?: string; remainingSec?: number; progress?: number }
+  isNew?: boolean
+  /** Where to resume the title. */
+  upNext?: { videoId: string; label?: string; playhead?: number }
+  /** Whether the title is on the source's own watchlist, and where to change that. */
+  watchlist?: boolean
+  watchlistUrl?: string
+  /** The source's own names for the title's seasons, by the `season` its videos carry. */
+  seasons?: Array<{ number: number; title: string }>
 }
 
 export interface Media {
@@ -140,6 +166,8 @@ export interface Media {
   bannerImage?: string
   /** Transparent title treatment/clear-logo supplied by the owning metadata provider. */
   logoImage?: string
+  /** Facts from a source catalog (rating, audio, progress, watchlist). */
+  sourceFacts?: MediaSourceFacts
   trailer?: { id?: string; site?: string; language?: string } | null
   nextAiringEpisode?: { episode: number; airingAt?: number; timeUntilAiring: number } | null
   /** Provider-confirmed number of episodes already released. Catalogue fallbacks such as Kitsu

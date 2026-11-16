@@ -129,7 +129,7 @@ describe('DiscussAnime embed theming', () => {
     expect(panel).not.toContain('commentsOverlayMoving')
     expect(panel).toContain("phase === 'start'")
     expect(panel).toContain("$gameMode ? 'inset-0 h-full w-full max-w-none border-0 shadow-none'")
-    expect(panel).toContain('class:animate-pulse={!$gameMode}')
+    expect(panel).toContain('<div class:deferred-skeleton={$gameMode}>')
     expect(panel).toContain("'inset-0 h-full w-full max-w-none border-0 shadow-none'")
   })
 })

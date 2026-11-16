@@ -68,7 +68,7 @@ describe('custom screens in the catalog switcher', () => {
     expect(source).toContain('onclick={newScreen}')
     expect(source).toContain('New screen…')
     expect(source).toContain('{catalogLabel(provider, $customScreens)}')
-    expect(source).toContain("isCustomScreen(provider) ? 'Your own screen' : descriptions[provider]")
+    expect(source).toContain("isCustomScreen(provider) ? 'Your own screen' : isSourceSelection(provider) ? 'This source’s own catalog' : descriptions[provider]")
     expect(source).toContain('<NewScreenDialog onclose={() => (creatingScreen = false)} />')
   })
 

@@ -22,7 +22,7 @@ describe('catalog platform logos', () => {
   })
 
   it('keeps every logo on the same square mobile-safe canvas', () => {
-    expect(source.match(/size-10 shrink-0/g)).toHaveLength(8)
+    expect(source.match(/size-10 shrink-0/g)).toHaveLength(9)
   })
 
   it('shows the complete TMDB mark with breathing room', () => {
@@ -33,7 +33,7 @@ describe('catalog platform logos', () => {
     expect(source).toContain('let failedPlatform = $state<CatalogScreen | null>(null)')
     expect(source).toContain('const imageFailed = $derived(failedPlatform === platform)')
     expect(source).toContain('failedPlatform = platform')
-    expect(source.match(/onerror=\{showFallback\}/g)).toHaveLength(5)
+    expect(source.match(/onerror=\{showFallback\}/g)).toHaveLength(6)
     expect(source.match(/\{#if imageFailed\}/g)).toHaveLength(5)
   })
 

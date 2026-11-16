@@ -36,7 +36,7 @@ describe('player styling hooks', () => {
   })
 
   it('names every control in the row', () => {
-    const names = ['back', 'previous', 'play', 'next', 'volume', 'options', 'comments', 'tracks',
+    const names = ['back', 'previous', 'play', 'next', 'volume', 'options', 'comments', 'tracks', 'audio', 'subtitles',
       'subtitle-previous', 'subtitle-replay', 'subtitle-next', 'bookmark', 'screenshot', 'pip', 'fullscreen']
     for (const name of names) expect(controls).toContain(`data-control="${name}"`)
     expect(read('./DesktopCastButton.svelte')).toContain('data-control="cast"')
@@ -90,11 +90,13 @@ describe('player styling hooks', () => {
 
   it('keeps theme stylesheets out of the Game mode player', () => {
     expect(read('../../themes/css.ts')).toContain('@scope (:root) to ([data-theme-protected], [data-theme-unthemed])')
-    expect(controls).toMatch(/data-slot="player.controls"[^>]*data-theme-unthemed=\{gm \|\| undefined\}/)
-    expect(read('./PlayerOverlay.svelte')).toMatch(/data-part="player.skip"[^>]*data-theme-unthemed=\{gmMode \|\| undefined\}/)
-    expect(read('./UpNextOverlay.svelte')).toContain('data-theme-unthemed={$gameMode || undefined}')
+    // Each also counts as a protected surface under the same condition, which puts the stylesheet in that scoped form.
+    expect(controls).toMatch(/data-slot="player.controls"[^>]*data-theme-unthemed=\{gm \|\| undefined\} use:protectedSurface=\{gm\}/)
+    expect(read('./PlayerOverlay.svelte')).toMatch(/data-part="player.skip"[^>]*data-theme-unthemed=\{gmMode \|\| undefined\} use:protectedSurface=\{gmMode\}/)
+    expect(read('./UpNextOverlay.svelte')).toMatch(/data-theme-unthemed=\{\$gameMode \|\| undefined\}\s+use:protectedSurface=\{\$gameMode\}/)
     // The media menu only mounts in Game mode.
-    expect(read('./TrackMenu.svelte')).toMatch(/data-gm-menu-surface\s+data-theme-unthemed\s/)
+    expect(read('./TrackMenu.svelte')).toMatch(/data-gm-menu-surface\s+data-theme-unthemed\s+use:protectedSurface\s/)
+    expect(read('../../player/theme-gm-osd.ts')).toMatch(/const surface = protectedSurface\(probe\)[\s\S]*probe\.remove\(\)\s+surface\.destroy\(\)/)
     // Unlike data-theme-protected, the marker carries no styling of its own.
     expect(read('../../../app.css')).not.toContain('data-theme-unthemed')
   })

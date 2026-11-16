@@ -3704,6 +3704,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "blake3",
+ "cc",
  "chardetng 0.1.17",
  "data-encoding",
  "discord-rich-presence",

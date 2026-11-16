@@ -728,3 +728,28 @@ describe('pointer modality on the keys (input.ts)', () => {
     expect(get(inputType)).toBe('touch')
   })
 })
+
+describe("Steam's keyboard on a Steam Deck", () => {
+  it('asks Steam first and opens the built-in keyboard only when Steam declines', async () => {
+    const { gameMode } = await import('$lib/player/session')
+    const { get } = await import('svelte/store')
+    const osk = await import('./osk')
+    document.body.innerHTML = '<input id="q" type="search">'
+    const field = document.getElementById('q') as HTMLInputElement
+    field.focus()
+    gameMode.set(true)
+    const asked: string[] = []
+    osk.useSteamKeyboard(async (target) => { asked.push(target.id); return true })
+    osk.openOskForField(field)
+    await Promise.resolve()
+    expect(asked).toEqual(['q'])
+    expect(get(osk.oskSession)).toBeNull()
+
+    osk.useSteamKeyboard(async () => false)
+    osk.openOskForField(field)
+    await vi.waitFor(() => expect(get(osk.oskSession)?.kind).toBe('field'))
+    osk.closeOsk({ restore: false })
+    osk.useSteamKeyboard(null)
+    gameMode.set(false)
+  })
+})

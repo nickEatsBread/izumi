@@ -6,6 +6,7 @@
 #
 #   curl -fsSL https://flatpak.izumi.watch/install.sh | bash
 #   curl -fsSL https://flatpak.izumi.watch/install.sh | bash -s -- --beta
+#   curl -fsSL https://flatpak.izumi.watch/install.sh | bash -s -- --pack=https://…/pack.json
 #
 # Why this exists: SteamOS routes .flatpakref through Discover, and Discover cannot follow an ostree
 # repository redirect or add a remote that carries its own GPG key. It opens, fails with no visible
@@ -16,6 +17,7 @@ set -euo pipefail
 CHANNEL=stable
 ASSUME_YES=0
 SKIP_STEAM=0
+PACK_URL=''
 for argument in "$@"; do
   case "$argument" in
     --beta) CHANNEL=beta ;;
@@ -23,7 +25,15 @@ for argument in "$@"; do
     # Unattended installs (CI, a kiosk image): take the app, never touch the Steam library.
     --yes|-y) ASSUME_YES=1 ;;
     --no-steam) SKIP_STEAM=1 ;;
-    --help|-h) printf 'usage: install.sh [--beta] [--yes] [--no-steam]\n'; exit 0 ;;
+    # A pack for izumi to offer at its next launch: izumi shows its review screen and sets nothing up
+    # without the user. The base64url form keeps a link safe inside .desktop files and shell quoting.
+    --pack=*) PACK_URL="${argument#--pack=}" ;;
+    --pack-b64=*)
+      encoded="$(printf '%s' "${argument#--pack-b64=}" | tr '_-' '/+')"
+      while [ $(( ${#encoded} % 4 )) -ne 0 ]; do encoded="$encoded="; done
+      PACK_URL="$(printf '%s' "$encoded" | base64 -d 2>/dev/null)" || PACK_URL='invalid'
+      ;;
+    --help|-h) printf 'usage: install.sh [--beta] [--yes] [--no-steam] [--pack=<https link to a pack.json>]\n'; exit 0 ;;
     *) printf 'izumi: unknown option %s\n' "$argument" >&2; exit 2 ;;
   esac
 done
@@ -75,6 +85,27 @@ fi
 flatpak info --user "$APP_ID" >/dev/null 2>&1 </dev/null \
   || die 'the install command finished but izumi is not present.'
 say "izumi is installed. Launch it from the applications menu, or with: flatpak run $APP_ID"
+
+# ------------------------------------------------------------------ pack
+
+if [ -n "$PACK_URL" ]; then
+  # Only a plain https link reaches the marker (no quotes, backslashes, spaces or control
+  # characters), and izumi checks it again before fetching anything.
+  case "$PACK_URL" in
+    https://*.*) ;;
+    *) die "the pack link must be an https link (got: $PACK_URL)" ;;
+  esac
+  case "$PACK_URL" in
+    *[!A-Za-z0-9._~:/?#@!\$\&\'\(\)*+,\;=%-]*) die 'the pack link contains characters a link cannot have.' ;;
+  esac
+  [ "${#PACK_URL}" -le 2048 ] || die 'the pack link is too long.'
+  # Tauri's config folder inside the Flatpak sandbox: XDG_CONFIG_HOME/<app id>.
+  PACK_DIR="$HOME/.var/app/$APP_ID/config/$APP_ID"
+  mkdir -p "$PACK_DIR"
+  printf '{"url":"%s"}\n' "$PACK_URL" > "$PACK_DIR/pending-pack.json"
+  PACK_HOST="${PACK_URL#https://}"
+  say "When izumi next opens it shows the pack from ${PACK_HOST%%/*} for you to review"
+fi
 
 # ------------------------------------------------------------------ Steam integration
 

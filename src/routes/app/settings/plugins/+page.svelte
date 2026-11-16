@@ -9,6 +9,7 @@
     setPluginEnabled, setPluginSecret, setPluginSetting, type InstalledPlugin, type PreparedPlugin,
   } from '$lib/plugins/registry'
   import { pluginConformance, pluginLogs, pluginRuns } from '$lib/plugins/host'
+  import { protectedSurface } from '$lib/themes/safe-mode'
 
   let url = $state('')
   let busy = $state(false)
@@ -86,7 +87,7 @@
     </section>
 
     {#if pending}
-      <section class="rounded-xl border border-primary/50 p-4" aria-labelledby="plugin-consent-heading" data-theme-protected>
+      <section class="rounded-xl border border-primary/50 p-4" aria-labelledby="plugin-consent-heading" data-theme-protected use:protectedSurface>
         <h3 id="plugin-consent-heading" class="flex items-center gap-2 text-base font-black"><ShieldCheck size={18} /> Install {pending.manifest.name}?</h3>
         <p class="mt-1 text-sm text-muted-foreground">{pending.manifest.description}</p>
         <p class="mt-1 text-xs text-muted-foreground">By {pending.manifest.author} · version {pending.manifest.version} · {pending.manifest.id}</p>

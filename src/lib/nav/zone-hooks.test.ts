@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { isTv } from '$lib/platform'
 import { initDpadNav, pivotScrollDelta, resetNavLandingForTests, setNavMoveOwner } from './index'
 import { dispatchPadKey, resetPadControlsForTests } from './pad-controls'
@@ -27,13 +28,13 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   scrolls.length = 0
-  HTMLElement.prototype.scrollBy = function (this: HTMLElement, options?: ScrollToOptions | number) {
-    scrolls.push({ el: this, options: options as ScrollToOptions })
-  } as HTMLElement['scrollBy']
-  HTMLElement.prototype.scrollTo = function () {} as HTMLElement['scrollTo']
-  window.scrollBy = vi.fn() as unknown as typeof window.scrollBy
+  HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {
+    const move = asMove(this, options as ScrollToOptions)
+    if (move) scrolls.push({ el: this, options: move })
+  } as HTMLElement['scrollTo']
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
   resetNavLandingForTests()
   resetPadControlsForTests()

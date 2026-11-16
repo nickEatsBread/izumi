@@ -9,6 +9,8 @@
   import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
   import { probeInAppPlayer } from '$lib/player/in-app-player'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
+  import { useSteamKeyboard } from '$lib/nav/osk'
+  import { showSteamKeyboard } from '$lib/deck/steam-keyboard'
   import NativePickerSheet from '$lib/components/shell/NativePickerSheet.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
   // until playback/resolve starts. Loading them on demand
@@ -30,7 +32,9 @@
   const loadStreamPicker = () => import('$lib/components/player/StreamPicker.svelte')
   const loadDebridCaching = () => import('$lib/components/player/DebridCaching.svelte')
   const loadSourceConnecting = () => import('$lib/components/player/SourceConnecting.svelte')
-  const loadExitPrompt = () => import('$lib/components/shell/ExitPrompt.svelte')
+  // Not split off: loading it on the first B press held the dialog back about 0.2 s on the Deck.
+  import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
+  import NavPending from '$lib/components/shell/NavPending.svelte'
   const loadGlobalSearch = () => import('$lib/components/search/GlobalSearch.svelte')
   const loadTrailerDialog = () => import('$lib/components/cards/TrailerDialog.svelte')
   const loadTrailerPlayer = () => import('$lib/components/cards/TrailerPlayer.svelte')
@@ -41,12 +45,15 @@
   // component; it self-gates its own dialog.
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
-  import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
+  import { streamPicker, connecting, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching, playerStage } from '$lib/player/session'
+  import { initNativeDrm } from '$lib/player/native-drm'
+  import { initModules } from '$lib/modules/modules'
   import { playerInsets, sameInsets, type PlayerInsets } from '$lib/player/insets'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
   import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, customScreens, enabledCatalogProviders, isMergedScreen, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
-  import { afterNavigate, beforeNavigate, goto } from '$app/navigation'
+  import { afterNavigate, beforeNavigate, goto, preloadCode } from '$app/navigation'
+  import { prefetchDetail, titleRefFromPath } from '$lib/catalog/detail-prefetch'
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -66,6 +73,7 @@
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { bottomBarRoom, bottomNavSuppressed, sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import { resetScrollChrome, startScrollChrome } from '$lib/components/shell/scroll-chrome'
+  import { trackFocusProgress } from '$lib/motion/tween'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -90,7 +98,7 @@
   // driven purely by the prompt store, which the gated Settings pages set.
   import { householdPrompt } from '$lib/profiles/household-gate'
   const loadHouseholdPinDialog = () => import('$lib/components/profiles/HouseholdPinDialog.svelte')
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { derived, get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
@@ -259,6 +267,8 @@
     initInput()
     initDpadNav()
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
+    void initNativeDrm() // Linux: protected streams play in izumi's own player
+    void initModules() // optional native modules a pack asked for, downloading in the background
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     // Plugins (beta): nothing loads unless the viewer switched them on in Settings. Lazy, so the
     // runtime stays out of the boot chunk.
@@ -266,6 +276,8 @@
     const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}
     initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
+    // A pack the Deck installer was asked to set up opens its review screen once.
+    void invoke<string | null>('pack_take_pending').then((url) => { if (url) void goto(`/app/pack?url=${encodeURIComponent(url)}`) }).catch(() => {})
     // Background services. None of them is needed for the first paint, and statically importing
     // them put ~3k lines of companion / watch-together / device-sync / tracker-queue / updater code
     // (plus, via the source bridge, the whole play stack) into the shell's boot chunk. They load and
@@ -403,6 +415,38 @@
   // Phone system Back: MainActivity's back callback runs the layered Back pipeline through the
   // bridge installed here (nav/system-back.ts) and falls through to stock Back when it answers false.
   onMount(() => installSystemBack())
+  // A link the d-pad or Tab lands on starts loading its page's code, as a hover does for a mouse
+  // (data-sveltekit-preload-data on <body>): by the press, the page is ready to open at once.
+  // A title's card that keeps focus for a moment also fetches its details (detail-prefetch.ts).
+  onMount(() => {
+    const preloaded = new Set<string>()
+    let dwell: ReturnType<typeof setTimeout> | undefined
+    const preload = (event: FocusEvent) => {
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null
+      if (!link) return
+      const url = new URL(link.href, location.href)
+      if (url.origin !== location.origin) return
+      const title = titleRefFromPath(url.pathname)
+      clearTimeout(dwell)
+      if (title) dwell = setTimeout(() => { if (link.contains(document.activeElement)) prefetchDetail(title) }, 350)
+      if (preloaded.has(url.pathname)) return
+      preloaded.add(url.pathname)
+      void preloadCode(url.pathname).catch(() => {})
+    }
+    window.addEventListener('focusin', preload)
+    return () => { clearTimeout(dwell); window.removeEventListener('focusin', preload) }
+  })
+  // Each page's code brings its stylesheet, and adding one restyles the whole page: on the Deck the
+  // first card focused on Home froze two frames (0.22 s and 0.37 s) as the title page's code arrived.
+  // The main pages' code loads once at launch instead: behind the startup animation when one plays,
+  // else on the first idle moment.
+  onMount(() => {
+    const pages = ['/app/media/stremio/series/preload', '/app/anime/1', '/app/search', '/app/browse', '/app/categories', '/app/listing', '/app/schedule', '/app/library', '/app/downloads', '/app/settings']
+    const load = () => { for (const path of pages) void preloadCode(path).catch(() => {}) }
+    if (document.documentElement.classList.contains('startup-cover') || document.getElementById('boot-intro')) { load(); return }
+    const idle = window.requestIdleCallback?.(load, { timeout: 3000 }) ?? window.setTimeout(load, 1500)
+    return () => { window.cancelIdleCallback?.(idle); window.clearTimeout(idle) }
+  })
 
   $effect(() => {
     document.documentElement.classList.toggle('tv-mode', $isTv)
@@ -456,6 +500,33 @@
     if ($gameMode && playerWasOpen && !open) restoreGmTouchAfterTransition()
     playerWasOpen = open
   })
+  // The page is display: none under the player, which drops its focus and scroll position: a d-pad
+  // user closing the player was back at the top with nothing focused. Remember both as playback
+  // starts (the store emits before the page hides) and put them back when it ends, unless a
+  // navigation closed it.
+  let playerReturns = 0
+  let playerReturn: { key: string; y: number } | null = null
+  onMount(() => playing.subscribe((open) => {
+    if (open) {
+      if (playerReturn) return
+      playerReturn = { key: `player-return:${++playerReturns}`, y: window.scrollY }
+      rememberRouteFocus(playerReturn.key)
+      return
+    }
+    const back = playerReturn
+    playerReturn = null
+    if (!back) return
+    void tick().then(() => {
+      if (get(navInFlight) || get(playing)) return
+      window.scrollTo({ top: back.y, behavior: 'instant' })
+      if (document.activeElement && document.activeElement !== document.body) return
+      const focus = (el: HTMLElement) => { focusByNav(el, false, true); focusByNav(el, true, true) }
+      // A page can name where a return from its episode lands (a series page: its Continue button).
+      const landing = document.querySelector<HTMLElement>('[data-nav-player-return]')
+      if (landing && focusRestoreAllowed()) focus(landing)
+      else void restoreRouteFocus(back.key, { focus })
+    })
+  }))
 
   // Single-window player: mpv renders into THIS window, behind the webview. When
   // playing, punch a transparent hole — drop the opaque app background (app.css
@@ -555,6 +626,8 @@
         routeFocusRestore = controller
         void restoreRouteFocus(routeFocusKey(to.url), {
           signal: controller.signal,
+          // Home adds its rows a frame at a time: the remembered card's row can take a moment.
+          timeoutMs: 3000,
           // The nav engine's own reveal, instantly: the card's row first, then the page.
           focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) },
         })
@@ -564,6 +637,11 @@
   })
   // What B does next, on <html> for the button-hint bar (nav/back.ts); removed when the shell goes.
   onMount(() => startBackHint())
+  // On a Steam Deck the keyboard for a text field is Steam's own; the built-in one only when Steam declines.
+  onMount(() => {
+    useSteamKeyboard(showSteamKeyboard)
+    return () => useSteamKeyboard(null)
+  })
   // Scroll chrome (`shell.bottomNav.hide`): one tracker for the whole shell, so <html data-chrome>
   // keeps following the page where a series page hides the bar. Only the bottom-bar shell has a bar
   // that moves; every navigation starts with the chrome shown.
@@ -572,6 +650,9 @@
     dock: androidMiniPlayer,
   }))
   afterNavigate(() => resetScrollChrome())
+  // `--izumi-focus` on the focused control, for themes to tween their focus look from (Game mode cannot
+  // use CSS transitions: WebKitGTK blinks when one ends).
+  onMount(() => trackFocusProgress())
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />
@@ -585,7 +666,7 @@
 {#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && (!$androidMpvActive || $androidMiniPlayer)}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
   <!-- A theme's `player.window: "full"` gives the windowed player the whole window too (the titlebar stays). -->
-  {#if $isMobile || $shellNav === 'bottom'}{#if !$bottomNavSuppressed}<BottomNav />{/if}{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}
+  {#if $isMobile || $shellNav === 'bottom'}{#if !$bottomNavSuppressed}<BottomNav />{/if}{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile && !$isTv}<Titlebar />{/if}
@@ -656,13 +737,14 @@
           <p class="truncate px-3 py-2 text-xs text-white/80">Connecting</p>
         </div>
       {:else}
-        <PlayFeedback label={$connecting?.title ?? ''} art={$connecting?.art ?? ''} />
+        <PlayFeedback variant="player" label={$connecting?.title ?? ''} />
       {/if}
     {/snippet}
   </Lazy>
 {/if}
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
-{#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
+<ExitPrompt />
+<NavPending />
 {#if globalSearchMounted}<Lazy load={loadGlobalSearch} />{/if}
 {#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
 {#if trailerPlayerMounted}<Lazy load={loadTrailerPlayer} />{/if}
@@ -698,7 +780,8 @@
 {/if}
 <!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->
 <UpdateToast />
-{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore'}<Lazy load={loadFirstRunSetup} />{/if}
+<!-- A pack runs its own setup (it ends onboarding when it finishes). -->
+{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore' && page.url.pathname !== '/app/pack'}<Lazy load={loadFirstRunSetup} />{/if}
 <UpNextOverlay />
 <!-- End-of-series rating; app-level for the same reason as Up Next, and it outlives the player so
      a finale finished by backing out after the watch threshold asks over the series page. -->

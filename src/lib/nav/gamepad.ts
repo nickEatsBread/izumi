@@ -12,6 +12,7 @@ import { handleLayeredBack, isDuplicateBackPress } from './back'
 import { markBackPending } from './nav-state'
 import { closeOsk, oskBackspace, oskInsert } from './osk'
 import { oskDismissedAt } from '$lib/player/session'
+import { startupAnimationPlaying } from '$lib/startup/animation'
 import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from './layers'
 import { padActivate } from './pad-controls'
 import { dispatchPadKey } from './pad-controls'
@@ -33,6 +34,17 @@ function keydown(key: string, repeat = false) {
   dispatchPadKey(key, { repeat })
 }
 
+/** ☰ in browse: a page that has its own side menu cancels this event and opens it. */
+export const PAGE_OPTIONS_EVENT = 'page-options'
+
+/** A held browser-gamepad direction repeats from the frame loop. A step can stall the page (a scroll
+ *  and layout on the Deck can take longer than the repeat delay), and the first frame after the
+ *  stall may run before the release that arrived meanwhile is handled: the press then looks held
+ *  and fires a second step. After a frame gap this long, the loop waits one more frame before it
+ *  repeats. The native reader times its own repeats (`gamepad-repeat`) and never uses this loop. */
+export const REPEAT_STALL_MS = 100
+export const repeatAllowed = (previousFrame: number, now: number): boolean => now - previousFrame <= REPEAT_STALL_MS
+
 /// Start the translator. Returns a stop function. Runs for the whole app while in Game mode.
 export function startGamepadNav(): () => void {
   const held: Record<Dir, boolean> = { up: false, down: false, left: false, right: false }
@@ -41,11 +53,15 @@ export function startGamepadNav(): () => void {
     up: new RepeatTimer(cfg), down: new RepeatTimer(cfg), left: new RepeatTimer(cfg), right: new RepeatTimer(cfg),
   }
   let unlisten: (() => void) | null = null
+  let unlistenRepeat: (() => void) | null = null
   let stopped = false
 
+  let previousFrame = 0
   const repeatLoop = new ActiveFrameLoop(() => {
     const now = performance.now()
-    for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir, true)
+    const allowed = repeatAllowed(previousFrame, now)
+    previousFrame = now
+    if (allowed) for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir, true)
     return DIRS.some((dir) => held[dir])
   })
 
@@ -115,11 +131,16 @@ export function startGamepadNav(): () => void {
     keydown(ARROW[dir], repeat)
   }
 
-  // One press of a direction: fire now, then repeat (accelerating) while it is held.
+  // One press of a direction: fire now, then repeat (accelerating) while it is held. The native
+  // reader sends its own repeats, timed from the controller's real press and release.
+  let nativeRepeats = false
   function pressDir(dir: Dir) {
     held[dir] = true
-    timers[dir].press(performance.now())
     fireDir(dir)
+    if (nativeRepeats) return
+    timers[dir].press(performance.now())
+    // Measured after the step, so the step's own stall counts as one.
+    previousFrame = performance.now()
     repeatLoop.start()
   }
 
@@ -130,6 +151,9 @@ export function startGamepadNav(): () => void {
     // One physical B can arrive twice on Android (this pad edge and the system Back it also raises).
     // Whichever comes second within BACK_DEBOUNCE_MS is dropped here, before any owner below sees it.
     if (name === 'b' && isDuplicateBackPress('gamepad')) return
+    // The startup video owns the pad while it plays: its own listener skips it, and the same press
+    // must not reach the page too (B skipping it on Home also opened the exit prompt).
+    if (get(startupAnimationPlaying)) return
     // Keep every controller action inside the warning. A continues, B cancels, and every other
     // button is swallowed so it cannot affect the page or player underneath.
     if (get(deckKeyboardWarning)) {
@@ -192,6 +216,8 @@ export function startGamepadNav(): () => void {
     if (topNavLayer()) {
       if (name === 'a') padActivate()
       else if (name === 'b') closeTopNavLayer('back')
+      // ☰ opened a page's side menu, so ☰ closes it too, as in the player.
+      else if (name === 'start' && topNavLayer()?.kind === 'options-sheet') closeTopNavLayer('back')
       return
     }
     // Global search is a browse-level modal: A activates its focused result/control and B
@@ -269,6 +295,13 @@ export function startGamepadNav(): () => void {
       // which expands the labelled rail via its focus-driven expand. In the player, ☰ is the
       // track menu (handled by TrackMenu before this) — inPlayer() above already returned.
       case 'start': {
+        // A page with its own options (a title page's side menu) takes ☰ first.
+        if (!window.dispatchEvent(new CustomEvent(PAGE_OPTIONS_EVENT, { cancelable: true }))) break
+        // The drawer navigation (theme `shell.nav: "drawer"`) has no rail: Start opens the drawer.
+        if (document.documentElement.dataset.themeNav === 'drawer') {
+          window.dispatchEvent(new Event('nav-drawer-toggle'))
+          break
+        }
         const items = [...document.querySelectorAll<HTMLElement>('[data-nav-sidebar] [data-focusable]')]
         const path = location.pathname.replace(/\/$/, '')
         const cur = items.find((el) => {
@@ -315,26 +348,32 @@ export function startGamepadNav(): () => void {
     }
   }
 
-  const routeInput = (input: { name: string; pressed: boolean }) => {
+  const routeInput = (input: { name: string; pressed: boolean }, native: boolean) => {
+    nativeRepeats = native
     if (input.pressed) onPress(input.name)
     else onRelease(input.name)
   }
   const onBrowserInput = (event: Event) => {
-    routeInput((event as CustomEvent<{ name: GamepadInputName; pressed: boolean }>).detail)
+    routeInput((event as CustomEvent<{ name: GamepadInputName; pressed: boolean }>).detail, false)
   }
   window.addEventListener(BROWSER_GAMEPAD_EVENT, onBrowserInput)
 
   // Browser previews have their own input bridge and no native event runtime.
   if ('__TAURI_INTERNALS__' in window) {
     void listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
-      routeInput(e.payload)
+      routeInput(e.payload, true)
     }).then((u) => { if (stopped) u(); else unlisten = u }).catch(() => {})
+    void listen<{ name: string }>('gamepad-repeat', (e) => {
+      const dir = e.payload.name as Dir
+      if (DIRS.includes(dir) && held[dir]) fireDir(dir, true)
+    }).then((u) => { if (stopped) u(); else unlistenRepeat = u }).catch(() => {})
   }
 
   return () => {
     stopped = true
     repeatLoop.stop()
     unlisten?.()
+    unlistenRepeat?.()
     unsubPlaying()
     unsubOwners()
     window.removeEventListener(BROWSER_GAMEPAD_EVENT, onBrowserInput)

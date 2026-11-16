@@ -1,5 +1,10 @@
+<script lang="ts" module>
+  const fullRows = new Set<string>()
+</script>
+
 <script lang="ts">
   import type { CatalogHomeSection } from '$lib/catalog/types'
+  import { gameMode } from '$lib/player/session'
   import Carousel from '$lib/components/cards/Carousel.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import StreamingProviderRow from './StreamingProviderRow.svelte'
@@ -16,6 +21,19 @@
     viewMoreHref?: string
     showCatalogSource?: boolean
   } = $props()
+
+  // A row builds the cards near the screen first: building every card of a twenty-row Home held the
+  // Deck's page for over a second each time Home opened. The rest join once focus nears them (before
+  // Right can run out of cards) or a pointer comes over the row, and stay for the session, so focus
+  // can come back to a card further along.
+  const FIRST_CARDS = 8
+  let all = $state(fullRows.has(section.id))
+  const cards = $derived(all ? section.media : section.media.slice(0, FIRST_CARDS))
+  const expand = () => { all = true; fullRows.add(section.id) }
+  const near = (index: number) => { if (index >= FIRST_CARDS - 3) expand() }
+  // In Game mode the hidden cursor rests on the screen, and a row scrolling under it "enters" it:
+  // only a touch, a click or the wheel counts there.
+  const pointer = (event: PointerEvent) => { if (!$gameMode || event.pointerType !== 'mouse' || event.type === 'pointerdown') expand() }
 </script>
 
 {#if section.presentation === 'providers'}
@@ -25,9 +43,10 @@
 {:else}
 <Carousel {title} {viewMoreHref} attribution={section.attribution}>
   {#if section.presentation === 'ranked'}
-    {#each section.media as media, index (media.catalog?.id ?? media.id)}
+    {#each cards as media, index (media.catalog?.id ?? media.id)}
       {@const position = index + 1}
-      <div class="relative flex shrink-0 items-end {position > 9 ? 'w-[15.25rem] sm:w-[16.5rem]' : 'w-[12.75rem] sm:w-[13.75rem]'}" aria-label={`Number ${position}`}>
+      <div class="relative flex shrink-0 items-end {position > 9 ? 'w-[15.25rem] sm:w-[16.5rem]' : 'w-[12.75rem] sm:w-[13.75rem]'}" aria-label={`Number ${position}`}
+           onfocusin={() => near(index)} onpointerenter={pointer} onpointerdown={pointer} onwheel={expand}>
         <span
           aria-hidden="true"
           class="rank-number {position > 9 ? 'rank-number-wide w-[7.2rem] sm:w-[8rem]' : 'w-[5.2rem] sm:w-[5.8rem]'}"
@@ -38,8 +57,8 @@
       </div>
     {/each}
   {:else}
-    {#each section.media as media, index (media.catalog?.id ?? media.id)}
-      <div class="shrink-0"><SmallCard {media} {showCatalogSource} position={index + 1} /></div>
+    {#each cards as media, index (media.catalog?.id ?? media.id)}
+      <div class="shrink-0" onfocusin={() => near(index)} onpointerenter={pointer} onpointerdown={pointer} onwheel={expand}><SmallCard {media} {showCatalogSource} position={index + 1} /></div>
     {/each}
   {/if}
 </Carousel>

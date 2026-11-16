@@ -26,7 +26,8 @@ export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart' | 
 export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share' | 'studio'
 export type CardFamily = 'poster' | 'continue' | 'search' | 'ranked'
 export type ThemeDensity = 'compact' | 'comfortable' | 'large'
-export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
+/** API 7 `drawer`: no rail and no bar; every destination lives in a drawer that slides in from the left. */
+export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom' | 'drawer'
 export type DetailLayout = 'stack' | 'split' | 'overlay'
 export type EpisodePlacement = 'tab' | 'right' | 'below'
 export type EpisodeArrangement = 'list' | 'grid' | 'carousel'
@@ -229,7 +230,7 @@ export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7
  *  choice, the kind of title and the Continue Watching empty state. API 6 adds the TV block (applied on
  *  Android TV and in Game mode), the freshness badge field, artwork on card templates and the Suggested
  *  tab name; later API 6 keys add player controls, the expanding preview, trailer backgrounds, anchored
- *  TV rows and the grid search keyboard. */
+ *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. */
 export const LATEST_THEME_API: ThemeApi = 7
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
@@ -427,6 +428,12 @@ export interface PlayerPresentation {
   /** API 6: `full` gives the windowed desktop player the whole window, as full screen does: the navigation
    *  hides while a video plays. `app` (the default) keeps the video beside or under the navigation. */
   window?: 'app' | 'full'
+  /** API 7: `text` names the audio and subtitle buttons in words ("Audio", "Subtitles") instead of the
+   *  captions icon, in Game mode too; each opens its own page of the player settings. */
+  trackButtons?: 'icon' | 'text'
+  /** API 7: `intro` fades the title's age rating in at the top right as an episode opens, holds it for
+   *  3.6 s and fades it out, as TV apps show their rating card. */
+  rating?: 'none' | 'intro'
 }
 export type PlayerButton = 'restart' | 'next' | 'fit'
 /** API 6, TV block only: how the Search page takes text. */
@@ -492,6 +499,8 @@ export interface ThemeNav {
 /** API 3: the theme's Home and navigation, applied while the theme is active and its layout switch is on. */
 export interface ThemeLayout {
   home?: ThemeLayoutEntry[]
+  /** Blocks in the Browse screen's side column, under its categories. */
+  browse?: ThemeLayoutEntry[]
   asideWidth?: number
   /** The gutter between Home's main column and its side column, in px (default 32). */
   asideGap?: number
@@ -966,7 +975,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
 function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav']), ...api3(api, ['top', 'hints'])])
   const result: ShellPresentation = {}
-  if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
+  if (raw.nav !== undefined) result.nav = choice(raw.nav, api >= 7 ? ['sidebar', 'top', 'bottom', 'drawer'] : ['sidebar', 'top', 'bottom'])
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
   if (raw.overlay !== undefined) result.overlay = choice(raw.overlay, ['none', 'fade'])
   if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
@@ -976,7 +985,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window']), ...api7(api, ['endTime'])])
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window']), ...api7(api, ['trackButtons', 'rating', 'endTime'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
@@ -1001,6 +1010,8 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.buttons !== undefined) result.buttons = uniqueChoices(raw.buttons, api >= 7 ? ['restart', 'next', 'fit'] : ['restart', 'next'], 'player.buttons', 0)
   if (raw.endTime !== undefined) result.endTime = flag(raw.endTime)
   if (raw.window !== undefined) result.window = choice(raw.window, ['app', 'full'])
+  if (raw.trackButtons !== undefined) result.trackButtons = choice(raw.trackButtons, ['icon', 'text'])
+  if (raw.rating !== undefined) result.rating = choice(raw.rating, ['none', 'intro'])
   return result
 }
 /** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */
@@ -1033,7 +1044,7 @@ function destinationList(value: unknown, max: number): NavDestination[] {
   })
 }
 function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout {
-  const raw = record(value); only(raw, ['home', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
+  const raw = record(value); only(raw, ['home', 'browse', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
   const result: ThemeLayout = {}
   if (raw.home !== undefined) {
     if (!Array.isArray(raw.home) || raw.home.length < 1 || raw.home.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
@@ -1052,6 +1063,10 @@ function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout
       const { type, ...settings } = parseThemeBlock(item, api)
       return { block: type, ...settings } as ThemeLayoutEntry
     })
+  }
+  if (raw.browse !== undefined) {
+    if (!Array.isArray(raw.browse) || raw.browse.length > 8) throw new Error('A theme browse layout takes up to 8 blocks.')
+    result.browse = raw.browse.map((entry) => { const { type, ...settings } = parseThemeBlock(record(entry), api); return { block: type, ...settings } as ThemeLayoutEntry })
   }
   if (raw.asideWidth !== undefined) result.asideWidth = number(raw.asideWidth, 240, 420)
   if (raw.asideGap !== undefined) result.asideGap = number(raw.asideGap, 0, 96)
@@ -1185,12 +1200,13 @@ function layerBlock(shared: ThemePresentation, block: MobilePresentation & TvPre
 }
 /** Where the navigation chrome sits: phones always use the bottom bar; a television (`tv`: any
  *  supported television runtime) the side rail unless the theme's TV block asks for the top bar (API 6);
- *  desktops and Game mode follow the resolved `shell.nav`. `layout` is the unresolved presentation,
- *  `resolved` the one for this surface. */
-export function shellNavFor(mobile: boolean, tv: boolean, layout: ThemePresentation | undefined, resolved: ThemePresentation | undefined): ThemeNavPlacement {
+ *  desktops and Game mode follow the resolved `shell.nav`. Without one, Game mode gets the drawer: the
+ *  handheld's narrow screen keeps its whole width, and nothing animates the rail open and shut.
+ *  `layout` is the unresolved presentation, `resolved` the one for this surface. */
+export function shellNavFor(mobile: boolean, tv: boolean, layout: ThemePresentation | undefined, resolved: ThemePresentation | undefined, gameMode = false): ThemeNavPlacement {
   if (mobile) return 'bottom'
   if (tv) return layout?.tv?.shell?.nav === 'top' ? 'top' : 'sidebar'
-  return resolved?.shell?.nav ?? 'sidebar'
+  return resolved?.shell?.nav ?? (gameMode ? 'drawer' : 'sidebar')
 }
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
   if (!node.when) return true
@@ -1264,7 +1280,9 @@ export function nodeStyle(node: ThemeNode, unit?: string): string {
   return Object.entries(styles).map(([key, value]) => `${key}:${value}`).join(';')
 }
 export function resolveRow(layout: ThemePresentation | undefined, id = ''): RowPresentation {
-  const role = id.includes(':') ? id.slice(id.indexOf(':') + 1) : id
+  // A source screen's own target has a colon too (`source:<package>:continue`).
+  const cut = id.startsWith('source:') ? id.indexOf(':', 7) : id.indexOf(':')
+  const role = cut >= 0 ? id.slice(cut + 1) : id
   return { ...layout?.rows?.defaults, ...layout?.rows?.byId?.[role], ...layout?.rows?.byId?.[id] }
 }
 export function resolveCard(layout: ThemePresentation | undefined, family: CardFamily = 'poster', rowId = ''): ThemeNode | undefined {
@@ -1372,12 +1390,14 @@ export interface ResolvedPlayerControls {
   paused: NonNullable<PlayerPresentation['paused']>
   buttons: PlayerButton[]
   window: NonNullable<PlayerPresentation['window']>
+  trackButtons: NonNullable<PlayerPresentation['trackButtons']>
+  rating: NonNullable<PlayerPresentation['rating']>
   endTime: boolean
 }
 /** API 6 player control choices with their defaults (izumi's own player). */
 export function resolvePlayerControls(layout?: ThemePresentation): ResolvedPlayerControls {
   const player = layout?.player
-  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [], window: player?.window ?? 'app', endTime: player?.endTime ?? false }
+  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [], window: player?.window ?? 'app', trackButtons: player?.trackButtons ?? 'icon', rating: player?.rating ?? 'none', endTime: player?.endTime ?? false }
 }
 /** API 6: how the Search page takes text on this surface (only a TV block can ask for the grid). */
 export function resolveSearch(layout?: ThemePresentation): { keyboard: NonNullable<SearchPresentation['keyboard']> } {

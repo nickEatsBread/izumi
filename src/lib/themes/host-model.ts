@@ -105,6 +105,8 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
   const airing = secondsLeft != null && secondsLeft > 0
   const aired = media.airedEpisodes ?? (next?.episode ? next.episode - 1 : media.status === 'FINISHED' ? media.episodes ?? undefined : undefined)
   const score = extras.score ?? (media.averageScore || undefined)
+  // A source catalog's card can stand for one episode: its code, the time left and the progress.
+  const card = media.sourceFacts?.card
   return {
     title: title(media),
     description: strip(media.description) || undefined,
@@ -153,9 +155,17 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     // "New Episode", "New Season", "New Series" or "New Movie" (API 6) for a freshness ribbon.
     newBadge: newBadgeText(media, now),
     episodesAired: aired,
+    ...(card ? {
+      still: poster,
+      episodeCode: card.label,
+      timeLeft: card.remainingSec ? remainingText(card.remainingSec) : undefined,
+      progress: card.progress !== undefined ? Math.round(card.progress * 100) : undefined,
+    } : {}),
     ...extras,
   }
 }
+
+const remainingText = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))}m left`
 
 /** An ISO day ("2026-09-16") in words in the viewer's locale ("16 September 2026"). */
 export function longDayText(iso?: string): string | undefined {
@@ -196,5 +206,5 @@ export function episodeDisplayModel(
  *  or once its position was cleared. */
 export function timeLeftLabel(position?: Pos): string | undefined {
   if (!position || position.cleared || !(position.dur > 0) || !(position.pos > 0)) return undefined
-  return `${Math.max(1, Math.round((position.dur - position.pos) / 60))}m left`
+  return remainingText(position.dur - position.pos)
 }

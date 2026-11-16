@@ -1,15 +1,17 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { getDrmEngine } from './drm'
+import { getNativeDrm, mergeNativeTracks } from './native-drm'
 import { gifCapturePlan } from './gif-settings'
 import { nowPlayingStream } from './session'
 import { gifMaxSeconds, gifScale } from '$lib/settings/ui'
 import { setDolbyPlaybackSpeed } from './dolby'
 
-/** Route player IPC through the in-webview DRM engine when a stream is encrypted. */
+/** Route player IPC through the in-webview DRM engine when a stream is encrypted. A protected
+ *  stream the native player owns (NativeDrmSurface) goes to mpv like any other file. */
 
 function drmStream(): boolean {
-  return !!get(nowPlayingStream).drm
+  return !!get(nowPlayingStream).drm && !getNativeDrm()
 }
 
 let speedSeq = 0
@@ -21,6 +23,14 @@ export async function playerCommand(name: string, args: string[] = []): Promise<
     return
   }
   if (drmStream()) return
+  const native = getNativeDrm()
+  if (native && name === 'set') {
+    if (args[0] === 'video-quality') {
+      native.setQuality(args[1] ?? 'auto')
+      return
+    }
+    if ((args[0] === 'aid' || args[0] === 'sid') && native.select(args[0], args[1] ?? '')) return
+  }
   const speed = name === 'set' && args[0] === 'speed' ? Number(args[1]) : null
   if (speed == null) {
     await invoke('player_command', { name, args })
@@ -38,6 +48,8 @@ export function playerGetProperty(name: string): Promise<string> {
   const drm = getDrmEngine()
   if (drm) return Promise.resolve(drm.getProperty(name))
   if (drmStream()) return Promise.resolve('')
+  const native = getNativeDrm()
+  if (native && name === 'video-quality-options') return Promise.resolve(JSON.stringify(native.quality()))
   return invoke<string>('player_get_property', { name })
 }
 
@@ -45,6 +57,8 @@ export function playerTracks(): Promise<string> {
   const drm = getDrmEngine()
   if (drm) return Promise.resolve(JSON.stringify(drm.tracks()))
   if (drmStream()) return Promise.resolve('[]')
+  const native = getNativeDrm()
+  if (native) return invoke<string>('player_tracks').then((json) => mergeNativeTracks(json, native))
   return invoke<string>('player_tracks')
 }
 
@@ -120,5 +134,7 @@ export async function playerGifAbort(): Promise<void> {
 }
 
 export async function playerThumbnail(time: number): Promise<string | null> {
-  return (await getDrmEngine()?.thumbnail?.(time)) ?? null
+  const engine = getDrmEngine()
+  if (engine?.thumbnail) return (await engine.thumbnail(time)) ?? null
+  return (await getNativeDrm()?.thumbnail(time)) ?? null
 }

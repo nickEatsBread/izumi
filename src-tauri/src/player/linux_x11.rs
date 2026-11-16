@@ -144,6 +144,9 @@ struct X11 {
     // A close is taking mpv's output down on this window (hide_container): a late dock request
     // from the closing overlay must not map it again. The next embed clears it.
     closing: bool,
+    // Mapped once mpv's output in it is up (show_container). Mapped any earlier, the empty window
+    // was a black frame between the page's loading ring and mpv's own.
+    armed: bool,
 }
 // SAFETY: the display pointer is GTK's X connection; all uses are dispatched to the GTK
 // main thread (GTK calls XInitThreads, and we serialize via run_on_glib_main).
@@ -544,8 +547,13 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
         crate::player::linux_embed::run_on_glib_main(move || {
             if let Ok(mut guard) = STATE.lock() {
                 if let Some(st) = guard.as_mut() {
-                    // A window kept from a close whose output outlived the release is live again.
-                    st.closing = false;
+                    // A window kept from a close whose output outlived the release is live again,
+                    // shown once the new core's output is up.
+                    if st.closing {
+                        st.closing = false;
+                        st.armed = false;
+                        st.hidden = false;
+                    }
                     unsafe {
                         XShapeCombineRectangles(
                             st.dpy,
@@ -587,8 +595,7 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
                 SHAPE_SET,
                 0,
             );
-            XMapWindow(dpy, container);
-            XRaiseWindow(dpy, container);
+            // Unmapped until show_container: the page's ring shows until mpv's replaces it.
             XSync(dpy, 0);
         }
         *STATE.lock().map_err(|e| e.to_string())? = Some(X11 {
@@ -601,6 +608,7 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
             top: 0.0,
             hidden: false,
             closing: false,
+            armed: false,
         });
         crate::player::linux_embed::elog(&format!("x11: container {container} created {w}x{h}"));
         Ok(container as i64)
@@ -624,6 +632,9 @@ pub fn dock_video(bottom: f64, right: f64, top: f64, hide: bool) {
                 st.right = right;
                 st.top = top;
                 st.hidden = hide;
+                if !st.armed {
+                    return;
+                }
                 unsafe {
                     if hide {
                         XUnmapWindow(st.dpy, st.container);
@@ -633,6 +644,31 @@ pub fn dock_video(bottom: f64, right: f64, top: f64, hide: bool) {
                         XMoveResizeWindow(st.dpy, st.container, x, y, vw, vh);
                         XRaiseWindow(st.dpy, st.container);
                     }
+                    XFlush(st.dpy);
+                }
+            }
+        }
+    });
+}
+
+/// Map the container once mpv's output in it is up (its first `current-vo`), so the page's own
+/// loading ring shows until mpv's replaces it. Once per embed; later dock requests map and unmap.
+pub fn show_container() {
+    crate::player::linux_embed::run_on_glib_main(|| {
+        if let Ok(mut g) = STATE.lock() {
+            if let Some(st) = g.as_mut() {
+                if st.armed || st.closing {
+                    return;
+                }
+                st.armed = true;
+                if st.hidden {
+                    return;
+                }
+                let (x, y, vw, vh) = st.layout();
+                unsafe {
+                    XMapWindow(st.dpy, st.container);
+                    XMoveResizeWindow(st.dpy, st.container, x, y, vw, vh);
+                    XRaiseWindow(st.dpy, st.container);
                     XFlush(st.dpy);
                 }
             }

@@ -61,12 +61,14 @@
   let airings = $state<Airing[]>([])
   let loading = $state(true)
   let error = $state('')
+  let retries = $state(0)
 
   // Weeks are session-cached and in-flight deduped. Only fetch the week the user requested: an
   // automatic next-week prefetch doubled this screen's AniList page count even when Next was never
   // pressed, delaying visible work behind speculative requests on the 30/minute quota.
   $effect(() => {
     const s = start, e = end
+    void retries
     let cancelled = false
     const controller = new AbortController()
     ;(async () => {
@@ -291,7 +293,11 @@
     {/each}
   </div>
 {:else if error}
-  <p class="text-muted-foreground">Failed to load schedule: {error}</p>
+  <div data-part="schedule.error" role="alert" class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+    <p class="font-bold text-foreground">The schedule couldn't be loaded</p>
+    <p class="mt-1">{error}</p>
+    <button data-focusable type="button" onclick={() => retries++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Try again</button>
+  </div>
 {:else}
   <div class="schedule-panel-in">
     {#if view === 'mine' && mineCount === 0}

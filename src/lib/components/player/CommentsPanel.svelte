@@ -544,8 +544,8 @@
   {#if !embedActive}
     <div bind:this={listScroller} class={expand ? 'px-3 py-3' : 'flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3'}>
       {#if loading}
-        <!-- Keep the Deck placeholder static so initial network work gets the compositor budget. -->
-        {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 rounded-lg bg-muted" class:animate-pulse={!$gameMode}></div>{/each}
+        <!-- Keep the Deck placeholder static (sweep paused) so initial network work gets the compositor budget. -->
+        <div class:deferred-skeleton={$gameMode}>{#each Array.from({ length: 5 }) as _}<div class="skeloader mb-2 h-20 rounded-lg"></div>{/each}</div>
       {:else if !shown.length}
         <div class="grid place-items-center px-6 text-center {expand ? 'min-h-40' : 'h-full'}">
           <div>

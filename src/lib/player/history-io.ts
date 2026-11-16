@@ -6,6 +6,7 @@ import { isAndroid } from '$lib/platform'
 import { title } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 import { CATALOG_SELECTIONS, type CatalogSelection } from '$lib/settings/catalog'
+import { isSourceSelection } from '$lib/catalog/source-catalogs'
 // durableHistory/durablePositions, NOT the merged views: an export or device-sync push must never
 // carry this session's incognito entries; an import writes straight to the persisted stores.
 import { durableHistory, historyEntries, type HistoryEntry } from './history'
@@ -135,7 +136,7 @@ ${items}
 const num = (v: unknown, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
 const validCatalogSelection = (value: unknown): CatalogSelection | undefined =>
-  typeof value === 'string' && CATALOG_SELECTIONS.includes(value as CatalogSelection)
+  typeof value === 'string' && (CATALOG_SELECTIONS.includes(value as CatalogSelection) || isSourceSelection(value))
     ? value as CatalogSelection
     : undefined
 // Carry a well-shaped release hint through import (string group/bingeGroup only), else drop it.
