@@ -317,6 +317,10 @@ export async function cancelDownload(id: string) {
   await stopJob(id, get(downloads)[id], true)
   removeItem(id); setSpeed(id, undefined)
 }
+/** Clear finished: take saved episodes off the Downloads list, leaving their files on this device. */
+export function clearFromList(ids: string[]) {
+  for (const id of ids) setItem(id, { cleared: true })
+}
 export async function deleteDownload(id: string) {
   const it = get(downloads)[id]
   if (it?.offlineUri) await removeShakaOffline(it.offlineUri).catch(() => {})

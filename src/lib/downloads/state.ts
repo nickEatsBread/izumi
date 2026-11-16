@@ -53,6 +53,9 @@ export interface DownloadItem {
   /** The stream this download saves: the one the user chose, else the one its first run picked.
    *  A resume, retry or restart fetches it again, so the partial data on disk stays one file. */
   source?: Stream
+  /** Taken off the Downloads list by Clear finished. The file stays on this device: it still plays
+   *  offline and shows in the offline library. */
+  cleared?: boolean
 }
 
 /** Persisted map keyed by `<mediaId>:<episode>`. */
