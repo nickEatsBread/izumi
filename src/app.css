@@ -696,6 +696,17 @@ html[data-theme-hints] [data-settings-controller] { --settings-hints: 2.5rem; }
 
 /* Theme chrome. Density/nav/true-black are data-only presentation flags applied on <html>. */
 html { --theme-density: 1; --theme-shell-left: 3.5rem; --theme-shell-top: 2rem; --theme-seekbar-color: #fff; }
+/* Playback's loading ring (Spinner.svelte `player`, and mpv's in Game mode): 48 px with a 4 px stroke, the
+   player's usual buffering ring. A theme stylesheet may set both on `:scope`, in screen pixels. */
+html { --theme-player-spinner-size: 48px; --theme-player-spinner-stroke: 4px; }
+/* The desktop player popups' options (player.menu.item): at least 36 px tall with 12 px either side.
+   API 9 `player.menu.rowHeight` / `rowPadding` set them, or a theme stylesheet on `:scope`. */
+html { --theme-player-menu-row-height: 36px; --theme-player-menu-row-padding: 12px; }
+[data-part="player.menu.item"] {
+  min-height: var(--theme-player-menu-row-height);
+  padding-left: var(--theme-player-menu-row-padding);
+  padding-right: var(--theme-player-menu-row-padding);
+}
 /* A top bar is the frameless titlebar's 2rem band over its row of controls. A theme stylesheet may set
    the row's height (`:scope { --theme-top-row: 64px }`); the bar, the page under it and the docked
    player follow it. */

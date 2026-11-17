@@ -1,0 +1,70 @@
+{
+  "app": "izumi",
+  "kind": "theme-package",
+  "schemaVersion": 1,
+  "themeApi": 9,
+  "id": "izumi.api9-settings-demo",
+  "name": "Settings demo",
+  "version": "1.0.0",
+  "author": "Izumi",
+  "description": "Theme API 9 on the Navigator palette: three settings the viewer changes on the theme's page or in Appearance, read by the stylesheet (heading colour, card corners, card titles).",
+  "design": {
+    "tokens": {
+      "scheme": "dark",
+      "background": "0 0% 7.8%",
+      "foreground": "0 0% 94.9%",
+      "muted": "0 0% 9.8%",
+      "mutedForeground": "0 0% 54.9%",
+      "primary": "0 0% 89.8%",
+      "primaryForeground": "0 0% 3.9%",
+      "secondary": "0 0% 14.1%",
+      "secondaryForeground": "0 0% 94.9%",
+      "accent": "0 0% 14.1%",
+      "accentForeground": "0 0% 94.9%",
+      "border": "0 0% 16.9%",
+      "input": "0 0% 16.9%",
+      "ring": "0 0% 54.9%",
+      "card": "0 0% 9.8%",
+      "cardForeground": "0 0% 94.9%",
+      "theme": "0 0% 89.8%"
+    },
+    "radius": 0.75,
+    "css": "/* Theme API 9: every rule below reads a theme setting from <html>. */\n[data-part=\"row.title\"] { color: var(--theme-setting-heading); }\n:scope[data-theme-setting-corners=\"square\"] [data-part=\"card.art\"] { border-radius: 0 !important; }\n:scope[data-theme-setting-corners=\"round\"] [data-part=\"card.art\"] { border-radius: 1.25rem !important; }\n:scope[data-theme-setting-card-titles=\"off\"] [data-part=\"card.title\"] { display: none; }\n",
+    "settings": [
+      {
+        "key": "heading",
+        "label": "Row heading colour",
+        "description": "The colour of each row's title",
+        "type": "color",
+        "default": "#e5e5e5"
+      },
+      {
+        "key": "corners",
+        "label": "Card corners",
+        "type": "choice",
+        "default": "soft",
+        "options": [
+          {
+            "value": "square",
+            "label": "Square"
+          },
+          {
+            "value": "soft",
+            "label": "Soft"
+          },
+          {
+            "value": "round",
+            "label": "Round"
+          }
+        ]
+      },
+      {
+        "key": "card-titles",
+        "label": "Titles under cards",
+        "description": "Off shows the artwork alone",
+        "type": "toggle",
+        "default": true
+      }
+    ]
+  }
+}

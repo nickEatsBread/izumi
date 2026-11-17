@@ -70,7 +70,7 @@ describe('settings section registry', () => {
     expect(SETTINGS_SECTIONS.map((section) => [section.id, section.subcategories.map((sub) => `${sub.id}: ${sub.title}`)])).toEqual([
       ['playback', ['up-next: Up next and autoplay', 'skipping: Skipping', 'seeking: Seeking and scrubbing', 'player-window: Player window', 'quality: Quality and sources', 'controls: Controls', 'advanced: Advanced']],
       ['subtitles', ['appearance: Appearance', 'styles: Saved styles', 'providers: Providers', 'advanced: Advanced']],
-      ['languages', ['app: App and titles', 'playback: Audio and subtitles', 'sources: Sources and sub/dub', 'downloads: Downloads']],
+      ['languages', ['app: App and titles', 'playback: Audio and subtitles', 'catalogs: Per catalog', 'sources: Sources and sub/dub', 'downloads: Downloads']],
       ['library', ['home: Platforms and Home', 'screens: Screens and themes', 'layouts: Layouts', 'ratings: Ratings and spoilers', 'notifications: Notifications', 'history: History', 'scenes: Scene bookmarks', 'features: Optional features', 'advanced: Advanced']],
       ['sources', ['my-sources: My sources', 'store: Store', 'debrid: Torrent and debrid', 'discussion: Discussion', 'priority: Priority', 'advanced: Advanced']],
       ['downloads', ['offline: Offline mode', 'folder: Folder and automatic downloads', 'storage: Storage and caches', 'advanced: Advanced']],

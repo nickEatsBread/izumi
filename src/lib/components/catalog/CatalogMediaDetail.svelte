@@ -48,6 +48,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { episodeDisplayModel, mediaDisplayModel } from '$lib/themes/host-model'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
   import OptionsSheet, { type SheetGroup } from '$lib/components/detail/OptionsSheet.svelte'
   import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
@@ -61,7 +62,7 @@
   import ListChecks from '@lucide/svelte/icons/list-checks'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import { getContextClient } from '@urql/svelte'
-  import { downloads, enqueue, enqueueMany } from '$lib/downloads/store'
+  import { downloads, startDownload } from '$lib/downloads/store'
   import { keyFor } from '$lib/downloads/state'
   import { currentDownloadPreferences } from '$lib/downloads/rules'
   import { findAnilistMatch } from '$lib/catalog/anilist-match'
@@ -282,7 +283,7 @@
             label: state === 'done' ? 'Downloaded' : state === 'progress' ? 'Downloading' : state === 'queued' ? 'Waiting to download' : 'Download episode',
             icon: state === 'done' ? CircleCheck : Download,
             disabled: !!state && state !== 'error',
-            onselect: () => { if (media) enqueue(media, episode.number, currentDownloadPreferences()) },
+            onselect: () => { if (media) void startDownload(media, episode.number, currentDownloadPreferences()) },
           },
         ],
       })
@@ -309,7 +310,7 @@
             detail: `${savedCount(season)} of ${season.length} saved`,
             icon: Download,
             disabled: !saveable(season).length,
-            onselect: () => { if (media) enqueueMany(media, saveable(season).map((video) => video.number), currentDownloadPreferences()) },
+            onselect: () => { if (media) void startDownload(media, saveable(season).map((video) => video.number), currentDownloadPreferences()) },
           }] : []),
           {
             id: 'download-all',
@@ -317,7 +318,7 @@
             detail: isMovie ? undefined : `${savedCount(all)} of ${all.length} saved`,
             icon: Download,
             disabled: !saveable(all).length,
-            onselect: () => { if (media) enqueueMany(media, saveable(all).map((video) => video.number), currentDownloadPreferences()) },
+            onselect: () => { if (media) void startDownload(media, saveable(all).map((video) => video.number), currentDownloadPreferences()) },
           },
         ],
       })
@@ -388,7 +389,12 @@
   function titleLogoFailed(event: Event) {
     failedLogo = (event.currentTarget as HTMLImageElement).src
   }
+  // API 8 `loading.title`: the theme's loading screen over the skeleton, bound to the card that opened the page.
+  const titleScreen = $derived($themePresentation?.loading?.title)
+  const titleScreenHint = $derived($detailHints[compatibilityMediaId(ref)])
 </script>
+
+{#if titleScreen}<LoadingScreen screen={titleScreen} {loading} variant="catalog" model={titleScreenHint ? mediaDisplayModel(titleScreenHint) : {}} class="fixed inset-y-0 left-[var(--theme-shell-left,0px)] right-0 z-[25] bg-background" />{/if}
 
 {#if loading}
   <!-- The page's shape while it loads: the artwork with the title, synopsis and Play over it, then the

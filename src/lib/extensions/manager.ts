@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
+import { rememberSourceLanguages } from '$lib/settings/catalog-languages'
 import { forgetPackageOrigin, isPackageOrigin, mayReplacePackage, packageOriginOf, recordPackageOrigin } from '$lib/store/origins'
 import { ADULT_SOURCES_LOCKED_MESSAGE, adultSourcesPermitted } from '$lib/profiles/household-gate'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
@@ -235,6 +236,9 @@ export async function installCatalogPackage(
   // replacement — may change what kind of package is installed (never a background update or a
   // legacy claim), and a confirmed replacement isn't compared with the copy it replaces.
   const allowBackendChange = takesOver || (!options.updateOnly && isPackageOrigin(extension.id, origin))
+  // Windows refuses to replace a running program: stop the installed service before its files change
+  // (it starts again on its next request, from the new package).
+  if (onDisk?.backend === 'izumi-service') await invoke('extension_service_stop', { id: extension.id }).catch(() => {})
   const installed = extension.packageFormat === 'aniyomi-repo'
     ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
         url: extension.apk,
@@ -1195,6 +1199,9 @@ export interface ServiceSettingField {
   max?: number
   step?: number
   options?: ServiceSettingOption[]
+  /** Also shown in one of izumi's own Settings places. `languages`: Settings › Languages, under
+   *  this source's catalog. izumi saves a change there by posting just that field. */
+  section?: 'languages'
 }
 export interface ServiceSettingsNotice {
   tone: 'info' | 'success' | 'warning' | 'error'
@@ -1218,6 +1225,10 @@ export interface ServiceSettingsDocument {
   complete?: boolean
   fields: ServiceSettingField[]
   values: Record<string, ServiceSettingValue>
+  /** The fields holding the account's playback languages, each one language tag (BCP-47 such as
+   *  `ja-JP`, or ISO 639); `none` turns subtitles off and an empty value is not set. izumi plays this
+   *  source's catalog in them and writes changes made in its own Settings back through these fields. */
+  languages?: { audio?: string; subtitle?: string }
 }
 export interface ServiceSettingsSaveResult {
   ok?: boolean
@@ -1233,21 +1244,30 @@ export interface ServiceSettingsSaveResult {
   refreshAfterMs?: number
   fields?: ServiceSettingField[]
   values?: Record<string, ServiceSettingValue>
+  languages?: ServiceSettingsDocument['languages']
 }
 
+// Every document izumi reads also updates the account languages it reports (catalog-languages.ts),
+// so a change made in the source's own settings reaches izumi's language order.
 export async function extensionServiceSettings(id: string): Promise<ServiceSettingsDocument> {
   const value = await invoke<ServiceSettingsDocument>('extension_service_settings', { id })
   if (value?.version !== 1 || !Array.isArray(value.fields) || !value.values || typeof value.values !== 'object') {
     throw new Error('This local service returned an unsupported settings schema.')
   }
+  rememberSourceLanguages(id, value)
   return value
 }
 
-export function saveExtensionServiceSettings(
+export async function saveExtensionServiceSettings(
   id: string,
   values: Record<string, ServiceSettingValue>,
 ): Promise<ServiceSettingsSaveResult> {
-  return invoke<ServiceSettingsSaveResult>('extension_service_settings_save', { id, values })
+  const result = await invoke<ServiceSettingsSaveResult>('extension_service_settings_save', { id, values })
+  // Only a complete document speaks for the account; a short `{ ok, message }` reply says nothing.
+  if (result?.version === 1 && Array.isArray(result.fields) && result.values && typeof result.values === 'object') {
+    rememberSourceLanguages(id, { languages: result.languages, values: result.values })
+  }
+  return result
 }
 
 /** Icons for installed packages: Aniyomi launcher artwork plus the live manifest icon of a

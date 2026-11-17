@@ -1,6 +1,7 @@
 <script lang="ts">
   import { homeCollections } from '$lib/catalog/collections/store'
   import {
+    browseScreen,
     catalogDefaultProvider,
     catalogLabel,
     catalogLastProvider,
@@ -300,6 +301,18 @@
       options={cwActions}
       onChange={(value) => ($cwDismissAction = value as CwDismissAction)}
     />
+    <SettingsRow
+      settingKey="browse-screen"
+      title="Browse"
+      description="Sort the whole catalog and pick a category from the menu"
+      learnMore="Adds Browse, and Categories in the drawer, to the navigation. A source screen always has them."
+      onActivate={() => ($browseScreen = !$browseScreen)}
+      pressed={$browseScreen}
+    >
+      {#snippet control()}
+        <SettingsSwitch value={$browseScreen} onToggle={() => ($browseScreen = !$browseScreen)} label="Browse" interactive={false} />
+      {/snippet}
+    </SettingsRow>
     <SettingsRow
       title="Customize Home"
       description="Choose rows per Home screen, or use the pencil on Home"

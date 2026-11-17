@@ -62,6 +62,17 @@ license, Copyright (c) 2013-present Cole Bemis. The full text and the list of af
 `node_modules/@lucide/svelte/LICENSE` and at
 https://github.com/lucide-icons/lucide/blob/main/LICENSE.
 
+## JASSUB and libass — MIT, ISC and the licences of its bundled libraries
+
+The webview player (protected streams on Windows and macOS) draws ASS/SSA subtitles with
+[JASSUB](https://github.com/ThaUnknown/jassub) (MIT), which runs [libass](https://github.com/libass/libass)
+(ISC) and the libraries it needs, compiled to WebAssembly, in its own worker. Those libraries bring
+the other licences in the package's declaration, `LGPL-2.1-or-later AND (FTL OR GPL-2.0-or-later) AND
+MIT AND MIT-Modern-Variant AND ISC AND NTP AND Zlib AND BSL-1.0` (among them FriBidi under the
+LGPL-2.1 and FreeType, which izumi uses under the GPL-2.0-or-later option). The `.wasm` files ship as
+separate files beside the app's scripts. JASSUB's fallback subtitle face is Liberation Sans, under
+the SIL Open Font License 1.1.
+
 ## Other dependencies
 
 All remaining npm and Cargo dependencies are permissively licensed (MIT, Apache-2.0,

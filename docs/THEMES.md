@@ -8,7 +8,7 @@ The shipped appearance remains the default. Community packages live in the [izum
 
 ## Theme API coverage
 
-The client renders theme API 1, 2, 3, 4, 5, 6 and 7 (`SUPPORTED_THEME_APIS` in `src/lib/themes/packages.ts`). API 1 is the original key set and stays valid unchanged; a package declares `themeApi: 2` to use the additions below (bottom bar, slide indicator, section headings, series tabs, docked watch layout, phone overrides), `themeApi: 3` for stylesheets, fonts, template parts, airing and slide fields and the text wordmark (see "Theme API 3"), and `themeApi: 4` for the phone root size, scroll chrome, series header buttons, fact selection, names and formats, the Information section, the synopsis control, countdown formats and placement, the actions-row lead, ten display fields, the full-resolution poster, the hero's slide count, pool and cross-fade, header shortcuts that repeat a bottom-bar tab, artwork on profile-header buttons, the tabbed grid's opening tab, the portrait series header and its cover fallback, the phone series bar's Home link, logo and solid point, per-episode download buttons, where the season row opens, the series progress row, the folding actions row, the studio button, plain status words and aired episode counts, recommendations among the relations, the kind of title, the hero's artwork choice and the Continue Watching empty state (see "Theme API 4"), and `themeApi: 5` for the ranked-list card, the star, chevron, captions, mic and list icons, the 3:4 artwork shape, 8 px template text, arrow paging, row titles and the worded air date (see "Theme API 5"), and `themeApi: 6` for the TV variant, the freshness badge, artwork on card templates, the Suggested tab name, the player's seek buttons, time readout, episode title line, paused summary and whole-window layout, the expanding card preview and the muted trailers over the hero and the series art (see "Theme API 6"), and `themeApi: 7` for the drawer navigation and the player's Audio and Subtitles words, age rating card, framing button and end time (see "Theme API 7"). The validator gates keys by the declared API, so an API 1 package cannot carry API 2 chrome past an older client. A package newer than the client is refused with a clear message and listed in the gallery as "Needs a newer izumi". Markup hooks and state attributes are not gated: an older client simply never renders the new ones.
+The client renders theme API 1, 2, 3, 4, 5, 6, 7, 8 and 9 (`SUPPORTED_THEME_APIS` in `src/lib/themes/packages.ts`). API 1 is the original key set and stays valid unchanged; a package declares `themeApi: 2` to use the additions below (bottom bar, slide indicator, section headings, series tabs, docked watch layout, phone overrides), `themeApi: 3` for stylesheets, fonts, template parts, airing and slide fields and the text wordmark (see "Theme API 3"), and `themeApi: 4` for the phone root size, scroll chrome, series header buttons, fact selection, names and formats, the Information section, the synopsis control, countdown formats and placement, the actions-row lead, ten display fields, the full-resolution poster, the hero's slide count, pool and cross-fade, header shortcuts that repeat a bottom-bar tab, artwork on profile-header buttons, the tabbed grid's opening tab, the portrait series header and its cover fallback, the phone series bar's Home link, logo and solid point, per-episode download buttons, where the season row opens, the series progress row, the folding actions row, the studio button, plain status words and aired episode counts, recommendations among the relations, the kind of title, the hero's artwork choice and the Continue Watching empty state (see "Theme API 4"), and `themeApi: 5` for the ranked-list card, the star, chevron, captions, mic and list icons, the 3:4 artwork shape, 8 px template text, arrow paging, row titles and the worded air date (see "Theme API 5"), and `themeApi: 6` for the TV variant, the freshness badge, artwork on card templates, the Suggested tab name, the player's seek buttons, time readout, episode title line, paused summary and whole-window layout, the expanding card preview and the muted trailers over the hero and the series art (see "Theme API 6"), `themeApi: 7` for the drawer navigation and the player's Audio and Subtitles words, age rating card, framing button and end time (see "Theme API 7"), `themeApi: 8` for the loading screens, the schedule entry template and theme screens (see "Theme API 8"), and `themeApi: 9` for the player popups' row size and close-on-select and for theme settings the viewer changes (see "Theme API 9"). The validator gates keys by the declared API, so an API 1 package cannot carry API 2 chrome past an older client. A package newer than the client is refused with a clear message and listed in the gallery as "Needs a newer izumi". Markup hooks and state attributes are not gated: an older client simply never renders the new ones.
 
 Coverage chips in Theme Studio (`Home`, `Shell`, `Details`, `Player`, or `Full`) reflect the slots a draft actually uses.
 
@@ -77,7 +77,9 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 
 ### Player
 
-Seekbar thickness and color. Skip rules, subtitle files and playback shortcuts stay in Settings. API 6 adds rewind and forward buttons, the time readout, an episode-title line, a paused summary, Restart and Next buttons and a whole-window windowed player (`player.seekButtons`, `time`, `title`, `paused`, `buttons` and `window`; see "Theme API 6"), and every player control carries a styling hook. API 7 adds the words Audio and Subtitles in place of the captions button and an age rating card as an episode opens (`player.trackButtons` and `rating`; see "Theme API 7").
+Seekbar thickness and color. Skip rules, subtitle files and playback shortcuts stay in Settings. API 6 adds rewind and forward buttons, the time readout, an episode-title line, a paused summary, Restart and Next buttons and a whole-window windowed player (`player.seekButtons`, `time`, `title`, `paused`, `buttons` and `window`; see "Theme API 6"), and every player control carries a styling hook. API 7 adds the words Audio and Subtitles in place of the captions button and an age rating card as an episode opens (`player.trackButtons` and `rating`; see "Theme API 7"). API 9 sizes the options in the player's popups and can close a popup once an option is chosen (`player.menu`; see "Theme API 9").
+
+Loading ring size: the playback ring, shown from the press to the first frame and on later stalls, is 48 px across with a 4 px stroke. A stylesheet sets both with the custom properties `--theme-player-spinner-size` and `--theme-player-spinner-stroke` on `:scope`, in screen pixels (for example `:scope { --theme-player-spinner-size: 84px; --theme-player-spinner-stroke: 4.5px }`). Game mode's native ring follows the same values (16–256 px, with the stroke at most half the size), so the page's ring and mpv's keep one size at the hand-off. Older clients ignore them.
 
 Watch layout (API 2, `player.layout` and `player.dock`): `docked` keeps the browse chrome while watching and mounts the video in a stage of `dock.width` percent, with the episode rail beside it (`episodes: "right"`, a scrolling list of episode cards) or below it (`episodes: "below"`, a server switcher and an episode number grid, `DockEpisodes.svelte`). `dock.comments` (default `below`) renders the episode discussion inline (`CommentsPanel` with `inline`) under the stage, or after the episode grid. The stage is the transparent hole over the native video, so neither the player root nor any of its ancestors may paint a background: everything around the stage is an opaque sibling (rail, discussion panel, gutters). Picking an episode takes the Next button's route (`playEpisodeInPlayer`), so a cached same-release source continues without the picker. Fullscreen, picture-in-picture, Game mode and phones keep the full container. API 3 adds five `dock` keys. `flow: "page"` turns the watch view into a scrolling page: the video frame moves up with it, the native video follows, and every block under it keeps its natural height, so the discussion grows with its comments instead of scrolling inside a box (Windows; other desktops keep the fixed layout). Beside a side rail only the video's column scrolls (the rail keeps its own list), and that is the default there whenever the discussion sits under the video, whatever the package's API; `flow: "fixed"` keeps the discussion in its own scroller under a video that stays put. Below the video the default is `fixed`. Under a top bar the app backs the bar with the page colour while the page scrolls, so a translucent bar never shows the video passing beneath it. `maxWidth` (480–2400 px) caps the column, centred when `align` is `center`. `below` orders the blocks under the video: `toolbar` (a row of dropdowns opening upward: `server`, `episode`, `release` and `download`, chosen and ordered by `toolbar`), `info` (the poster, "Title - 12", the format and airing line and the season), `episodes` (the server switcher and number grid) and `comments`; without it the grid comes first, then the discussion unless `comments` hides it. `hide` drops player chrome the page already shows: `back` (the Back button) and `title` (the title and episode line over the video); they only apply while docked, so fullscreen keeps them. The torrent readout follows the viewer's own setting, never the theme.
 
@@ -155,6 +157,123 @@ A package declares `themeApi: 5` to use these values; the validator refuses them
 
 The hooks added with them (`page-step`, `block.grid`, `hero.edge`, `nav.action`, `nav.action.label` and `nav.item.indicator`) are not gated. Neither is the Home row `upcoming` ("Upcoming Next Season": next season's titles by popularity), which a layout names by role like any other; an older client skips a role it lacks.
 
+### Theme API 9
+
+A package declares `themeApi: 9` to use `player.menu` or `design.settings`; the validator refuses them in an older package, and a client older than API 9 refuses the package whole with its "needs a newer izumi" message.
+
+- **Player popups (`player.menu`).** The desktop player's popups are the options menu, the audio and subtitles menu and the right-click menu (`player.menu` with `data-variant` `options`, `tracks` and `context`). Each option in them is a `player.menu.item` (`data-state="active"` on the chosen one) and each page opens with a `player.menu.back` heading. The keys:
+  - `rowHeight` (px, 28–96): the least height of every option. izumi's own is 36.
+  - `rowPadding` (px, 0–32): the space left and right of every option's content. izumi's own is 12.
+  - `closeOnSelect` (`true` or `false`, default `false`): choosing an option closes its popup instead of staying on its page or going back to the first page. Options are an audio, subtitle, closed caption or secondary subtitle track (Off included), an online subtitle once it is added, a subtitle style, a speed, a quality, a video framing and a sleep timer. Rows that open a page, the delay steppers and the tools (stats, loops) keep the popup open, as they always do. It applies to Game mode's settings sheet too (Audio, Subtitles, Speed, Quality and Video fit). Picking a chapter or a server and every right-click choice already close their popup.
+- The two sizes reach the page as `--theme-player-menu-row-height` and `--theme-player-menu-row-padding` on `<html>`. A stylesheet may set them on `:scope` instead, in any CSS length (`:scope { --theme-player-menu-row-height: calc(40 * var(--u)) }`); the package's keys win over the stylesheet. Older clients ignore the custom properties.
+- Everything else about a popup's look is the stylesheet's: `[data-part="player.menu"]` for the panel, `player.menu.item` and its `[data-state="active"]` for the options, `player.menu.back` for the page heading. Game mode's settings sheet is drawn by the player and keeps its own sizes and look; the Android player keeps its own sheets.
+- Example, taller options with more room either side that close once chosen, the chosen one in the accent colour:
+
+  ```json
+  "player": { "menu": { "rowHeight": 40, "rowPadding": 16, "closeOnSelect": true } }
+  ```
+
+  ```css
+  [data-part="player.menu.item"][data-state="active"] { color: hsl(var(--primary)); font-weight: 700 }
+  ```
+
+- **Theme settings (`design.settings`, up to 16).** Choices the viewer makes about the theme, which its stylesheet reads. The viewer changes them on the theme's page (Settings → Themes → the theme, under *Settings*) and in Settings → Appearance → Theme, where each row is named after the theme ("Settings demo · Card corners"). Appearance shows the settings of the theme in use and, when the player theme is another theme with settings, that theme's too. Values are kept per device and per installed theme, survive updates of the theme (a value that no longer fits its setting falls back to the default), and *Reset* returns to the theme's defaults.
+
+  ```jsonc
+  "settings": [
+    { "key": "heading", "label": "Row heading colour", "description": "The colour of each row's title", "type": "color", "default": "#e5e5e5" },
+    { "key": "corners", "label": "Card corners", "type": "choice", "default": "soft",
+      "options": [{ "value": "square", "label": "Square" }, { "value": "soft", "label": "Soft" }, { "value": "round", "label": "Round" }] },
+    { "key": "card-titles", "label": "Titles under cards", "type": "toggle", "default": true }
+  ]
+  ```
+
+  | Field | Rules |
+  | --- | --- |
+  | `key` | Lowercase letters, digits and hyphens, starting with a letter, up to 32; unique in the list. |
+  | `label` | Up to 48 characters. |
+  | `description` | Optional, up to 160 characters. |
+  | `type` | `toggle` (default `true` or `false`), `choice` (2 to 8 `options`, each `{ value, label }` with a value like a key; the default is one of them) or `color` (default `#rrggbb`). |
+
+  While the theme paints the window (as the app theme, a screen's theme or the player theme), `<html>` carries each setting:
+
+  | Type | On `<html>` | Read it with |
+  | --- | --- | --- |
+  | `toggle` | `data-theme-setting-<key>="on"` or `"off"` | `:scope[data-theme-setting-card-titles="off"] [data-part="card.title"] { display: none }` |
+  | `choice` | `data-theme-setting-<key>="<value>"` | `:scope[data-theme-setting-corners="round"] [data-part="card.art"] { border-radius: 1.25rem }` |
+  | `color` | `--theme-setting-<key>: #rrggbb` | `[data-part="row.title"] { color: var(--theme-setting-heading) }` |
+
+  They are removed when another theme takes over, and absent in safe mode. Settings only feed the stylesheet: they don't change presentation keys, tokens or the layout. Demo: `docs/theme-packages/theme-settings-demo.json`. Format: `src/lib/themes/theme-settings.ts` (no imports, so the catalog's validator can copy it).
+
+### Theme API 8
+
+A package declares `themeApi: 8` to use the keys below; the validator refuses them in an older package, and a client older than API 8 refuses the package whole with its "needs a newer izumi" message.
+
+- **A separate player theme (a client setting, not a package key).** Settings → Appearance → Theme → Player theme picks the theme for the player: Same as app (the default), a shipped palette, or any installed or Theme Studio theme. It is per device and not synced. While an episode opens and plays (the opening screen, the player and its loading cover, on every platform; the Android mini-player docked over the browse screens counts as browsing) that theme's palette, fonts and stylesheet paint the window, and its `player` keys (and `loading.episode`) replace the app theme's. Everything else stays the app theme's: the navigation placement, the Home layout, theme screens and every other presentation key, so the page under the player never re-lays itself out. `<html>` carries `data-theme-role="player"` while a theme paints as the player theme, so its stylesheet can leave the navigation alone (`:scope:not([data-theme-role="player"]) [data-slot="nav.side"]`); with the windowed player beside the side rail, the rail takes the player theme's colours while a video plays. Safe mode and a Studio or install preview win over it; it wins over a catalog screen's own theme while it is in force. A player theme set to a palette gives izumi's own player in those colours.
+- **Loading screens (`loading`).** Two display-only templates (the node types, fields and artwork of card templates; no actions) for the two waits a viewer sees most:
+  - `loading.title` covers a series page or a catalog title page (film or series) while it loads its record (the `loading.title` slot, fixed over the page area right of the side navigation, `bg-background`). It is bound to the title the user picked, so it knows what that card knew: `title`, `poster`, `posterHd`, `backdrop`, `logo` (when the card had one), `format`, `year`, `startYear`, `genres`, `kind`, `score` and the other title fields. A page already in memory opens without it. The pending page keeps drawing under it (`detail` with `data-pending`, `detail.skeleton`), so the screen can be partly transparent.
+  - `loading.episode` shows from the press to the first frame (the `loading.episode` slot): on the opening screen (`play.connecting`, `data-variant="opening"`) and then on the player's black cover (`data-variant="player"`), which takes over mid-load. It is bound to the title and the episode being opened: the title fields plus `episodeNumber`, `episodeNo` and `episodeCode` (a link with no record knows only `title` and `backdrop`). The ring (`play.loader`), Back (`play.connecting.back`) and the slow-source line (`play.loader.detail`) stay on top of it, where a stylesheet moves and sizes them; the ring's size is `--theme-player-spinner-size` and `--theme-player-spinner-stroke` (see "Player"). The Android phone app keeps its own watch page while an episode opens, so it draws none. In Game mode it shows until mpv's window is up, which then draws its own ring in the theme's colour and size until the picture. A source switch in Game mode keeps the frozen frame and its card, without the screen.
+  - `exit` (whole ms, 0–1000, default 0): once the page or the first frame is in, the screen stays that long with `data-state="done"` and no pointer events, so a stylesheet fades it out with a plain transition (`[data-slot="loading.title"][data-state="done"] { opacity: 0; transition: opacity 300ms ease-out }`). 0 removes it at once.
+  - `--loading-elapsed` on the slot is minus the time since the wait began (`-1840ms`). Because the episode screen changes element at the hand-over, a stylesheet that writes `animation-delay: var(--loading-elapsed)` (with `animation-fill-mode: both`) keeps a loop in step and an entrance from replaying. The client never animates a loading screen itself.
+  - Appearing only after a moment, so a fast load never flashes it, is plain CSS too: `[data-slot="loading.title"] { animation: wait 180ms step-end }` with `@keyframes wait { from { visibility: hidden } }`.
+  - `loading` may sit in the `mobile` and `tv` blocks; each screen there replaces the shared one whole. Coverage counts `loading.title` as Details and `loading.episode` as Player. With a separate player theme (above), the episode screen is the player theme's and the title screen stays the app theme's.
+  - The ring follows the screen in the markup on both the opening screen and the player's cover, so `[data-slot="loading.episode"][data-state="loading"] ~ * [data-part="spinner"][data-variant="player"]` reaches it only while the screen is up (mid-playback buffering keeps its own place).
+  - Example, the dimmed artwork, the title's logo breathing in the middle, the title bottom left and a small ring under it:
+
+    ```json
+    "loading": {
+      "episode": {
+        "template": { "type": "overlay", "part": "lo-root", "children": [
+          { "type": "artwork", "artwork": "backdrop", "part": "lo-art" },
+          { "type": "artwork", "artwork": "logo", "part": "lo-logo", "when": { "field": "logo" } },
+          { "type": "stack", "part": "lo-copy", "children": [
+            { "type": "text", "field": "title", "part": "lo-title" },
+            { "type": "text", "field": "episodeCode", "part": "lo-episode", "when": { "field": "episodeCode" } }
+          ] }
+        ] }
+      }
+    }
+    ```
+
+    ```css
+    [data-part="lo-art"] img { filter: brightness(.75); object-fit: cover }
+    [data-part="lo-root"]::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgb(0 0 0 / .8), rgb(0 0 0 / .2) 50%, transparent) }
+    [data-part="lo-logo"] { place-self: center; width: min(52vw, 48rem); height: 22vh; animation: lo-in 240ms cubic-bezier(.23,1,.32,1) both, lo-breathe 2880ms cubic-bezier(.65,0,.35,1) infinite; animation-delay: var(--loading-elapsed) }
+    [data-part="lo-logo"] img { object-fit: contain }
+    [data-part="lo-copy"] { align-self: end; padding: 0 1.5rem 1.75rem 4.5rem; color: #fff }
+    [data-part="lo-title"] { font-size: 1.875rem; font-weight: 600 }
+    [data-slot="loading.episode"][data-state="loading"] ~ * [data-part="spinner"][data-variant="player"] { position: absolute; left: 1.5rem; bottom: 2rem }
+    :scope { --theme-player-spinner-size: 16px; --theme-player-spinner-stroke: 2px }
+    @keyframes lo-in { from { opacity: 0; scale: .97 } }
+    @keyframes lo-breathe { 0%, 100% { opacity: .72; scale: .985 } 50% { opacity: .95; scale: 1.015 } }
+    ```
+
+- **Schedule (`schedule`).** `schedule.item` is a display-only template for one airing entry, used wherever the page lists airings: the week agenda, the day view, Game mode's day view and the Release calendar. The entry stays a link to the title (the template replaces what is inside it), and on your own shows the remove button stays beside it. It is bound to the title fields (as a poster card) plus the airing: `episodeNumber` and `episodeNo` (the episode airing), `airingIn` and `airingCountdown` (the time left to this airing, absent once it has aired, so `when` tells aired from coming) and four API 8 fields: `airTime` (the local time, absent when the calendar gives only a date), `airingLabel` (the entry's own line: "Episode 5", "S2 E5", "Movie premiere" or the calendar's event), `listStatus` (Watching, Planning or Watched: your tracking, on your shows only) and `delay` (the delay notice when the schedule reports the episode late). `schedule` may sit in the `mobile` and `tv` blocks; coverage counts it as Shell. Every other piece of the page has a hook (see "Search, schedule and library" below): the header, its tabs, the My Shows/All switch, the week arrows and dates, the day buttons, day headings, the parts of the built-in entry, Next up, the Release calendar feeds, the empty, loading and error states, and `data-tab` and `data-layout` on the page.
+
+  ```json
+  "schedule": { "item": { "type": "row", "part": "air", "style": { "gap": 12, "align": "center" }, "children": [
+    { "type": "text", "field": "airTime", "part": "air-time" },
+    { "type": "artwork", "artwork": "poster", "part": "air-art", "style": { "aspect": "2 / 3", "width": 12, "radius": 6 } },
+    { "type": "stack", "children": [
+      { "type": "text", "field": "title", "part": "air-title" },
+      { "type": "text", "field": "airingLabel", "part": "air-line" },
+      { "type": "text", "field": "listStatus", "part": "air-status", "when": { "field": "listStatus" } }
+    ] },
+    { "type": "text", "field": "airingIn", "part": "air-in", "when": { "field": "airingIn" } }
+  ] } }
+  ```
+
+- **Theme screens (`layout.screens`).** Up to four screens of the theme's own. Each is a navigation entry and a page (`/app/screen/<id>`, the `screen` slot with a `screen.title` heading) built from the same entries as a theme Home: catalog rows by role and Home blocks, on whatever catalog is open, drawn by Home itself (so rows and blocks keep every hook and the row and card templates). `id` is 1–24 lowercase letters, digits or dashes, unique in the theme; `title` 1–24 characters; `icon` one of `star`, `heart`, `flame`, `sparkles`, `trophy`, `compass`, `clock`, `calendar`, `tv`, `film`, `grid` (the default) or `list`; `home` 1–30 entries under the rules of `layout.home` (the hero at most once). A package with more than four screens is refused, and the client never shows more than four. The screens follow the destinations on the side rail, the top bar, the drawer and the pinned side panel (`nav.item` with `data-dest="screen"` and `data-screen`), and on a phone they are icons in the Home header (`home.header.action`, the same attributes). Like the rest of `layout` they apply while the theme's layout switch is on (Settings → Home); a screen the active theme no longer offers returns to Home. `screens` sits in the shared layout or the `tv` block's, not the phone block (phones show the shared screens). A theme only arranges what izumi already draws: behaviour (new data, controls that do something new) belongs to plugins, delivered in a pack beside the theme.
+
+  ```json
+  "layout": { "screens": [
+    { "id": "picks", "title": "Picks", "icon": "star", "home": [
+      { "block": "ranked-list", "title": "Top this season", "tabs": [{ "label": "Season", "role": "season" }, { "label": "Trending", "role": "trending" }] },
+      { "role": "popular" }
+    ] }
+  ] }
+  ```
+
 ### Theme API 7
 
 A package declares `themeApi: 7` to use the drawer navigation and the player keys `player.trackButtons`, `player.rating`, `player.endTime` and the `fit` button in `player.buttons`; the validator refuses them in an older package.
@@ -173,7 +292,7 @@ A package declares `themeApi: 6` to use the `tv` block, `newBadge`, `upcoming`, 
 - **TV variant (`presentation.tv`).** The same shape as `mobile` (`density`, `hideCardLabels`, `trueBlack`, `hero`, `rows`, `detail`, `player`, `cards` and `layout`, without `rootSize`) plus `shell` and `cardPreview`, layered over the shared presentation on a TV surface: an Android TV, or Game mode on a handheld. It merges one level deep per section like `mobile`, and `shell.top` and `shell.bottomNav` one level more. A phone keeps its `mobile` block when it reports a TV, and every other surface drops `tv`. Unlike the phone block, a TV `layout` may carry `nav`. Coverage chips count the TV block. The shared limits still apply inside it: `hero.height` stays 24–75 (percent of the screen height), so a taller TV hero uses `hero.scale: "wide"`.
 - **TV navigation.** On an Android TV the navigation stays the side rail unless the TV block sets `shell.nav: "top"`; then the top bar renders there without the titlebar's 2rem band (a TV has no window titlebar), as it does in Game mode. Game mode follows the resolved `shell.nav` like a desktop; a theme that sets none (and izumi's own look) gets the drawer there. On an Android TV, `data-theme-nav` on `<html>` names the rendered placement: `sidebar` for the rail even when the shared `shell.nav` says otherwise.
 - **`data-surface="tv"`.** Set on `<html>` while a theme is active on a TV surface (absent elsewhere and in safe mode), so a stylesheet scopes its TV rules with `:scope[data-surface="tv"]`.
-- **Sizing.** izumi's own TV scaling stays underneath a theme: Android TV uses an 18 px root (`rem`) and follows the UI scale setting, and Game mode magnifies the browse UI to 1.25 times that scale (the player stays at 1). Author the TV stylesheet from a canvas rather than from `rem`, for example `--u: calc(100vw / 1920)` with every size a multiple of `--u`. On a TV surface a template's px sizes (`gap`, `padding`, `fontSize`, `radius`, `minHeight`, `maxWidth`) are canvas px too: they are written as multiples of `--u` when the stylesheet defines it on `:scope`, and as screen px when it does not. Game mode draws its player's seek bar, buttons and loading spinner inside the video, so no stylesheet reaches them, but they take an active theme's colours. The accent is `player.seekbarColor` when the theme sets it (the `tv` block's in Game mode), else the palette's `primary`; it colours the played part of the seek bar, the scrub knob, a focused button's fill and the spinner. A focused Play gets a ring in the palette's `ring`, and a focused button's glyph turns black or white, whichever contrasts more. Hex, rgb and hsl work; alpha is ignored, and a fully transparent colour keeps izumi's white. The Skip button, Up Next card and media menu stay unthemed (`data-theme-unthemed`), which the stylesheet's `@scope` stops at (Game mode measures that chrome from the page to draw it natively).
+- **Sizing.** izumi's own TV scaling stays underneath a theme: Android TV uses an 18 px root (`rem`) and follows the UI scale setting, and Game mode magnifies the browse UI to 1.25 times that scale (the player stays at 1). Author the TV stylesheet from a canvas rather than from `rem`, for example `--u: calc(100vw / 1920)` with every size a multiple of `--u`. On a TV surface a template's px sizes (`gap`, `padding`, `fontSize`, `radius`, `minHeight`, `maxWidth`) are canvas px too: they are written as multiples of `--u` when the stylesheet defines it on `:scope`, and as screen px when it does not. Game mode draws its player's seek bar, buttons and loading spinner inside the video, so no stylesheet reaches them, but they take an active theme's colours. The accent is `player.seekbarColor` when the theme sets it (the `tv` block's in Game mode), else the palette's `primary`; it colours the played part of the seek bar, the scrub knob, a focused button's fill and the spinner. The spinner's size follows `--theme-player-spinner-size` and `--theme-player-spinner-stroke` (see "Player"). A focused Play gets a ring in the palette's `ring`, and a focused button's glyph turns black or white, whichever contrasts more. Hex, rgb and hsl work; alpha is ignored, and a fully transparent colour keeps izumi's white. The Skip button and media menu stay unthemed (`data-theme-unthemed`), which the stylesheet's `@scope` stops at (Game mode measures that chrome from the page to draw it natively).
 - **Freshness badge (`newBadge`).** A string display field for a ribbon on cards, the hero and the series page. `New Movie` for a film that started in the last 30 days. For any other title that started in the last 30 days: `New Season` when it is a sequel that started in the last 21 days, `New Series` when it is not a sequel (a sequel 22 to 30 days old gets neither and falls through). Otherwise `New Episode` while a running series' next episode, number 2 or later, is due within 7 days or was due at most 7 days ago; a film never reads it. A sequel is an anime title with a prequel relation; when the record lists no relations, as on cards and search results, it is sequel wording in the title: "Season 2", "2nd Season", "Part 2", "Cour 2" or a standalone II, III or IV ("Season 1" and "Part 1" are not sequels). The field is absent when no rule matches, including when the catalog gives no start date or next airing, so `when` tests it for presence.
 - **Arrival (`upcoming`).** A string display field on episode cards for an episode that has not aired, so a template can print it where an aired episode prints its runtime: `Coming Friday, October 30`, the weekday, month and day in the viewer's locale (`Coming Friday 30 October` in British English), from the episode's airing time in the catalog's schedule (or its next-airing record) or, without one, the air day in the episode metadata. `Coming soon` when neither is known or the day has passed while the catalog still counts the episode unaired. Absent for an aired episode, so `when` tells the two apart: `{ "type": "text", "field": "upcoming", "when": { "field": "upcoming" } }`. izumi's own episode tiles use the same words when the day is known, except on the next episode, which keeps its "airing in" countdown, and keep "Not aired" otherwise.
 - **Episode count in words (`episodeCountLabel`).** A string display field wherever `episodeCount` is bound: `1 Episode` for a single episode, `12 Episodes` otherwise, so a template does not pair `episodeCount` with a literal "Episodes" ("1 Episodes"). Absent when the catalog does not know the count (or gives 0), like `episodeCount`, so `when` tests it for presence.
@@ -306,7 +425,7 @@ State values:
 | `data-state` | `watch.toolbar.option` | `active` on the current server, episode or release, or a finished download |
 | `data-variant` | `watch.episodes` | `right`, `below` |
 | `data-variant` | `watch.comments` | `inline`, `sheet` |
-| `data-control` | `player.control`, and `button` in the player | `back`, `restart` (API 6 `player.buttons`), `previous`, `rewind`, `play`, `forward`, `next`, `volume`, `options`, `comments`, `tracks`, `audio` and `subtitles` (API 7 `player.trackButtons: "text"`, in place of `tracks`), `subtitle-previous`, `subtitle-replay`, `subtitle-next`, `cast`, `bookmark`, `screenshot`, `pip`, `fullscreen`, `upnext-stay`, `upnext-play` |
+| `data-control` | `player.control`, and `button` in the player | `back`, `restart` (API 6 `player.buttons`), `previous`, `rewind`, `play`, `forward`, `next`, `volume`, `options`, `comments`, `tracks`, `audio` and `subtitles` (API 7 `player.trackButtons: "text"`, in place of `tracks`), `subtitle-previous`, `subtitle-replay`, `subtitle-next`, `cast`, `bookmark`, `screenshot`, `pip`, `fullscreen` |
 | `data-kind` | `player.skip` | `op`, `ed`, `recap`, `preview` |
 | `data-scrubbing` | `player.seekbar.knob` (desktop) | present while the seek bar is dragged, when the knob follows the pointer instead of the playhead; the Android knob never carries it |
 | `data-variant` | `player.time` | `default` (the "pos / dur" readout in the button row), `elapsed`, `remaining`, `total` |
@@ -333,7 +452,7 @@ State values:
 | `nav.side` | slot | The side navigation rail. |  |
 | `nav.top` | slot | The top navigation bar (`shell.nav: "top"`). `data-scrolled` once the page has scrolled from its top (a bar clear over the top of a page, solid below it). | `data-scrolled` |
 | `nav.bottom` | slot | The bottom tab bar (phones, or `shell.nav: "bottom"`). `data-state` is the scroll-chrome state, the same as `data-chrome` on `<html>`. `data-count` and the `--nav-items` custom property are the number of destinations on it, Home included, so a pill can be sized to them (`width: calc(var(--nav-items) * 56px)`) without counting links. | `data-state`, `data-count` |
-| `nav.item` | part | A navigation destination link, the Categories menu button (`data-variant="menu"`), or a catalog screen in the drawer navigation (`data-variant="screen"`, the screen named by `data-screen`). `data-dest` names the destination on every bar, rail, drawer and panel. | `data-active`, `data-variant`, `data-dest`, `data-screen` |
+| `nav.item` | part | A navigation destination link, the Categories menu button (`data-variant="menu"`), or a catalog screen in the drawer navigation (`data-variant="screen"`, the screen named by `data-screen`). A theme screen (API 8 `layout.screens`) has `data-dest="screen"` and its id in `data-screen`. `data-dest` names the destination on every bar, rail, drawer and panel. | `data-active`, `data-variant`, `data-dest`, `data-screen` |
 | `nav.item.icon` | part | The icon of a navigation destination. |  |
 | `nav.item.label` | part | The label of a navigation destination. |  |
 | `nav.item.indicator` | part | The active destination's marker on the bottom bar (`data-variant` `line`, `pill` or `dot`, as `shell.bottomNav.indicator`). | `data-variant` |
@@ -475,6 +594,7 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
+| `loading.title` | slot | API 8 `loading.title`: the theme's loading screen over a series page (`data-variant="series"`) or a catalog title page (`data-variant="catalog"`) while it loads its record, drawn from the template bound to the card the user picked. Fixed over the page area (the window right of the side navigation, `--theme-shell-left`), under the navigation. `data-state` is `loading`, then `done` for the `exit` time once the page is in (no pointer events then). `--loading-elapsed` is minus the time since the wait began. | `data-variant`, `data-state` |
 | `detail` | slot | The series page. `data-pending` while its record loads: the page is drawn from the card the user tapped, with placeholders (`.skeloader`) inside the parts it cannot fill yet. | `data-layout`, `data-variant`, `data-pending` |
 | `detail.banner` | slot | The artwork area at the top of the series page; `data-art` names the artwork it shows. | `data-art` |
 | `detail.poster` | part | The cover image. |  |
@@ -557,9 +677,10 @@ State values:
 | `options.sheet` | slot | The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button, and a series page opens on its desktop More (`detail.action` with `data-action="more"`): the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu. |  |
 | `options.panel` | part | The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`. |  |
 | `list.loading` | slot | The list editor (`Edit list`) while it reads the entry for the title from your trackers, so a save never starts from a blank status: the dimmed layer and panel with a `spinner`. |  |
-| `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge; data-variant player is the playback ring, in the player accent, from the press to the first frame. |  |
+| `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge; data-variant player is the playback ring, in the player accent, from the press to the first frame, sized by `--theme-player-spinner-size` and `--theme-player-spinner-stroke` (48 and 4 px). |  |
 | `sources` | slot | The source picker; data-variant is dialog, phone or panel (the Game mode side panel), and data-state is loading while sources are being found. |  |
 | `sources.status` | part | The line under the picker title: a spinner and Finding sources, then the counts. |  |
+| `sources.download` | part | The line under the picker title when the pick is a source to download, not to play. |  |
 | `sources.list` | part | The scrolling list of sources. |  |
 | `sources.row` | part | One source; data-best marks the best pick, and placeholder rows have data-state loading with a skeleton inside. |  |
 | `sources.group` | part | One release and its routes: its first row, the N more toggle and the expanded rows. |  |
@@ -567,6 +688,7 @@ State values:
 | `sources.empty` | part | Shown when there is nothing to pick; data-state is setup (no sources set up) or none (nothing matches). |  |
 | `sources.error` | part | The alert shown when playback failed. |  |
 | `sources.problems` | part | The sources that failed, each with its reason. |  |
+| `loading.episode` | slot | API 8 `loading.episode`: the theme's loading screen from the press to the first frame, under the ring (`play.loader`), Back and the slow-source line. `data-variant` is `opening` on the opening screen (`play.connecting`), then `player` on the player's black cover, which takes over mid-load. `data-state` is `loading`, then `done` for the `exit` time after the first frame. `--loading-elapsed` is minus the time since the press. | `data-variant`, `data-state` |
 | `play.connecting` | slot | The full-screen connecting screen, also shown while the player loads; data-variant switch is the Game mode card when changing source mid-playback. |  |
 | `play.connecting.back` | part | Back on the loader while an episode opens (top left): cancels the open, as B does. |  |
 | `play.backdrop` | part | The blurred artwork behind the connecting screen. |  |
@@ -680,7 +802,9 @@ State values:
 | `player.actions` | part | The buttons at the end of the desktop row: volume, options, discussion, tracks (or the words Audio and Subtitles under player.trackButtons text), subtitle line navigation, cast, bookmark, screenshot, picture-in-picture and full screen (and the framing button under `player.buttons` `fit`, API 7). |  |
 | `player.control` | part | A player button, named by `data-control`. On desktop Back and Play are `button` parts with `data-control` instead; on Android they are `player.control` too. | `data-control` |
 | `player.control.step` | part | The step in seconds drawn inside the desktop Rewind and Forward (the viewer's Seek duration setting). |  |
-| `player.menu` | part | A desktop player popup: the options menu (`data-variant="options"`) or the audio, subtitles and server menu (`data-variant="tracks"`). | `data-variant` |
+| `player.menu` | part | A desktop player popup: the options menu (`data-variant="options"`), the audio, subtitles and server menu (`data-variant="tracks"`), the right-click menu (`data-variant="context"`) or a plugin panel (`data-variant="plugin"`). | `data-variant` |
+| `player.menu.item` | part | An option in the options, media and right-click menus: a choice, a row that opens a page, or a tool. `data-state="active"` marks the chosen one (the playing track, speed, quality, framing, chapter, server or subtitle style). It is at least `--theme-player-menu-row-height` tall (36 px) with `--theme-player-menu-row-padding` (12 px) either side, which API 9 `player.menu` or the stylesheet sets. | `data-state` |
+| `player.menu.back` | part | A page's heading at the top of a player popup ("Subtitles", "Speed"): its name after a back arrow, which returns to the first page. |  |
 | `player.scrim` | part | The shade over the video behind the Android controls, shown with them. |  |
 | `player.volume` | part | The volume slider beside the mute button (desktop). |  |
 | `player.time` | part | A time readout: `default` ("pos / dur" in the desktop button row, or at the start of the Android timeline row), `elapsed`, `remaining` or `total`. | `data-variant` |
@@ -692,17 +816,14 @@ State values:
 | `player.summary.episode` | part | "<episode name>: Ep. 3" in the paused summary; the name is left out while spoilers are hidden. |  |
 | `player.summary.synopsis` | part | The episode's synopsis in the paused summary; hidden with spoilers. |  |
 | `player.summary.state` | part | The "Paused" label at the bottom right of the paused summary. |  |
-| `player.upnext` | part | The Up Next card at the end of an episode (Settings → Up Next overlay). |  |
-| `player.upnext.art` | part | The artwork of the next episode at the top of the Up Next card. |  |
-| `player.upnext.kicker` | part | The "Up next" label above the next episode's title. |  |
-| `player.upnext.title` | part | The next episode's title. |  |
-| `player.upnext.countdown` | part | The countdown line ("Episode 5 starts in 8 seconds"). |  |
 | `trailer.player` | slot | izumi's full-window trailer player: the YouTube trailer letterboxed at 16:9 on black, Back and the title at the top, the seek bar and buttons at the bottom. It opens on TV, in Game mode, with a controller, and on desktop unless Settings → Playback sets trailers to open in a popup. |  |
 
 #### Search, schedule and library
 
 | Hook | Kind | What | States |
 |---|---|---|---|
+| `screen` | slot | API 8 `layout.screens`: a page of the theme's own (`/app/screen/<id>`), named by `data-screen`: its title (`screen.title`) over its Home entries, drawn by Home itself (`home`, `row`, the blocks). | `data-screen` |
+| `screen.title` | part | The heading of a theme screen. |  |
 | `search` | slot | The search page. | `data-variant` |
 | `search.header` | slot | The Search page header: the title and the filter bar; on another catalog's page also the streaming service; on the all-catalogs page the field (or the chosen catalog's filter bar) under the catalog chips. It is a `display: contents` box, so the parts inside lay out (and stick) as they always did, until a theme gives it one: `display: block; position: sticky; top: 0` pins the whole header, and `:scope[data-chrome="hidden"]` can slide it away. |  |
 | `search.title` | part | The Search page heading: "Search" in the app language, visually hidden (`sr-only`) until a theme shows it, or with `data-variant="explore"` the genre, studio or voice actor being explored, shown. On the all-catalogs page it is the visible "Search" heading. | `data-variant` |
@@ -715,10 +836,36 @@ State values:
 | `search.layout` | slot | API 6, TV surfaces: the Search page while a theme docks the grid keyboard (`tv.search.keyboard: "grid"`), a row holding the `search.keyboard` on the left and the rest of the page on the right. |  |
 | `search.keyboard` | part | API 6, TV surfaces: the grid keyboard docked left of the Search page, six columns of `search.key` buttons: Space and Backspace (three columns each), then a–z and 0–9, then a full-width Clear. It types into the page's search field and stays in view as the results scroll (`position: sticky`, 1rem under the top bar); controller focus starts on "a". |  |
 | `search.key` | part | One key of the `search.keyboard`, named by `data-key` (`space`, `backspace`, `clear`, or the lowercase letter or digit it types). izumi draws the focused key white with a black glyph; style `:focus` to change it. | `data-key` |
-| `schedule` | slot | The airing schedule page. |  |
+| `schedule` | slot | The airing schedule page. `data-tab` is the open tab (`schedule`, `personal` for the Release calendar, `watchlist`); `data-layout` is `agenda` (the whole week, desktop) or `days` (a day at a time: phones, a pad, or the Day view setting). | `data-tab`, `data-layout` |
+| `schedule.header` | part | The row of tabs, the My Shows/All filter and the week controls at the top of the page. `data-pinned` while it sticks under the navigation (the Pin schedule header setting). | `data-pinned` |
+| `schedule.tabs` | part | The strip holding the Schedule, Release calendar and Watchlist tabs. |  |
+| `schedule.tab` | part | One of those tabs, named by `data-tab` (`schedule`, `personal`, `watchlist`); `data-active` on the open one. | `data-tab`, `data-active` |
+| `schedule.filter` | part | The My Shows / All switch (Schedule tab only). |  |
+| `schedule.filter.option` | part | One side of that switch: `data-value` is `mine` or `all`, `data-active` on the chosen one. My Shows carries the count of your shows airing this week. | `data-value`, `data-active` |
+| `schedule.today` | part | The Today button, shown while another week is open. |  |
+| `schedule.week` | part | The week controls: the previous and next arrows around the dates. |  |
+| `schedule.week.step` | part | The previous or next week arrow (`data-dir` `previous` or `next`). | `data-dir` |
+| `schedule.week.label` | part | The dates of the open week ("Nov 16 - Nov 22"). |  |
+| `schedule.daytabs` | part | The strip of seven day buttons over a day at a time (phones, a pad, the Day view setting). |  |
+| `schedule.daytab` | part | One day button: `data-active` on the open day, `data-today` on today, `data-unaired` while it has episodes still to air (Schedule tab). | `data-active`, `data-today`, `data-unaired` |
+| `schedule.hint` | part | The pad line under the day buttons ("L1 / R1 to switch days"). |  |
 | `schedule.day` | part | One day of airings: a day of the week agenda, or the selected day. |  |
-| `schedule.item` | part | One airing entry. |  |
-| `schedule.error` | part | The message shown when the schedule could not be loaded, with a Try again button. |  |
+| `schedule.day.title` | part | The heading of a day ("Monday · Nov 16 · Today"); `data-today` on today. The day view has none. | `data-today` |
+| `schedule.item` | part | One airing entry: a link to the title, and on your own shows the remove button beside it. `data-aired` once it has aired. With API 8 `schedule.item` the link holds the template instead of the parts below. | `data-aired` |
+| `schedule.item.poster` | part | The cover of an entry. |  |
+| `schedule.item.title` | part | The title of an entry. |  |
+| `schedule.item.meta` | part | The episode and local time of an entry ("Episode 5 · 21:30"). |  |
+| `schedule.item.badge` | part | A label on an entry: `data-variant="status"` is your tracking (Watching, Planning, Watched), `data-variant="source"` the calendar it came from. | `data-variant` |
+| `schedule.item.countdown` | part | The time left to an airing ("in 2h 5m"); in the day view also Aired or Released once it has. |  |
+| `schedule.item.delay` | part | The delay notice on an entry the schedule reports late. |  |
+| `schedule.item.context` | part | Why a personal calendar entry is there (a Release calendar match). |  |
+| `schedule.nextup` | part | The Next up strip over the current week: your next airings and the ones just aired. |  |
+| `schedule.nextup.item` | part | One Next up card. |  |
+| `schedule.feeds` | part | The Release calendar feed chips. |  |
+| `schedule.feed` | part | One feed chip; `data-active` on the chosen feed. | `data-active` |
+| `schedule.empty` | part | The box shown when nothing airs: this week, this day, none of your shows, or nothing in a Release calendar feed. |  |
+| `schedule.loading` | part | The placeholders (`.skeloader`) shown while the week loads. |  |
+| `schedule.error` | part | The message shown when the schedule or the Release calendar could not be loaded. |  |
 | `library` | slot | The library page. |  |
 | `library.tabs` | part | The library section tabs. |  |
 | `library.grid` | slot | The library card grid. |  |
@@ -729,6 +876,8 @@ State values:
 | `downloads.item` | part | One episode row; data-state is its status (done, downloading, paused, queued, error). |  |
 | `downloads.action` | part | The row's primary button; data-action is play, pause, resume, retry or options. |  |
 | `downloads.more` | part | The row's More button, which opens its options sheet. |  |
+| `downloads.toggle` | part | The Pause or Resume button beside Cancel on a row the pointer is over. |  |
+| `downloads.bulk` | part | The bulk actions over the list: Pause all, Resume all, Cancel all pending and Clear finished (each button's data-bulk names it). |  |
 | `downloads.progress` | part | A download's progress track; its child span is the fill. |  |
 | `downloads.empty` | part | The empty state shown when nothing is saved. |  |
 | `browse` | slot | The Browse screen; data-variant is anilist, catalog or source. |  |
@@ -797,7 +946,7 @@ Theme Studio's Layout tab exposes common controls, discovers rows on the current
 
 The catalog repository owns the [format reference](https://github.com/nickEatsBread/izumi-themes/blob/main/docs/FORMAT.md), JSON editor schemas, example packages, listing metadata and CI. Authors can publish a package anywhere with public HTTPS access; a catalog listing is optional. Browser builds need the host to allow cross-origin requests. Raw GitHub URLs work for both the browser and native client.
 
-Packages declare `app: "izumi"`, `kind: "theme-package"`, `schemaVersion: 1`, `themeApi` (1–6, the lowest API the package uses), a stable ID, numeric `major.minor.patch` version, author metadata and `design`. The `design` contains appearance values and optional `presentation`. Packages omit local saved-theme IDs and timestamps. Existing personal exports are normalized into an installable shared theme. The `shared.*` ID namespace is reserved for these client-created imports; external packages and catalog listings cannot claim it. Saved installations and their rollback records retain valid shared IDs when loaded.
+Packages declare `app: "izumi"`, `kind: "theme-package"`, `schemaVersion: 1`, `themeApi` (1–9, the lowest API the package uses), a stable ID, numeric `major.minor.patch` version, author metadata and `design`. The `design` contains appearance values and optional `presentation`. Packages omit local saved-theme IDs and timestamps. Existing personal exports are normalized into an installable shared theme. The `shared.*` ID namespace is reserved for these client-created imports; external packages and catalog listings cannot claim it. Saved installations and their rollback records retain valid shared IDs when loaded.
 
 Templates compose `stack`, `row`, `grid`, `overlay`, `text`, `artwork` and `action` nodes. Text and artwork bind to a host display model. Hero actions call the client's existing play, details, favorite, list (the list editor), trailer, share and slide-navigation callbacks when the host provides them. Cards keep their host-owned detail or play links. Field types are fixed across hosts: `rankPosition`, `score` (0-100), `duration` (minutes), `episodeNumber` and `progress` (0-100) are numbers, as are `nextEpisode`, `slide`, `slides` and `episodesAired` (API 3) and `episodesWatched` (API 4); every other field is a string. Artwork may be `poster`, `backdrop`, `logo` or `still` (`keyart` from API 3, `posterHd` from API 4, and the hero-only `trailer` slot from API 6). Text nodes render `score` and `progress` as a percentage such as `78%`, and `duration` as `24m`. Optional conditions check presence for any field; `atMost` is accepted only for the numeric fields. Hosts bind different fields: a card condition on a missing field simply never matches.
 
@@ -809,13 +958,15 @@ Style values are a bounded allowlist. There are no arbitrary selectors, URLs, HT
 
 1. The gallery fetches a versioned catalog document from the separate GitHub repository. It caches the last valid listing for offline browsing. Refreshing a listing does not update an installed theme.
 2. Catalog packages and release-descriptor links must match the listed byte size, SHA-256, ID and version before preview or installation. Direct package links and local files receive the same schema validation but have no independent listing checksum. These checks establish consistency with the selected listing, not an author's cryptographic identity.
-3. HTTPS downloads have a 20-second timeout and a streamed size limit: 256 KB per package and 1 MB for the catalog. Native clients use the existing bounded HTTP transport. Requests use its background lane; the browser path omits credentials and referrers.
+3. HTTPS downloads have a 20-second timeout and a streamed size limit: 512 KB per package and 1 MB for the catalog. Native clients use the existing bounded HTTP transport. Requests use its background lane; the browser path omits credentials and referrers.
 4. Preview changes in-memory appearance only. Cancel restores the previously applied appearance. Reloading also ends the preview. Opening Theme Studio cancels an installation preview before starting an editable draft. Preview controls are hidden during playback and return when playback closes.
 5. Installation records the normalized author package, origin and associated editable Theme Studio design. Installed designs work offline. A same-ID package from another origin cannot replace an installation without removing it first.
 6. **Check update** checks the catalog or a release-descriptor link. A newer package opens for review; applying it performs a three-way merge against the prior author design. Unmodified values take the update; personal edits and explicit deletions remain. Arrays, including a template's child order, are treated as whole personal edits.
 7. The previous version and edited design are kept for **Restore previous**. **Remove** returns an active installation to the shipped appearance and leaves other saved themes alone. **Use default** is always available. A design deleted separately in Theme Studio can be reinstalled from the same origin.
 
 8. **Settings → Catalog → Screens** can give any catalog screen, custom screens included, a theme of its own. While that screen is open its theme replaces the applied one across the whole app, layout and navigation included; safe mode and previews still take precedence, and the other screens keep the applied theme. A theme cannot tell which way it was chosen, so it should not assume it is the only one a person uses.
+
+9. **Settings → Appearance → Player theme** paints the player with another theme, as described under "Theme API 8".
 
 The client retains the existing limit of 24 saved designs. Install writes attempt to restore the prior library and metadata if persistence fails. Package metadata uses `installed-themes-v1`; editable appearance stays in the existing Theme Studio library. Browser local storage is not a transactional database, so external corruption or exhausted storage may still require freeing storage and reinstalling. Direct package URLs are snapshots; use a release descriptor to provide an update pointer.
 
@@ -831,12 +982,17 @@ The client retains the existing limit of 24 saved designs. Install writes attemp
 | Bounded downloads, integrity and cache | `src/lib/themes/catalog.ts` |
 | Install, preview, merge and rollback | `src/lib/themes/installed.ts` |
 | Active presentation store and navigation placement | `src/lib/themes/runtime.ts` |
-| A theme for one catalog screen (applied over the app theme) | `src/lib/themes/screen-theme.ts` |
+| A theme for one catalog screen (applied over the app theme) and the player theme | `src/lib/themes/screen-theme.ts` (`withPlayerTheme` in `presentation.ts`) |
 | Video insets and the docked stage | `src/lib/player/insets.ts`, `PlayerOverlay.svelte`, `DockEpisodes.svelte`, `player_set_inset` in `src-tauri/src/lib.rs` |
 | Document chrome (density, true black, seekbar vars) | `src/lib/theme.ts`, `src/app.css` |
 | Declarative renderer and layout editor | `src/lib/components/themes/` |
 | Gallery and installed library | `src/routes/app/settings/themes/+page.svelte` |
 | Host integration | `Hero.svelte` (its `list` action opens `MediaListSheet.svelte`), `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte` (with `PreviewCard.svelte` and `expand-pos.ts`), `BackdropTrailer.svelte`, `ContinueCard.svelte`, `SearchResults.svelte`, `AnimeDetail.svelte`, `Tabs.svelte`, `EpisodeCard.svelte`, `Sidebar.svelte`, `BottomNav.svelte`, `Seekbar.svelte`, `EpisodeList.svelte`, `EpisodeToolbar.svelte`, `SeasonPicker.svelte`, `FactList.svelte`, `RichMetadata.svelte` |
+| API 8 loading screens | `src/lib/components/themes/LoadingScreen.svelte` (hosts: `AnimeDetail.svelte`, `CatalogMediaDetail.svelte`, `SourceConnecting.svelte`, `PlayerOverlay.svelte`), `src/lib/themes/loading-clock.ts`, `episodeLoadingModel` in `host-model.ts` |
+| API 8 schedule entry | `airingDisplayModel` in `host-model.ts`, `AgendaWeek.svelte`, `DayColumn.svelte` (with `ScheduleGrid.svelte`, `PersonalSchedule.svelte`, `ScheduleNextUp.svelte` and `src/routes/app/schedule/+page.svelte` for the hooks) |
+| API 9 theme settings | `src/lib/themes/theme-settings.ts` (format and `<html>` hooks), `src/lib/themes/theme-setting-values.ts` (values per installed theme), `ThemeSettingsRows.svelte` (on `ThemePane.svelte` and the Appearance page), applied in `src/lib/theme.ts` |
+| API 8 theme screens | `themeScreens`, `homeLayoutFor` and `openThemeScreen` in `src/lib/themes/layout-state.ts`, `src/routes/app/screen/[id]/+page.svelte`, `src/lib/components/shell/theme-screen-icons.ts`, `Sidebar.svelte`, `NavDrawer.svelte`, `NavPanel.svelte` |
+| API 9 player popups | `player.menu` in `parsePlayer` (`presentation.ts`), the row custom properties in `src/lib/theme.ts` and `src/app.css`, `chosen()` in `Controls.svelte`, `PlayerContextMenu.svelte` |
 | TV rows, caption template, grid keyboard and player buttons | `src/lib/nav/anchor.ts` and `revealAnchored` in `src/lib/nav/index.ts`, `card-registry.ts`, `src/lib/components/search/GridKeyboard.svelte` (with `grid-keyboard.ts` and `searchGridKeyboard` in `runtime.ts`), `AndroidPlayer.svelte` and `Controls.svelte` |
 
 ## Validation

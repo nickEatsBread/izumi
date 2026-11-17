@@ -1,8 +1,8 @@
 import { get } from 'svelte/store'
 import type { ThemeRelease } from '$lib/themes/packages'
-import { allStores, enabledStores, type StoreFeed } from './feeds'
+import { allStores, type StoreFeed } from './feeds'
 import { loadStoreAndPin } from './service'
-import type { LoadedStore } from './load'
+import { loadListings } from './listings'
 
 /** A theme as listed by one store. The store URL is the theme's install origin, so a theme can only
  *  ever update from the store it came from. */
@@ -12,32 +12,10 @@ export interface ThemeListing {
   storeName: string
 }
 
-export async function loadThemeListings(
-  options: { force?: boolean } = {},
-): Promise<{ listings: ThemeListing[]; cached: boolean; errors: string[]; loaded: Record<string, LoadedStore> }> {
-  const results = await Promise.all(get(enabledStores).map((store) => loadStoreAndPin(store, options)))
-  // Every store's load result by id, for the store manager the Themes page opens.
-  const loaded = Object.fromEntries(results.map((result) => [result.store.id, result]))
-  const listings: ThemeListing[] = []
-  const errors: string[] = []
-  let cached = false
-  for (const result of results) {
-    if (result.error) {
-      errors.push(`${result.store.name}: ${result.error}`)
-      if (result.listing) cached = true
-    }
-    if (result.trust.state === 'locked') {
-      errors.push(`${result.store.name}: its signing-key check failed, so its themes are hidden until you review it under Manage stores.`)
-      continue
-    }
-    if (!result.listing) continue
-    for (const entry of result.listing.entries) {
-      if (entry.install.type === 'theme') {
-        listings.push({ release: entry.install.release, origin: result.store.url, storeName: result.store.name })
-      }
-    }
-  }
-  return { listings, cached, errors, loaded }
+export function loadThemeListings(options: { force?: boolean } = {}) {
+  return loadListings<ThemeListing>((entry, store) => entry.install.type === 'theme'
+    ? { release: entry.install.release, origin: store.url, storeName: store.name }
+    : undefined, 'themes', options)
 }
 
 export function themeStoreFor(origin: string): StoreFeed | undefined {

@@ -4,6 +4,7 @@ import { THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
 import { parsePresentation, type ThemePresentation } from '$lib/themes/presentation'
 import { precheckThemeCss } from '$lib/themes/css-policy'
 import { parseThemeFonts, type ThemeFonts } from '$lib/themes/font-ids'
+import { parseThemeSettings, type ThemeSetting } from '$lib/themes/theme-settings'
 
 export type ThemeFont = 'nunito' | 'system' | 'serif' | 'mono'
 export type ThemeBackdrop = 'solid' | 'aurora' | 'spotlight' | 'mesh'
@@ -25,6 +26,8 @@ export interface StudioTheme {
   css?: string
   /** Theme API 3 font roles from the bundled library. */
   fonts?: ThemeFonts
+  /** Theme API 9 settings the viewer can change; the stylesheet reads them (theme-settings.ts). */
+  settings?: ThemeSetting[]
 }
 
 export interface StudioThemeExport {
@@ -88,6 +91,8 @@ export function normalizeStudioTheme(value: unknown, fallback = defaultStudioThe
   try { if (typeof raw.css === 'string' && raw.css.trim()) css = precheckThemeCss(raw.css) } catch { /* Drop a stylesheet this client refuses. */ }
   let themeFonts: ThemeFonts | undefined
   try { if (raw.fonts !== undefined) themeFonts = parseThemeFonts(raw.fonts) } catch { /* Drop fonts this client does not bundle. */ }
+  let settings: ThemeSetting[] | undefined
+  try { if (raw.settings !== undefined) settings = parseThemeSettings(raw.settings) } catch { /* Drop settings this client can't show. */ }
   return {
     id: typeof raw.id === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/i.test(raw.id) ? raw.id : fallback.id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 48) : fallback.name,
@@ -103,6 +108,7 @@ export function normalizeStudioTheme(value: unknown, fallback = defaultStudioThe
     ...(presentation ? { presentation } : {}),
     ...(css ? { css } : {}),
     ...(themeFonts && Object.keys(themeFonts).length ? { fonts: themeFonts } : {}),
+    ...(settings?.length ? { settings } : {}),
   }
 }
 

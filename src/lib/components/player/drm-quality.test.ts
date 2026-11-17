@@ -19,4 +19,22 @@ describe('protected playback start quality', () => {
     expect(surface).toMatch(/qualityMode = 'auto'\s*qualityPicked = false/)
     expect(surface.match(/qualityPicked = true/g)).toHaveLength(2)
   })
+
+  // Shaka's active variant is the one being fetched; the buffered rung plays for up to 30 s after a switch.
+  it('reports the height on screen, again whenever it changes', () => {
+    expect(surface).toMatch(/const activeHeight = videoEl\?\.videoHeight\s*\|\| Number\(available\.find/)
+    expect(surface).toContain('onresize={() => emitQualityInfo()}')
+  })
+
+  it('holds a picked height for every load, so a presentation switch reloads onto it', () => {
+    expect(surface).toMatch(/function applyAbrPolicy\(\) \{\s*if \(!player\) return\s*setAbrEnabled\(qualityMode === 'auto'\)\s*setAbrHeights\(abrHeightRange\(qualityMode, firstFrame\)\)/)
+    expect(surface).not.toMatch(/setAbrEnabled\(false\)\s*if \(!best\.active\)/)
+  })
+
+  it('starts Linux protected playback on the preference too', () => {
+    const native = readFileSync(new URL('./NativeDrmSurface.svelte', import.meta.url), 'utf8')
+    expect(native).toMatch(/const preferred = Number\(get\(preferredQuality\)\)\s*qualityMode = Number\.isFinite\(preferred\) && preferred > 0 \? preferred : 'auto'/)
+    expect(native).toContain("maxHeight: qualityMode === 'auto' ? undefined : qualityMode")
+    expect(native).toContain('if (qualityMode !== \'auto\') qualityMode = preferredDrmQuality(String(qualityMode), heights)')
+  })
 })

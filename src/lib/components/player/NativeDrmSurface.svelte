@@ -7,9 +7,13 @@
   import { onDestroy, untrack } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { get } from 'svelte/store'
-  import { preferredAudioLang, preferredSubLang } from '$lib/settings/ui'
+  import { languagesForMedia, mpvLanguageList } from '$lib/settings/catalog-languages'
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, waitForCatalog, withManifestQuery } from '$lib/player/preferred-drm'
-  import { playerNotice } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, playerNotice } from '$lib/player/session'
+  import { rememberedSeriesTrack } from '$lib/player/track-preferences'
+  import { preferredQuality } from '$lib/settings/ui'
+  import { preferredDrmQuality } from './drm-quality'
+  import { assFontFamilies, fontsForFamilies, isAssSubtitle, parseSubtitleFonts, type SubtitleFont } from '$lib/player/ass-subtitles'
   import { langsEqual, normalizeLang } from '$lib/stremio/sublang'
   import { listenSafe } from '$lib/util/listen'
   import {
@@ -50,6 +54,7 @@
   let liveSubs: DrmSubtitle[] = []
   let liveAudio: DrmAudioChoice[] = []
   let liveAudioLang = ''
+  let subtitleFonts: SubtitleFont[] = []
   let previews: BifPreviews | null = null
   let activeManifest = ''
   let pos = 0
@@ -96,8 +101,10 @@
         subtitles?: Array<DrmSubtitle & { language?: string }>
         audioTracks?: Array<DrmAudioChoice & { language?: string }>
         previewUrl?: string
+        subtitleFonts?: unknown
       }
       if (typeof src.audioLang === 'string') liveAudioLang = src.audioLang
+      if (src.subtitleFonts !== undefined) subtitleFonts = parseSubtitleFonts(src.subtitleFonts)
       if (typeof src.previewUrl === 'string' && src.previewUrl) setPreviews(src.previewUrl)
       if (Array.isArray(src.subtitles)) {
         liveSubs = src.subtitles.map((t) => ({ url: t.url, lang: t.lang ?? t.language, title: t.title, isDefault: t.isDefault, kind: t.kind, switchUrl: t.switchUrl }))
@@ -106,6 +113,17 @@
         liveAudio = src.audioTracks.map((t) => ({ lang: t.lang ?? t.language, title: t.title, switchUrl: t.switchUrl }))
       }
     } catch { /* keep what the stream object carried */ }
+  }
+
+  /** mpv reads its font folder when a subtitle track opens, so the faces the source lists for these
+   *  scripts are put there first (see subtitle_fonts.rs). Files already kept are not fetched again. */
+  async function keepSubtitleFonts(urls: string[]): Promise<void> {
+    if (!subtitleFonts.length || !urls.length) return
+    const scripts = await Promise.all(urls.map((target) =>
+      fetch(target).then((res) => (res.ok ? res.text() : '')).catch(() => '')))
+    const families = scripts.filter((body, i) => isAssSubtitle(urls[i] ?? '', body)).flatMap(assFontFamilies)
+    const fonts = fontsForFamilies(subtitleFonts, families)
+    if (fonts.length) await invoke('subtitle_fonts_fetch', { urls: fonts.map((font) => font.url) })
   }
 
   function setPreviews(src: string) {
@@ -149,15 +167,16 @@
     embedding = true
     let hard = ''
     try { hard = new URL(manifest).searchParams.get('hard') ?? '' } catch { /* plain URL */ }
-    const preferredSub = get(preferredSubLang)
+    const languages = languagesForMedia(get(nowPlayingMedia)?.media)
     const pick = preferredDrmPresentation({
       url: manifest,
       audioLang: liveAudioLang || audioLang,
       subtitles: liveSubs,
       audioTracks: liveAudio,
-      preferredAudio: get(preferredAudioLang),
-      preferredSub,
+      preferredAudio: languages.audio,
+      preferredSub: languages.subtitle,
       switchAudio: false,
+      rememberedSubtitle: rememberedSeriesTrack(get(nowPlaying).id, 'subtitle'),
     })
     const chosen = hard ? undefined : pick.subtitles[0]?.url
     const soft = liveSubs.filter((t) => t.url && !t.switchUrl).map((t) => ({
@@ -172,9 +191,9 @@
         startSeconds: start > 0 ? start : undefined,
         autoplay: true,
         initialBufferSeconds: 0.5,
-        alang: get(preferredAudioLang),
+        alang: mpvLanguageList(languages.audio),
         // A burned-in presentation must not also show a soft track on top.
-        slang: hard ? 'none' : preferredSub,
+        slang: hard ? 'none' : mpvLanguageList(languages.subtitle),
         subtitles: soft.length ? soft : undefined,
         drm: {
           keySystem: drm.keySystem,
@@ -191,6 +210,8 @@
         videoPath = prepared.mode === 'hardware' ? 'hardware' : 'module'
         activeHeight = prepared.height
         heights = prepared.heights.filter((h) => h >= 240)
+        // The setting names a ceiling; the menu ticks the rung it gave.
+        if (qualityMode !== 'auto') qualityMode = preferredDrmQuality(String(qualityMode), heights)
         emitQuality()
       }
       return true
@@ -296,15 +317,22 @@
     },
   }
 
+  const FONT_WAIT_MS = 3_000
+
   async function load() {
     const gen = ++loadGen
     moduleOnly = false
     liveSubs = subtitles
     liveAudio = audioChoices
     liveAudioLang = audioLang
+    subtitleFonts = []
     activeManifest = ''
     heights = []
     activeHeight = 0
+    // Each load starts on the "Preferred quality" setting, as the webview's player does; the player
+    // takes the tallest rung at or below it. A pick from the menu then lasts until the next load.
+    const preferred = Number(get(preferredQuality))
+    qualityMode = Number.isFinite(preferred) && preferred > 0 ? preferred : 'auto'
     setPreviews(previewUrl)
     setNativeDrm(session)
     if (activeRelease && activeRelease !== (drm.releaseUrl ?? '')) release(activeRelease)
@@ -313,15 +341,25 @@
     // load is already the preferred presentation.
     await waitForCatalog(refreshCatalog(), DRM_CATALOG_WAIT_MS)
     if (gen !== loadGen) return
-    const initial = preferredDrmPresentation({
+    const pick = preferredDrmPresentation({
       url,
       audioLang: liveAudioLang || audioLang,
       subtitles: liveSubs,
       audioTracks: liveAudio,
-      preferredAudio: get(preferredAudioLang),
-      preferredSub: get(preferredSubLang),
+      preferredAudio: languagesForMedia(get(nowPlayingMedia)?.media).audio,
+      preferredSub: languagesForMedia(get(nowPlayingMedia)?.media).subtitle,
       switchAudio: false,
-    }).url
+      rememberedAudio: rememberedSeriesTrack(get(nowPlaying).id, 'audio'),
+      rememberedSubtitle: rememberedSeriesTrack(get(nowPlaying).id, 'subtitle'),
+    })
+    const initial = pick.url
+    // The track that opens first gets its fonts before the stream starts (bounded); the others'
+    // arrive in the background, before anyone switches to them.
+    const first = pick.subtitles[0]?.url
+    const scripts = liveSubs.filter((t) => t.url && !t.switchUrl && t.kind !== 'captions').map((t) => t.url)
+    await waitForCatalog(keepSubtitleFonts(first && scripts.includes(first) ? [first] : []), FONT_WAIT_MS)
+    void keepSubtitleFonts(scripts.filter((target) => target !== first)).catch(() => {})
+    if (gen !== loadGen) return
     if (!(await embed(initial, startSeconds)) && gen === loadGen && initial !== url && new URL(initial).searchParams.get('hard')) {
       // A burned-in presentation that will not open falls back to the clean one.
       await embed(withManifestQuery(initial, { hard: undefined }), startSeconds)

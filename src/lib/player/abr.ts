@@ -28,3 +28,11 @@ export function abrMaxHeight(qualityMode: 'auto' | number, firstFrame: boolean):
   if (qualityMode !== 'auto') return Infinity
   return firstFrame ? Infinity : ABR_FAST_START_MAX_HEIGHT
 }
+
+/** The heights ABR may choose from. Shaka also makes the first choice of every load from this
+ *  window, so a picked height holds it: an audio or subtitle switch reloads straight onto the
+ *  picked rung instead of the fast-start one (which then played for the whole buffer). */
+export function abrHeightRange(qualityMode: 'auto' | number, firstFrame: boolean): { minHeight: number; maxHeight: number } {
+  if (qualityMode !== 'auto') return { minHeight: qualityMode, maxHeight: qualityMode }
+  return { minHeight: 0, maxHeight: abrMaxHeight(qualityMode, firstFrame) }
+}

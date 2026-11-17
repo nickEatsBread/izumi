@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, type Component } from 'svelte'
   import { get } from 'svelte/store'
-  import { downloads, speeds, pauseDownload, resumeDownload, cancelDownload, deleteDownload, revealDownload, diskSpace, type DiskSpace, type DownloadItem } from '$lib/downloads/store'
+  import { downloads, speeds, pauseDownload, resumeDownload, cancelDownload, deleteDownload, revealDownload, clearFromList, diskSpace, type DiskSpace, type DownloadItem } from '$lib/downloads/store'
   import { downloadedMedia, getDownloadedMedia } from '$lib/downloads/state'
   import { playEpisode } from '$lib/stremio/play'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
@@ -14,7 +14,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import OptionsSheet, { type SheetOption } from '$lib/components/detail/OptionsSheet.svelte'
   import ButtonHints from '$lib/components/shell/ButtonHints.svelte'
-  import { groupDownloads, lowOnSpace, neighbourOf, primaryActionOf, seriesTitle, sizeOnDisk, PRIMARY_LABEL, type PrimaryAction } from './group'
+  import { bulkTargets, groupDownloads, lowOnSpace, neighbourOf, primaryActionOf, seriesTitle, sizeOnDisk, PRIMARY_LABEL, type PrimaryAction } from './group'
   import Search from '@lucide/svelte/icons/search'
   import Cloud from '@lucide/svelte/icons/cloud'
   import Play from '@lucide/svelte/icons/play'
@@ -26,6 +26,8 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import FolderOpen from '@lucide/svelte/icons/folder-open'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
+  import ListChecks from '@lucide/svelte/icons/list-checks'
+  import Eye from '@lucide/svelte/icons/eye'
   import Spinner from '$lib/components/Spinner.svelte'
 
   heroMedia.set(null)
@@ -36,8 +38,11 @@
   const padNow = () => get(gameMode) || get(controllerMode)
 
   let filter = $state('')
+  // Episodes taken off the list by Clear finished come back here to be played or deleted.
+  let showCleared = $state(false)
   const all = $derived(Object.values($downloads))
-  const groups = $derived(groupDownloads(all, filter))
+  const groups = $derived(groupDownloads(all, filter, showCleared))
+  const bulk = $derived(bulkTargets(all))
   const saved = $derived(all.filter((d) => d.status === 'done').length)
   const used = $derived(all.reduce((sum, d) => sum + sizeOnDisk(d), 0))
   const counts = $derived({
@@ -115,6 +120,17 @@
     target?.focus()
   }
 
+  // Bulk actions at the top of the page, one episode at a time through the row's own pause, resume
+  // and cancel. Like a busy row, a button with nothing to do stays focusable (aria-disabled + guard).
+  let bulkBusy = $state(false)
+  let confirmCancel = $state(false)
+  async function runBulk(ids: string[], action: (id: string) => unknown) {
+    if (bulkBusy || starting || !ids.length) return
+    bulkBusy = true
+    try { for (const id of ids) await action(id) } finally { bulkBusy = false }
+  }
+  const BULK = 'flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold outline-none hover:bg-accent focus-visible:bg-accent aria-disabled:opacity-40 aria-disabled:hover:bg-secondary'
+
   // The options sheet for one episode, opened by its More button or ☰ on its row.
   let sheetFor = $state<string | null>(null)
   const sheetItem = $derived(sheetFor ? $downloads[sheetFor] : undefined)
@@ -189,6 +205,9 @@
           {#if !d.offlineUri}<button type="button" title="Show in folder" aria-label="Show in folder" onclick={() => revealDownload(d.id)} class="grid size-12 place-items-center rounded-xl hover:bg-accent"><FolderOpen size={18} /></button>{/if}
           <button type="button" title="Delete download" aria-label="Delete download" onclick={() => remove(d, deleteDownload)} class="grid size-12 place-items-center rounded-xl text-destructive hover:bg-accent"><Trash2 size={18} /></button>
         {:else}
+          {#if action === 'pause' || action === 'resume'}
+            <button type="button" data-part="downloads.toggle" title={PRIMARY_LABEL[action]} aria-label={`${PRIMARY_LABEL[action]} download`} aria-busy={busy} onclick={() => primary(d)} class="grid size-12 place-items-center rounded-xl hover:bg-accent"><Icon size={18} /></button>
+          {/if}
           <button type="button" title="Cancel download" aria-label="Cancel download" onclick={() => remove(d, cancelDownload)} class="grid size-12 place-items-center rounded-xl hover:bg-accent"><X size={18} /></button>
         {/if}
       </div>
@@ -222,10 +241,27 @@
     </div>
   </div>
 
+  {#if all.length}
+    <div data-part="downloads.bulk" class="mb-6 flex max-w-3xl flex-wrap items-center gap-2" aria-busy={bulkBusy}>
+      <button type="button" data-focusable data-bulk="pause" aria-disabled={!bulk.pause.length || undefined}
+              onclick={() => runBulk(bulk.pause, pauseDownload)} class={BULK}><Pause size={16} /> Pause all</button>
+      <button type="button" data-focusable data-bulk="resume" aria-disabled={!bulk.resume.length || undefined}
+              onclick={() => runBulk(bulk.resume, resumeDownload)} class={BULK}><Download size={16} /> Resume all</button>
+      <button type="button" data-focusable data-bulk="cancel" aria-disabled={!bulk.cancel.length || undefined} aria-haspopup="dialog"
+              onclick={() => { if (bulk.cancel.length && !bulkBusy) confirmCancel = true }} class={BULK}><X size={16} /> Cancel all pending</button>
+      <button type="button" data-focusable data-bulk="clear" aria-disabled={!bulk.clear.length || undefined}
+              onclick={() => { if (!bulkBusy) clearFromList(bulk.clear) }} class={BULK}><ListChecks size={16} /> Clear finished</button>
+      {#if bulk.cleared}
+        <button type="button" data-focusable data-bulk="show-cleared" aria-pressed={showCleared}
+                onclick={() => (showCleared = !showCleared)} class="{BULK} {showCleared ? 'bg-accent' : ''}"><Eye size={16} /> Cleared ({bulk.cleared})</button>
+      {/if}
+    </div>
+  {/if}
+
   {#if !groups.length}
     <div data-part="downloads.empty" class="mt-16 flex flex-col items-center gap-3 text-center">
       <Download size={40} class="text-muted-foreground" />
-      <p class="text-lg font-bold">{all.length ? 'Nothing matches that filter' : 'No downloads yet'}</p>
+      <p class="text-lg font-bold">{filter.trim() ? 'Nothing matches that filter' : all.length ? 'Nothing on this list' : 'No downloads yet'}</p>
       <p class="text-sm text-muted-foreground">Use the download button on an episode to save it to this device.</p>
       <a href="/app/search" data-focusable use:focusWhenIdle={padNow} class="mt-2 rounded-xl bg-primary px-5 py-3 font-bold text-primary-foreground">Find something to watch</a>
     </div>
@@ -252,5 +288,15 @@
 {#if sheetItem}
   <OptionsSheet title={`Episode ${sheetItem.episode}`} subtitle={seriesTitle(sheetItem)}
                 groups={[{ options: sheetOptions }]} onclose={() => (sheetFor = null)} />
+{/if}
+{#if confirmCancel}
+  <!-- Cancelling deletes what each episode has downloaded so far, so it is asked first. -->
+  <OptionsSheet title={`Cancel ${bulk.cancel.length} ${bulk.cancel.length === 1 ? 'download' : 'downloads'}?`}
+                subtitle="What they have downloaded so far is deleted."
+                groups={[{ options: [
+                  { id: 'cancel-all', label: 'Cancel downloads', icon: X, onselect: () => runBulk(bulk.cancel, cancelDownload) },
+                  { id: 'keep', label: 'Keep them', icon: Download, onselect: () => {} },
+                ] }]}
+                onclose={() => (confirmCancel = false)} />
 {/if}
 {#if $gameMode && !$themePresentation?.shell?.hints}<ButtonHints />{/if}
