@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { HISTORY_INDEX, TRAIL_CAP, TRAIL_STORAGE_KEY, historyIndex, previousPath, recordTrail, resetHistoryTrail, settingsOrigin, stepsBackTo } from './history-trail'
+import { HISTORY_METADATA, TRAIL_CAP, TRAIL_STORAGE_KEY, historyIndex, previousPath, recordTrail, resetHistoryTrail, settingsOrigin, stepsBackTo } from './history-trail'
 
 /** Stand in for SvelteKit: put the entry index where its client keeps it, then record the visit. */
 function visit(index: number, path: string, type = 'link') {
-  history.replaceState({ [HISTORY_INDEX]: index }, '', path)
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: index } }, '', path)
   recordTrail(path, type)
 }
 const saved = () => JSON.parse(sessionStorage.getItem(TRAIL_STORAGE_KEY) ?? 'null') as { entries: Record<string, string> } | null
@@ -20,16 +20,18 @@ describe('history trail', () => {
   it('uses the history-state key SvelteKit writes', () => {
     // A cwd-relative path: in a jsdom file Vite rewrites `new URL(…, import.meta.url)` to a web URL.
     const kit = readFileSync('node_modules/@sveltejs/kit/src/runtime/client/constants.js', 'utf8')
-    expect(HISTORY_INDEX).toBe('sveltekit:history')
-    expect(kit).toContain("export const HISTORY_INDEX = 'sveltekit:history'")
+    const client = readFileSync('node_modules/@sveltejs/kit/src/runtime/client/client.js', 'utf8')
+    expect(HISTORY_METADATA).toBe('sveltekit:metadata')
+    expect(kit).toContain("export const HISTORY_METADATA_KEY = 'sveltekit:metadata'")
+    expect(client).toMatch(/\[HISTORY_METADATA_KEY\]: [^\n]*\{\s+historyIndex: \(current_history_index \+=/)
   })
 
   it('reads the index only when it is a finite number', () => {
-    expect(historyIndex({ [HISTORY_INDEX]: 7 })).toBe(7)
+    expect(historyIndex({ [HISTORY_METADATA]: { historyIndex: 7 } })).toBe(7)
     expect(historyIndex({})).toBeNull()
     expect(historyIndex(null)).toBeNull()
-    expect(historyIndex({ [HISTORY_INDEX]: 'x' })).toBeNull()
-    expect(historyIndex({ [HISTORY_INDEX]: Infinity })).toBeNull()
+    expect(historyIndex({ [HISTORY_METADATA]: { historyIndex: 'x' } })).toBeNull()
+    expect(historyIndex({ [HISTORY_METADATA]: { historyIndex: Infinity } })).toBeNull()
   })
 
   it('knows the previous page after pushes, and after a replace', () => {
@@ -66,7 +68,7 @@ describe('history trail', () => {
 
   it('knows nothing while history sits on an entry it did not record (a shallow Back trap)', () => {
     visit(1, '/app/home'); visit(2, '/app/settings/player')
-    history.pushState({ [HISTORY_INDEX]: 3 }, '', '/app/settings/player')
+    history.pushState({ [HISTORY_METADATA]: { historyIndex: 3 } }, '', '/app/settings/player')
     expect(previousPath()).toBeNull()
     expect(stepsBackTo(() => true)).toBeNull()
   })
@@ -94,7 +96,7 @@ describe('history trail', () => {
     sessionStorage.setItem(TRAIL_STORAGE_KEY, '{not json')
     vi.resetModules()
     const fresh = await import('./history-trail')
-    history.replaceState({ [HISTORY_INDEX]: 1 }, '', '/app/home')
+    history.replaceState({ [HISTORY_METADATA]: { historyIndex: 1 } }, '', '/app/home')
     expect(fresh.previousPath()).toBeNull()
     expect(fresh.settingsOrigin()).toBeNull()
   })

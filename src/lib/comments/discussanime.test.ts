@@ -26,9 +26,10 @@ const row = (overrides: Partial<DiscussAnimeThread> = {}): DiscussAnimeThread =>
 describe('Discuss Anime API request', () => {
   it('uses a build-time public key in static Tauri bundles', () => {
     const source = readFileSync(fileURLToPath(new URL('./discussanime.ts', import.meta.url)), 'utf8')
-    expect(source).toContain("from '$env/static/public'")
+    const env = readFileSync(fileURLToPath(new URL('../../env.ts', import.meta.url)), 'utf8')
+    expect(source).toContain("from '$app/env/public'")
     expect(source).toContain('publicEnv as Record<string, string | undefined>')
-    expect(source).not.toContain("from '$env/dynamic/public'")
+    expect(env).toContain('PUBLIC_DISCUSS_ANIME_API_KEY: { public: true, static: true, schema: optional }')
   })
 
   it('uses the MAL id and documented episode pagination parameters', () => {

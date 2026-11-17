@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
   import { homeCollections } from '$lib/catalog/collections/store'
   import CollectionBrowser from '$lib/components/catalog/CollectionBrowser.svelte'
   import CollectionFolderCard from '$lib/components/catalog/CollectionFolderCard.svelte'
-  const collection = $derived($homeCollections.find((item) => item.id === $page.url.searchParams.get('collection')))
-  const folder = $derived(collection?.folders.find((item) => item.id === $page.url.searchParams.get('folder')))
+  const collection = $derived($homeCollections.find((item) => item.id === page.url.searchParams.get('collection')))
+  const folder = $derived(collection?.folders.find((item) => item.id === page.url.searchParams.get('folder')))
 </script>
 
 {#if collection && folder}
   {#key `${collection.id}:${folder.id}`}<CollectionBrowser {collection} {folder} />{/key}
-{:else if collection && !$page.url.searchParams.get('folder')}
+{:else if collection && !page.url.searchParams.get('folder')}
   <div class="px-4 pb-16 pt-24 sm:px-8">
     <a href="/app/home" data-focusable class="text-sm text-muted-foreground">← Home</a>
     <h1 class="mt-3 text-3xl font-black">{collection.title}</h1>

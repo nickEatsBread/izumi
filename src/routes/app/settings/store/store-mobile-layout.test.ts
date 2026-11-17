@@ -67,7 +67,7 @@ describe('Store behaviour', () => {
 
   it('consumes the deep-link parameter and lets a second link replace the first', () => {
     expect(page).toContain("url.searchParams.delete('add')")
-    expect(page).toContain('void goto(url, { replaceState: true, noScroll: true, keepFocus: true })')
+    expect(page).toContain('void goto(url, { replaceState: true, reset: false })')
     expect(page).not.toContain('replaceState(url')
     expect(page).toContain('{#key storesDialog.url}')
   })

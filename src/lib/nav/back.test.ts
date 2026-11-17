@@ -10,7 +10,7 @@ import {
   streamPicker, streamPickerDismissedAt,
 } from '$lib/player/session'
 import { globalSearchOpen } from '$lib/search/global-search'
-import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
+import { HISTORY_METADATA, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { BACK_DEBOUNCE_MS, handleLayeredBack, isDuplicateBackPress, resetLayeredBackForTests } from './back'
 import { pushNavLayer, resetNavLayersForTests } from './layers'
 import { clearBackPending, markBackPending, navInFlight } from './nav-state'
@@ -27,7 +27,7 @@ vi.mock('$lib/player/series-rating', async () => {
 const byId = (id: string) => document.getElementById(id)!
 const at = (path: string) => history.replaceState(null, '', path)
 function visit(index: number, path: string) {
-  history.replaceState({ [HISTORY_INDEX]: index }, '', path)
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: index } }, '', path)
   recordTrail(path, 'link')
 }
 function layer(close = vi.fn()) {

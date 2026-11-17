@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { ripple } from '$lib/actions/ripple'
@@ -18,7 +18,7 @@
   // The lit rail item comes from the shared route table (settings/hierarchy.ts): a sub-page keeps its
   // section lit (Store → Sources and store, Themes → Appearance), and the bare /app/settings landing,
   // which renders Playback on desktop, lights Playback.
-  const active = (href: string) => settingsRailHref($page.url.pathname) === href
+  const active = (href: string) => settingsRailHref(page.url.pathname) === href
   // The lit section, for the sliding indicator: the same rule as aria-current below.
   const litSection = $derived(SETTINGS_SECTIONS.find((section) => active(section.href))?.id ?? null)
   // Rail links keep focus through the navigation (SvelteKit's keep-focus attribute below), so a
@@ -45,7 +45,7 @@
          title={section.title} aria-label={section.title}
          data-nav-region-default={active(section.href) ? '' : undefined}
          aria-current={active(section.href) ? 'page' : undefined}
-         data-sveltekit-keepfocus
+         data-sveltekit-reset="false"
          class="flex h-12 shrink-0 items-center gap-3 rounded-full px-4 text-base transition-colors
            {active(section.href) ? 'bg-foreground/10 font-semibold text-foreground' : 'font-medium text-muted-foreground'}">
         <Icon size={18} class="shrink-0" />
@@ -95,7 +95,7 @@
              title={it.title} aria-label={it.title}
              data-nav-region-default={active(it.href) ? '' : undefined}
              aria-current={active(it.href) ? 'page' : undefined}
-             data-sveltekit-keepfocus onclick={releasePointerFocus}
+             data-sveltekit-reset="false" onclick={releasePointerFocus}
              class="relative flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-sm leading-tight transition-colors focus-visible:outline-offset-[-2px]
                {active(it.href) ? 'font-medium text-foreground' : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'}">
             <Icon size={18} aria-hidden="true" /> {it.railTitle}

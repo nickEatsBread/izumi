@@ -4,8 +4,8 @@ import {
   PUBLIC_ANILIST_CLIENT_ID,
   PUBLIC_MAL_CLIENT_ID,
   PUBLIC_OAUTH_REDIRECT_URI,
-} from '$env/static/public'
-import * as publicEnv from '$env/static/public'
+} from '$app/env/public'
+import * as publicEnv from '$app/env/public'
 import { anilistToken } from '$lib/anilist/auth'
 import {
   TRACKER_RATING_PROVIDERS,

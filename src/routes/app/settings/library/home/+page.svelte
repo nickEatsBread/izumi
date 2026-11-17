@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
   import { homeRowOptions } from '$lib/catalog/registry'
   import { homeCollections } from '$lib/catalog/collections/store'
   import { collectionRowOptions } from '$lib/catalog/collections/rows'
@@ -85,7 +85,7 @@
 
   // Honour a direct provider link, then keep the selection valid as catalog platforms change.
   $effect(() => {
-    const requested = $page.url.searchParams.get('provider') as CatalogHomeTarget | null
+    const requested = page.url.searchParams.get('provider') as CatalogHomeTarget | null
     const available = targets.map((target) => target.selection)
     if (requested && available.includes(requested)) selected = requested
     else if (!available.includes(selected) && available[0]) selected = available[0]

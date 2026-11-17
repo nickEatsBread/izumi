@@ -1,4 +1,4 @@
-import * as publicEnv from '$env/static/public'
+import * as publicEnv from '$app/env/public'
 import { phttp } from '$lib/net/http'
 import type { Media } from '$lib/anilist/types'
 import type { DiscussionThread } from './types'
@@ -121,9 +121,9 @@ export async function fetchDiscussAnimeThread(
   media: Media,
   episode: number | null | undefined,
 ): Promise<DiscussionThread[]> {
-  // Tauri ships an adapter-static client with no server runtime from which `$env/dynamic/public`
-  // could populate values. Bake this public application key into each platform bundle at build
-  // time; the release workflow already supplies it to every build job.
+  // Tauri ships an adapter-static client with no server runtime that could supply a non-static
+  // public variable. Bake this public application key into each platform bundle at build time
+  // (static in src/env.ts); the release workflow already supplies it to every build job.
   // Namespace access keeps local/preview builds valid when the optional public key is absent;
   // release builds still bake it in through their platform-specific build environment.
   const key = (publicEnv as Record<string, string | undefined>).PUBLIC_DISCUSS_ANIME_API_KEY?.trim()

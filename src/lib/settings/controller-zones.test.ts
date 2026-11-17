@@ -3,7 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { get } from 'svelte/store'
 import { isMobile, isTv } from '$lib/platform'
 import { gameMode, playing } from '$lib/player/session'
-import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
+import { HISTORY_METADATA, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { initDpadNav, resetNavLandingForTests } from '$lib/nav'
 import { resetLayeredBackForTests } from '$lib/nav/back'
 import { BROWSER_GAMEPAD_EVENT } from '$lib/nav/browser-gamepad'
@@ -62,7 +62,7 @@ function show(section: Section) {
     else link.removeAttribute('aria-current')
   }
   document.querySelector('[data-settings-pane]')!.innerHTML = pane(section)
-  history.replaceState({ [HISTORY_INDEX]: 2 }, '', `/app/settings/${section}`)
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: 2 } }, '', `/app/settings/${section}`)
 }
 
 function mount(section: Section): HTMLElement {
@@ -98,7 +98,7 @@ const pad = (name: string) => {
 }
 const settle = async () => { for (let turn = 0; turn < 10; turn++) await Promise.resolve() }
 const url = (path: string) => new URL(path, 'http://localhost')
-const SWITCH = { replaceState: true, keepFocus: true, noScroll: true }
+const SWITCH = { replaceState: true, reset: false }
 
 let root: HTMLElement
 let uninstall: () => void = () => {}
@@ -128,9 +128,9 @@ beforeEach(() => {
   gameMode.set(true)
   playing.set(false)
   inputType.set('dpad')
-  history.replaceState({ [HISTORY_INDEX]: 1 }, '', '/app/home')
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: 1 } }, '', '/app/home')
   recordTrail('/app/home', 'link')
-  history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings/subtitles')
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: 2 } }, '', '/app/settings/subtitles')
   recordTrail('/app/settings/subtitles', 'link')
   vi.spyOn(history, 'go').mockImplementation(() => {})
   vi.spyOn(history, 'back').mockImplementation(() => {})
@@ -317,7 +317,7 @@ describe('entering and leaving the pane', () => {
 
   it('the bare landing keeps its rows under Playback, the section it shows', () => {
     show('playback')
-    history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings')
+    history.replaceState({ [HISTORY_METADATA]: { historyIndex: 2 } }, '', '/app/settings')
     row('Skip intros').focus()
     show('playback')
     rail('playback').focus()
@@ -387,9 +387,9 @@ describe('entering Settings', () => {
     show('languages')
     await controllerLanded({ type: 'goto', from: url('/app/settings/subtitles'), to: url('/app/settings/languages') }, root)
     show('playback')
-    history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings')
+    history.replaceState({ [HISTORY_METADATA]: { historyIndex: 2 } }, '', '/app/settings')
     await controllerLanded({ type: 'link', from: url('/app/home'), to: url('/app/settings') }, root)
-    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/languages', { replaceState: true, noScroll: true })
+    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/languages', { replaceState: true })
     expect(document.activeElement).toBe(rail('languages'))
   })
 
@@ -456,9 +456,9 @@ describe('Back: never skips a level, never asks (spec §5.2)', () => {
   })
 
   it('a sub-page steps up to its section before the rail', () => {
-    history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings/sources')
+    history.replaceState({ [HISTORY_METADATA]: { historyIndex: 2 } }, '', '/app/settings/sources')
     recordTrail('/app/settings/sources', 'link')
-    history.replaceState({ [HISTORY_INDEX]: 3 }, '', '/app/settings/sources/manage')
+    history.replaceState({ [HISTORY_METADATA]: { historyIndex: 3 } }, '', '/app/settings/sources/manage')
     recordTrail('/app/settings/sources/manage', 'link')
     row('Text size').focus()
     press('Escape')

@@ -1,4 +1,4 @@
-// Stub for SvelteKit's `$env/static/public` virtual module under Vitest.
+// Stub for SvelteKit's `$app/env/public` virtual module under Vitest.
 // Aliased in vitest.config.ts so tests that import config.ts can resolve.
 export const PUBLIC_ANILIST_CLIENT_ID = '46261'
 export const PUBLIC_MAL_CLIENT_ID = '0c5251cb79a90c57c6901ea9e414a706'
@@ -6,7 +6,3 @@ export const PUBLIC_SIMKL_CLIENT_ID = 'simkl-test-client-id'
 export const PUBLIC_TRAKT_CLIENT_ID = 'trakt-test-client-id'
 export const PUBLIC_OAUTH_REDIRECT_URI = 'https://client.izumi.watch/callback'
 export const PUBLIC_DISCUSS_ANIME_API_KEY = 'dak_00000000000000000000000000000000'
-export const env = {
-  PUBLIC_DISCUSS_ANIME_API_KEY,
-  PUBLIC_TRAKT_CLIENT_ID,
-}

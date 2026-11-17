@@ -26,7 +26,7 @@ const PAGE_TITLES: Array<[string, string]> = [
 describe('phone settings titles', () => {
   it('shows the page title once, as the back-header h1 fed by the settings hierarchy', () => {
     // `childTitle` comes from the shared route table (settings/hierarchy.ts, wired in by commit 10).
-    expect(layout).toContain('const childTitle = $derived(settingsPageTitle($page.url.pathname) ?? m.nav_settings())')
+    expect(layout).toContain('const childTitle = $derived(settingsPageTitle(page.url.pathname) ?? m.nav_settings())')
     expect(layout).toContain('<h1 class="text-lg font-black">{childTitle}</h1>')
     expect(layout).not.toContain('<span class="text-lg font-black">')
   })

@@ -25,7 +25,7 @@ import { SETTING_PARAM } from './search'
 export const RAIL_PREVIEW_MS = 140
 /** A switch from the rail replaces the history entry, so Back leaves Settings in one step however
  *  many sections were previewed, and focus stays where it is. */
-const SWITCH = { replaceState: true, keepFocus: true, noScroll: true } as const
+const SWITCH = { replaceState: true, reset: false } as const
 const RAIL_LINK = '[data-settings-rail] a[href]'
 const LIT_LINK = `${RAIL_LINK}[aria-current="page"]`
 
@@ -80,7 +80,7 @@ export async function controllerLanded(navigation: ControllerNavigation, root: P
   const entering = (!from || !isSettingsPath(from.pathname)) && type !== 'popstate'
   const reveal = to.searchParams.has(SETTING_PARAM) || to.hash !== ''
   if (entering && lastSection && !reveal && normaliseSettingsPath(to.pathname) === SETTINGS_ROOT) {
-    await goto(lastSection, { replaceState: true, noScroll: true })
+    await goto(lastSection, { replaceState: true })
     if (focusRestoreAllowed()) focusRailEntry(root)
     return
   }
