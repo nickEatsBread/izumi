@@ -1,5 +1,6 @@
 import { get } from 'svelte/store'
 import { profiledPersisted } from '$lib/profiles/store'
+import { rememberNowPlayingLanguage } from './language-memory'
 
 export type RememberedTrackKind = 'audio' | 'subtitle'
 
@@ -55,6 +56,8 @@ export function rememberSeriesTrack(
         : { off: true, updatedAt: Date.now() },
     },
   }))
+  // The same pick, as the catalog's language for other titles (language-memory.ts).
+  rememberNowPlayingLanguage(mediaId, kind, track)
 }
 
 export function rememberedSeriesTrack(

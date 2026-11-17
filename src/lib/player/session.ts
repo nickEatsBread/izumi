@@ -96,18 +96,6 @@ export const streamPickerDismissedAt = writable(-1e9)
  *  normal state and saying so would be noise rather than information. */
 export const nextEpisodeReady = writable<{ mediaId: number; episode: number } | null>(null)
 
-/** Optional end-of-episode prompt. The callbacks own stale-play guards in play.ts; the component
- * only presents them and never needs to understand source resolution. */
-export const upNextPrompt = writable<{
-  mediaId: number
-  episode: number
-  title: string
-  artwork?: string
-  seconds: number
-  play: () => void
-  stay: () => void
-} | null>(null)
-
 // Single-window player session. `playing` toggles the in-app player overlay (and
 // the transparent "hole" that lets mpv, embedded in the main window, show
 // through). `nowPlaying` tells the overlay what to display + which ids to fetch
@@ -319,7 +307,8 @@ export const torrentSubtitleState = writable<{
 
 // Bumped each time a subtitle track reaches the playing file after it opened (add-on results,
 // debrid and torrent sidecars). mpv never selects such a track itself, so the overlay re-runs its
-// subtitle choice on every bump.
+// subtitle choice on every bump. The webview's protected player bumps it whenever its audio or
+// subtitle list changes, so the track buttons and menus read the list again.
 export const lateSubtitleRevision = writable(0)
 
 // Cache key (infoHash, else `<mediaId>-<episode>`) of the stream now playing, used

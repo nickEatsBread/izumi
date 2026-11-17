@@ -20,7 +20,7 @@
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching, upNextPrompt } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -326,7 +326,7 @@
   $effect(() => {
     const armed = playerControls.paused === 'summary' && transportPaused && !loading && !eof && !gmMode && !docked && !$isMobile && !$pictureInPicture
       && !$scrubActive && !$playerMenuOpen && !$trackMenuOpen && !$commentsOpen && !subtitleEditorOpen
-      && !sourcePickerVisible && !sourceConnectingVisible && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
+      && !sourcePickerVisible && !sourceConnectingVisible && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
       && !$playerStatsOpen && !remoteCastOwnsPlayback
     pausedIdle = false
     if (!armed) return
@@ -812,15 +812,20 @@
   let ratingShownAt = $state(0)
   let ratingOn = $state(false)
   let ratingFor = ''
+  function showRatingCard() {
+    if (!ratingLabel || ratingFor === loadedKey) return
+    ratingFor = loadedKey
+    ratingShownAt = Date.now()
+    scheduleGmDynamicOverlay()
+  }
   onMount(() => {
-    const off = listen<string>('player-file-loaded', () => {
-      if (!ratingLabel || ratingFor === loadedKey) return
-      ratingFor = loadedKey
-      ratingShownAt = Date.now()
-      scheduleGmDynamicOverlay()
-    })
+    const off = listen<string>('player-file-loaded', showRatingCard)
     return () => { void off.then((unlisten) => unlisten()) }
   })
+  // The webview's protected player loads no mpv file, and the player opening for the first time can
+  // still be registering the listener above when mpv's event comes: the first frame of each load
+  // brings the card too (once per load).
+  $effect(() => { if (firstFrame && ratingLabel) untrack(showRatingCard) })
   $effect(() => {
     if (!ratingShownAt) return
     const frame = requestAnimationFrame(() => (ratingOn = true))
@@ -1087,7 +1092,6 @@
     connecting: sourceConnectingVisible,
     cachingOpen: !!$debridCaching,
     ratingOpen: !!$seriesRatingPrompt,
-    upNextOpen: !!$upNextPrompt,
   }))
   let gmFrameImg = $state<HTMLImageElement | null>(null)
   let gmSpinnerTurn = $state(0)
@@ -1816,7 +1820,7 @@
   // with whatever surface already owns it (the subtitle mover, stats, a prompt, the switching card).
   $effect(() => {
     const onRequest = async () => {
-      if (subtitleEditorOpen || get(playerStatsOpen) || get(upNextPrompt) || get(connecting) || get(debridCaching)
+      if (subtitleEditorOpen || get(playerStatsOpen) || get(connecting) || get(debridCaching)
         || get(seriesRatingPrompt) || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen)
         || get(oskOpen) || topNavLayer()) return
       const picker = get(streamPicker)

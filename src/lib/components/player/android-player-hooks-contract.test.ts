@@ -84,7 +84,7 @@ describe('Android and TV player choices (theme API 6)', () => {
     const idle = effectAfter('let pausedIdle = $state(false)')
     expect(idle).toContain("playerControls.paused === 'summary' && paused")
     for (const guard of ['landscape', 'firstFrameSeen', '!loading', '!recovering', '!atEof', '!locked', '!scrubbing', '!miniLayout',
-      '!handover', '!resolvingNext', '!overlayHidden', '!sheet', '!subtitleEditorOpen', '!$upNextPrompt', '!$seriesRatingPrompt',
+      '!handover', '!resolvingNext', '!overlayHidden', '!sheet', '!subtitleEditorOpen', '!$seriesRatingPrompt',
       '!$oskOpen', '!$navLayerOpen']) expect(idle, guard).toContain(guard)
     expect(idle).toContain('setTimeout(() => { pausedIdle = true; controlsShown = false }, 5000)')
     expect(idle).toContain('return () => clearTimeout(t)')

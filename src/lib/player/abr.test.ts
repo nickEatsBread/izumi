@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTO_ABR, abrMaxHeight, shouldPinFastStart } from './abr'
+import { AUTO_ABR, abrHeightRange, abrMaxHeight, shouldPinFastStart } from './abr'
 
 describe('Auto ABR', () => {
   it('keeps ABR on and does not let Network Information override measured throughput', () => {
@@ -22,5 +22,11 @@ describe('Auto ABR', () => {
     expect(abrMaxHeight('auto', false)).toBe(360)
     expect(abrMaxHeight('auto', true)).toBe(Infinity)
     expect(abrMaxHeight(1080, false)).toBe(Infinity)
+  })
+
+  it('holds a picked height as the whole window, so a reload starts on it', () => {
+    expect(abrHeightRange(1080, true)).toEqual({ minHeight: 1080, maxHeight: 1080 })
+    expect(abrHeightRange('auto', false)).toEqual({ minHeight: 0, maxHeight: 360 })
+    expect(abrHeightRange('auto', true)).toEqual({ minHeight: 0, maxHeight: Infinity })
   })
 })

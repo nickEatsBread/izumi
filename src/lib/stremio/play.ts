@@ -112,7 +112,7 @@ import { rememberRelease } from '$lib/release-search/recent'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { incognito } from '$lib/stores/incognito'
 import { episodeSourceOrigins, rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, upNextPrompt, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, lateSubtitleRevision, playerSleep, playbackRecovery, type StreamPickerState } from '$lib/player/session'
+import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, lateSubtitleRevision, playerSleep, playbackRecovery, type StreamPickerState } from '$lib/player/session'
 import type { Writable } from 'svelte/store'
 import {
   DIRECT_TORRENT_START_TIMEOUT_MS,
@@ -131,7 +131,7 @@ import { markAlive, markDead, markRouteDead } from './dead-sources'
 import { shareableSourceForDevice } from '$lib/watch-together/source'
 import {
   autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
-  autoplayNext, upNextOverlay, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
+  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   sourcePriority, sourcePriorityMode, continueSourcePreference, adaptiveSourceMode,
   audioProcessing, dolbyVisionOutputMode, rawMpvOptions, videoQualityPreset,
@@ -170,22 +170,9 @@ function continueToNextEpisode(
   nextEpisode: number,
   onState: (s: PlayState) => void,
 ): void {
-  const play = () => {
-    const active = get(nowPlaying)
-    if (active.id !== media.id || active.episode !== currentEpisode) return
-    upNextPrompt.set(null)
-    resolveAndPlayBest(media, nextEpisode, onState, true)
-  }
-  if (!get(upNextOverlay)) { play(); return }
-  upNextPrompt.set({
-    mediaId: media.id,
-    episode: nextEpisode,
-    title: title(media),
-    artwork: banner(media) || cover(media),
-    seconds: 10,
-    play,
-    stay: () => upNextPrompt.set(null),
-  })
+  const active = get(nowPlaying)
+  if (active.id !== media.id || active.episode !== currentEpisode) return
+  resolveAndPlayBest(media, nextEpisode, onState, true)
 }
 import { shouldBeginNextEpisodePreload } from '$lib/player/preload-policy'
 import type { Media } from '$lib/anilist/types'
@@ -3024,7 +3011,6 @@ export async function playStream(
     }
     return
   }
-  upNextPrompt.set(null)
   const trace = currentResolveTrace(media.id, episode) ?? beginResolveTrace({
     mediaId: media.id,
     episode,

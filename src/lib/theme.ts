@@ -183,6 +183,12 @@ function apply() {
     const color = presentation.player.seekbarColor
     root.style.setProperty('--theme-seekbar-color', color.startsWith('#') || color === 'transparent' ? color : `hsl(var(--${color}))`)
   } else root.style.removeProperty('--theme-seekbar-color')
+  // API 9 `player.menu`: the player popups' rows (app.css holds izumi's own 36 and 12 px).
+  const menu = presentation?.player?.menu
+  if (menu?.rowHeight !== undefined) root.style.setProperty('--theme-player-menu-row-height', `${menu.rowHeight}px`)
+  else root.style.removeProperty('--theme-player-menu-row-height')
+  if (menu?.rowPadding !== undefined) root.style.setProperty('--theme-player-menu-row-padding', `${menu.rowPadding}px`)
+  else root.style.removeProperty('--theme-player-menu-row-padding')
   // The page keeps its bottom margin clear of the tab bar; a taller or floating bar needs more.
   const bottomNav = presentation?.shell?.bottomNav
   if (bottomNav) {

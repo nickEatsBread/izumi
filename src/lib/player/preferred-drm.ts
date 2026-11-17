@@ -1,6 +1,7 @@
 import { langsEqual, normalizeLang } from '$lib/stremio/sublang'
 import { pickSubtitleTrackId } from './track-policy'
-import type { DrmAudioChoice, DrmSubtitle, StreamDrm } from './drm'
+import { matchRememberedTrack, type RememberedTrack } from './track-preferences'
+import { drmTextType, type DrmAudioChoice, type DrmSubtitle, type StreamDrm } from './drm'
 
 /** How long the first encrypted load may wait for sidecar/hardsub catalog. The
  *  overlay spinner is already up; waiting here avoids a second Shaka load. */
@@ -107,8 +108,22 @@ export async function refreshDrmSource(
   }
 }
 
+/** The text tracks a protected player lists once loaded, in its order: side-loaded tracks first,
+ *  labelled as they are added, then the burned-in presentations. */
+function textTrackChoices(subtitles: DrmSubtitle[]) {
+  const soft = subtitles.flatMap((track, index) => track.url && !track.switchUrl
+    ? [{ index, type: drmTextType(track.kind), lang: track.lang, title: track.title || track.lang || (track.kind === 'captions' ? 'CC' : 'Subtitle') }]
+    : [])
+  const hard = subtitles.flatMap((track, index) => track.switchUrl && track.kind !== 'captions'
+    ? [{ index, type: 'sub', lang: track.lang, title: track.title }]
+    : [])
+  return [...soft, ...hard].map((track, id) => ({ ...track, id }))
+}
+
 /** Pick the encrypted presentation that matches the user's audio/subtitle prefs.
- *  Alternate audio and burned-in subs are separate manifests (`switchUrl`), not muxed tracks. */
+ *  Alternate audio and burned-in subs are separate manifests (`switchUrl`), not muxed tracks.
+ *  The series' remembered tracks come first, as the player applies them once loaded: choosing
+ *  them here keeps that from loading a second manifest after the first frame. */
 export function preferredDrmPresentation(input: {
   url: string
   audioLang?: string
@@ -119,10 +134,22 @@ export function preferredDrmPresentation(input: {
   /** Subtitle languages, most wanted first; `['none']` = off. */
   preferredSub: string[]
   switchAudio?: boolean
+  rememberedAudio?: RememberedTrack
+  rememberedSubtitle?: RememberedTrack
 }): { url: string; audioLang?: string; subtitles: DrmSubtitle[] } {
   let url = input.url
   let audioLang = input.audioLang
-  if (input.switchAudio !== false) {
+  const audioChoices = input.audioTracks ?? []
+  const remembered = audioChoices.length > 1
+    ? matchRememberedTrack(audioChoices.map((track, id) => ({ id, type: 'audio', lang: track.lang, title: track.title })), input.rememberedAudio)
+    : undefined
+  const rememberedAudio = remembered ? audioChoices[remembered.id] : undefined
+  if (rememberedAudio?.switchUrl) {
+    if (!langsEqual(audioLang, rememberedAudio.lang)) {
+      url = rememberedAudio.switchUrl
+      audioLang = rememberedAudio.lang ?? audioLang
+    }
+  } else if (input.switchAudio !== false) {
     // Alternate audio is a separate manifest. Walk the wanted languages: the current audio stops the
     // walk, the first other language with a manifest is switched to.
     for (const lang of input.preferredAudio) {
@@ -136,6 +163,7 @@ export function preferredDrmPresentation(input: {
     }
   }
 
+  const rememberedText = matchRememberedTrack(textTrackChoices(input.subtitles ?? []), input.rememberedSubtitle)
   const choices = (input.subtitles ?? []).map((track, id) => ({
     id,
     type: track.kind === 'captions' ? 'caption' : 'sub',
@@ -143,7 +171,11 @@ export function preferredDrmPresentation(input: {
     title: track.title,
     switchUrl: track.switchUrl,
   }))
-  const picked = pickSubtitleTrackId(choices, audioLang ?? input.preferredAudio[0], input.preferredSub)
+  const picked = rememberedText === null
+    ? 'no'
+    : rememberedText
+      ? rememberedText.index
+      : pickSubtitleTrackId(choices, audioLang ?? input.preferredAudio[0], input.preferredSub)
   if (picked === 'no' || typeof picked !== 'number') {
     return { url: withManifestQuery(url, { hard: undefined }), audioLang, subtitles: [] }
   }

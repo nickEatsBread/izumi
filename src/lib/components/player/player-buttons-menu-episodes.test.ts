@@ -94,7 +94,7 @@ describe('episode panel', () => {
   it('plays a picked episode through the dock rail route and closes', () => {
     expect(panel).toContain('await playEpisodeInPlayer(media, n)')
     expect(panel).toContain('onclick={onclose} aria-label="Close episodes"')
-    expect(controls).toContain('{#if showEpisodes && !gm}<PlayerEpisodes onclose={() => (showEpisodes = false)} />{/if}')
+    expect(controls).toContain('{#if showEpisodes && !gm}<PlayerEpisodes onclose={() => (showEpisodes = false)} onseries={openSeries} />{/if}')
   })
 
   it('stays neutral: no theme accent on the panel', () => {
