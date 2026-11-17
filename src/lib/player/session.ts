@@ -319,7 +319,8 @@ export const torrentSubtitleState = writable<{
 
 // Bumped each time a subtitle track reaches the playing file after it opened (add-on results,
 // debrid and torrent sidecars). mpv never selects such a track itself, so the overlay re-runs its
-// subtitle choice on every bump.
+// subtitle choice on every bump. The webview's protected player bumps it whenever its audio or
+// subtitle list changes, so the track buttons and menus read the list again.
 export const lateSubtitleRevision = writable(0)
 
 // Cache key (infoHash, else `<mediaId>-<episode>`) of the stream now playing, used

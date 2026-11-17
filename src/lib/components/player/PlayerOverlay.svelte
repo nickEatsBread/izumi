@@ -812,15 +812,20 @@
   let ratingShownAt = $state(0)
   let ratingOn = $state(false)
   let ratingFor = ''
+  function showRatingCard() {
+    if (!ratingLabel || ratingFor === loadedKey) return
+    ratingFor = loadedKey
+    ratingShownAt = Date.now()
+    scheduleGmDynamicOverlay()
+  }
   onMount(() => {
-    const off = listen<string>('player-file-loaded', () => {
-      if (!ratingLabel || ratingFor === loadedKey) return
-      ratingFor = loadedKey
-      ratingShownAt = Date.now()
-      scheduleGmDynamicOverlay()
-    })
+    const off = listen<string>('player-file-loaded', showRatingCard)
     return () => { void off.then((unlisten) => unlisten()) }
   })
+  // The webview's protected player loads no mpv file, and the player opening for the first time can
+  // still be registering the listener above when mpv's event comes: the first frame of each load
+  // brings the card too (once per load).
+  $effect(() => { if (firstFrame && ratingLabel) untrack(showRatingCard) })
   $effect(() => {
     if (!ratingShownAt) return
     const frame = requestAnimationFrame(() => (ratingOn = true))
