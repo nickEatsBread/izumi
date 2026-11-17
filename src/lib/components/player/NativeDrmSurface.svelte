@@ -9,7 +9,10 @@
   import { get } from 'svelte/store'
   import { languagesForMedia, mpvLanguageList } from '$lib/settings/catalog-languages'
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, waitForCatalog, withManifestQuery } from '$lib/player/preferred-drm'
-  import { nowPlayingMedia, playerNotice } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, playerNotice } from '$lib/player/session'
+  import { rememberedSeriesTrack } from '$lib/player/track-preferences'
+  import { preferredQuality } from '$lib/settings/ui'
+  import { preferredDrmQuality } from './drm-quality'
   import { assFontFamilies, fontsForFamilies, isAssSubtitle, parseSubtitleFonts, type SubtitleFont } from '$lib/player/ass-subtitles'
   import { langsEqual, normalizeLang } from '$lib/stremio/sublang'
   import { listenSafe } from '$lib/util/listen'
@@ -173,6 +176,7 @@
       preferredAudio: languages.audio,
       preferredSub: languages.subtitle,
       switchAudio: false,
+      rememberedSubtitle: rememberedSeriesTrack(get(nowPlaying).id, 'subtitle'),
     })
     const chosen = hard ? undefined : pick.subtitles[0]?.url
     const soft = liveSubs.filter((t) => t.url && !t.switchUrl).map((t) => ({
@@ -206,6 +210,8 @@
         videoPath = prepared.mode === 'hardware' ? 'hardware' : 'module'
         activeHeight = prepared.height
         heights = prepared.heights.filter((h) => h >= 240)
+        // The setting names a ceiling; the menu ticks the rung it gave.
+        if (qualityMode !== 'auto') qualityMode = preferredDrmQuality(String(qualityMode), heights)
         emitQuality()
       }
       return true
@@ -323,6 +329,10 @@
     activeManifest = ''
     heights = []
     activeHeight = 0
+    // Each load starts on the "Preferred quality" setting, as the webview's player does; the player
+    // takes the tallest rung at or below it. A pick from the menu then lasts until the next load.
+    const preferred = Number(get(preferredQuality))
+    qualityMode = Number.isFinite(preferred) && preferred > 0 ? preferred : 'auto'
     setPreviews(previewUrl)
     setNativeDrm(session)
     if (activeRelease && activeRelease !== (drm.releaseUrl ?? '')) release(activeRelease)
@@ -339,6 +349,8 @@
       preferredAudio: languagesForMedia(get(nowPlayingMedia)?.media).audio,
       preferredSub: languagesForMedia(get(nowPlayingMedia)?.media).subtitle,
       switchAudio: false,
+      rememberedAudio: rememberedSeriesTrack(get(nowPlaying).id, 'audio'),
+      rememberedSubtitle: rememberedSeriesTrack(get(nowPlaying).id, 'subtitle'),
     })
     const initial = pick.url
     // The track that opens first gets its fonts before the stream starts (bounded); the others'

@@ -123,6 +123,72 @@ describe('preferredDrmPresentation', () => {
     expect(picked.url).not.toContain('audio=')
     expect(picked.audioLang).toBe('ja-JP')
   })
+
+  // The series' remembered pick is what the player applies once loaded; choosing it before the first
+  // load is what keeps a second manifest load (first frame, black, buffering) out of every episode.
+  it('opens on the series remembered audio even when the source served another', () => {
+    const picked = preferredDrmPresentation({
+      url,
+      audioLang: 'en-US',
+      audioTracks,
+      preferredAudio: ['jpn'],
+      preferredSub: ['none'],
+      switchAudio: false,
+      rememberedAudio: { lang: 'ja-jp', updatedAt: 1 },
+    })
+    expect(picked.url).toBe('http://127.0.0.1/v/abc/manifest.mpd?audio=ja-JP')
+    expect(picked.audioLang).toBe('ja-JP')
+  })
+
+  it('keeps the served manifest when it already has the remembered audio', () => {
+    const picked = preferredDrmPresentation({
+      url,
+      audioLang: 'ja-JP',
+      audioTracks,
+      preferredAudio: ['eng'],
+      preferredSub: ['none'],
+      rememberedAudio: { lang: 'ja-jp', updatedAt: 1 },
+    })
+    expect(picked.url).toBe(url)
+  })
+
+  it('opens the remembered burned-in presentation, on the remembered audio', () => {
+    const picked = preferredDrmPresentation({
+      url,
+      audioLang: 'ja-JP',
+      audioTracks,
+      subtitles: [{ ...englishHard, lang: 'de-DE', switchUrl: 'http://127.0.0.1/v/abc/manifest.mpd?hard=de-DE' }],
+      preferredAudio: ['jpn'],
+      preferredSub: ['eng'],
+      rememberedAudio: { lang: 'en-us', updatedAt: 1 },
+      rememberedSubtitle: { lang: 'de-de', updatedAt: 1 },
+    })
+    expect(picked.url).toBe('http://127.0.0.1/v/abc/manifest.mpd?hard=de-DE&audio=en-US')
+  })
+
+  it('opens clean when the series remembers subtitles off or a side-loaded track', () => {
+    const off = preferredDrmPresentation({
+      url,
+      audioLang: 'ja-JP',
+      subtitles: [englishHard],
+      preferredAudio: ['jpn'],
+      preferredSub: ['eng'],
+      rememberedSubtitle: { off: true, updatedAt: 1 },
+    })
+    expect(off.url).toBe(url)
+    expect(off.subtitles).toEqual([])
+    // The side-loaded track is listed first and carries the remembered label, as the player shows it.
+    const soft = preferredDrmPresentation({
+      url,
+      audioLang: 'ja-JP',
+      subtitles: [englishHard, englishSidecar],
+      preferredAudio: ['jpn'],
+      preferredSub: ['eng'],
+      rememberedSubtitle: { lang: 'en-us', title: 'english', updatedAt: 1 },
+    })
+    expect(soft.url).toBe(url)
+    expect(soft.subtitles).toEqual([englishSidecar])
+  })
 })
 
 describe('selectOfflineTracks', () => {

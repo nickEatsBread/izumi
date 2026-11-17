@@ -16,7 +16,7 @@
   import { get } from 'svelte/store'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, shouldAutoReloadHardsub, waitForCatalog } from '$lib/player/preferred-drm'
-  import { AUTO_ABR, abrMaxHeight, shouldPinFastStart } from '$lib/player/abr'
+  import { AUTO_ABR, abrHeightRange, shouldPinFastStart } from '$lib/player/abr'
   import { preferredDrmQuality } from './drm-quality'
   import { gifCapturePlan } from '$lib/player/gif-settings'
   import { BUFFER_SPINNER_DELAY_MS, bufferSpinnerAction } from '$lib/player/overlay-loading'
@@ -25,7 +25,7 @@
     warmCapturePresentation,
     type CapturePresentation,
   } from '$lib/player/capture-presentation'
-  import { nowPlaying, nowPlayingMedia, playerNotice } from '$lib/player/session'
+  import { lateSubtitleRevision, nowPlaying, nowPlayingMedia, playerNotice } from '$lib/player/session'
   import { languagesForMedia } from '$lib/settings/catalog-languages'
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
   import { listenSafe } from '$lib/util/listen'
@@ -106,6 +106,7 @@
   let livePreviewUrl = ''
   let activeManifest = ''
   let switching = false
+  let switchPaused = false
   let booting = false
   let loadKey = ''
   let skipHardReload = false
@@ -256,7 +257,7 @@
       pos,
       dur,
       buffer: video ? bufferedEnd(video) : 0,
-      paused: video?.paused ?? true,
+      paused: switching ? switchPaused : video?.paused ?? true,
       buffering,
       ended,
       firstFrame,
@@ -368,21 +369,24 @@
     switching = true
     const time = video.currentTime
     const paused = video.paused
+    // The new manifest starts paused; reporting that would read as the viewer's pause and hide the
+    // spinner over the emptied picture.
+    switchPaused = paused
     const previous = activeManifest || url
     buffering = true
     publish()
     try {
       await player.load(nextUrl, time)
       activeManifest = nextUrl
+      if (!paused) {
+        try { await video.play() } catch { /* autoplay may wait */ }
+      }
       if (nextUrl.includes('/v/') && nextUrl.includes('audio=')) await refreshSidecarSource()
       if (nextUrl.includes('hard=')) {
         selectedCcid = -1
         try { player.selectTextTrack?.(null) } catch { /* burned-in */ }
       } else {
         await attachSubtitles()
-      }
-      if (!paused) {
-        try { await video.play() } catch { /* autoplay may wait */ }
       }
       syncAudioTracks()
       syncTextTracks()
@@ -461,18 +465,15 @@
     catch { try { player.configure({ abr: { enabled } }) } catch { /* keep going */ } }
   }
 
-  function setAbrMaxHeight(height: number) {
+  function setAbrHeights(range: { minHeight: number; maxHeight: number }) {
     if (!player) return
-    try { player.configure('abr.restrictions.maxHeight', height) }
-    catch {
-      try { player.configure({ abr: { restrictions: { maxHeight: height } } }) } catch { /* keep going */ }
-    }
+    try { player.configure({ abr: { restrictions: range } }) } catch { /* keep going */ }
   }
 
   function applyAbrPolicy() {
-    if (!player || qualityMode !== 'auto') return
-    setAbrEnabled(true)
-    setAbrMaxHeight(abrMaxHeight(qualityMode, firstFrame))
+    if (!player) return
+    setAbrEnabled(qualityMode === 'auto')
+    setAbrHeights(abrHeightRange(qualityMode, firstFrame))
   }
 
   type ShakaVariant = DrmDolbyVariant
@@ -486,8 +487,10 @@
     const userQualities = new Set([1080, 720, 480])
     const heights = [...new Set(available.map((track) => Number(track.height) || 0).filter((height) => userQualities.has(height)))]
       .sort((a, b) => b - a)
-    const activeHeight = Number(available.find((track) => track.active)?.height)
-      || videoEl?.videoHeight
+    // The picture's own height: Shaka's active variant is the one being fetched, which reaches the
+    // screen only after the buffered rung plays out (up to 30 s on an Auto climb).
+    const activeHeight = videoEl?.videoHeight
+      || Number(available.find((track) => track.active)?.height)
       || 0
     return { mode: qualityMode, activeHeight, heights }
   }
@@ -534,7 +537,7 @@
     const best = matching.reduce((current, next) =>
       (Number(next.bandwidth) || 0) > (Number(current.bandwidth) || 0) ? next : current,
     )
-    setAbrEnabled(false)
+    applyAbrPolicy()
     if (!best.active) {
       try { player.selectVariantTrack(best, clearBuffer) } catch { /* keep current */ }
     }
@@ -580,15 +583,25 @@
    * discovering them after the clean MPD caused a full second load and the visible
    * duration sequence 0 → duration → 0 → duration. */
   function preferredInitialManifest(): string {
+    const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+    const series = get(nowPlaying).id
     return preferredDrmPresentation({
       url,
       audioLang: liveAudioLang || audioLang,
       subtitles: liveSubs,
       audioTracks: liveAudio,
-      preferredAudio: languagesForMedia(get(nowPlayingMedia)?.media).audio,
-      preferredSub: languagesForMedia(get(nowPlayingMedia)?.media).subtitle,
+      preferredAudio: languages.audio,
+      preferredSub: languages.subtitle,
       switchAudio: false,
+      rememberedAudio: rememberedSeriesTrack(series, 'audio'),
+      rememberedSubtitle: rememberedSeriesTrack(series, 'subtitle'),
     }).url
+  }
+
+  /** The audio language now playing: an alternate-audio manifest names it, which the source's catalog
+   *  (it describes the presentation it served first) does not follow. */
+  function currentAudioLang() {
+    return manifestQuery('audio') || liveAudioLang || audioLang
   }
 
   function setSid(id: number) {
@@ -670,7 +683,7 @@
   function syncAudioTracks() {
     if (!player) return
     if (liveAudio.length > 1) {
-      const current = liveAudioLang || audioLang || manifestQuery('audio')
+      const current = currentAudioLang()
       audioTracks = liveAudio.map((track, i) => ({
         id: i + 1,
         type: 'audio',
@@ -680,6 +693,7 @@
         switchUrl: track.switchUrl,
       }))
       if (audioTracks.length && !audioTracks.some((t) => t.selected)) audioTracks[0]!.selected = true
+      announceTracks()
       return
     }
     const audios = (player.getAudioTracks?.() ?? []) as ShakaAudio[]
@@ -718,6 +732,18 @@
       audioTracks = [...seen.values()]
     }
     if (audioTracks.length && !audioTracks.some((t) => t.selected)) audioTracks[0]!.selected = true
+    announceTracks()
+  }
+
+  // The bar's Audio and Subtitles buttons and the track menus read the lists once, when they open.
+  // These lists land in steps after an episode starts (the manifest, the source's catalog, then the
+  // side-loaded subtitles), so each change is announced the way a late subtitle is: they read again.
+  let trackSignature = ''
+  function announceTracks() {
+    const signature = JSON.stringify([...audioTracks, ...textTracks].map((t) => [t.type, t.id, t.lang, t.title, t.selected]))
+    if (signature === trackSignature) return
+    trackSignature = signature
+    lateSubtitleRevision.update((n) => n + 1)
   }
 
   function syncTextTracks() {
@@ -748,6 +774,7 @@
       } satisfies DrmTrack
     })
     textTracks = [...shaka, ...extras]
+    announceTracks()
     syncAssRenderer()
   }
 
@@ -880,7 +907,7 @@
     if (remembered === null) { subtitleChosen = true; setSid(-1); return }
     if (remembered) { subtitleChosen = true; remembered.type === 'caption' ? setCcid(remembered.id) : setSid(remembered.id); return }
     const languages = languagesForMedia(get(nowPlayingMedia)?.media)
-    const id = pickSubtitleTrackId(textTracks, liveAudioLang || audioLang || languages.audio[0], languages.subtitle)
+    const id = pickSubtitleTrackId(textTracks, currentAudioLang() || languages.audio[0], languages.subtitle)
     if (id === undefined) return
     // Only a burned-in presentation reloads the stream. Shaka numbers side-loaded tracks from 1e9, so
     // the id range alone would hold back every soft track too.
@@ -1519,6 +1546,8 @@
     previewTried = ''
     previewJob = undefined
     publish()
+    // The last episode's lists must not stay on the bar while this one loads.
+    announceTracks()
     setDrmEngine(engine)
     await teardown(false)
     if (activeReleaseUrl && activeReleaseUrl !== (drm.releaseUrl ?? '')) {
@@ -1652,7 +1681,11 @@
       try { await video.play() } catch { /* autoplay may wait for a gesture */ }
       warmAdaptiveQuality()
       publish()
-      void sidecar.then(() => {
+      void sidecar.then(async () => {
+        if (gen !== loadGen) return
+        // Opening on another audio version moved the source to it: its catalog now lists that
+        // version's subtitles, as after a switch from the menu (reloadManifest).
+        if (manifestQuery('audio')) await refreshSidecarSource()
         if (gen !== loadGen) return
         syncAudioTracks()
         void attachSubtitles()
@@ -1726,6 +1759,7 @@
     publish()
   }}
   onloadedmetadata={() => publish()}
+  onresize={() => emitQualityInfo()}
   onpause={() => { publish(); emitPauseChange() }}
   onplay={() => { publish(); emitPauseChange() }}
   onwaiting={() => setBuffering(true)}
