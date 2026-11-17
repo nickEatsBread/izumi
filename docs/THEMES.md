@@ -157,6 +157,38 @@ A package declares `themeApi: 5` to use these values; the validator refuses them
 
 The hooks added with them (`page-step`, `block.grid`, `hero.edge`, `nav.action`, `nav.action.label` and `nav.item.indicator`) are not gated. Neither is the Home row `upcoming` ("Upcoming Next Season": next season's titles by popularity), which a layout names by role like any other; an older client skips a role it lacks.
 
+### Theme API 9
+
+A package declares `themeApi: 9` to use the key below; the validator refuses it in an older package, and a client older than API 9 refuses the package whole with its "needs a newer izumi" message.
+
+- **Theme settings (`design.settings`, up to 16).** Choices the viewer makes about the theme, which its stylesheet reads. The viewer changes them on the theme's page (Settings → Themes → the theme, under *Settings*) and in Settings → Appearance → Theme, where each row is named after the theme ("Crunchy Deck · Card corners"). Appearance shows the settings of the theme in use and, when the player theme is another theme with settings, that theme's too. Values are kept per device and per installed theme, survive updates of the theme (a value that no longer fits its setting falls back to the default), and *Reset* returns to the theme's defaults.
+
+  ```jsonc
+  "settings": [
+    { "key": "heading", "label": "Row heading colour", "description": "The colour of each row's title", "type": "color", "default": "#e5e5e5" },
+    { "key": "corners", "label": "Card corners", "type": "choice", "default": "soft",
+      "options": [{ "value": "square", "label": "Square" }, { "value": "soft", "label": "Soft" }, { "value": "round", "label": "Round" }] },
+    { "key": "card-titles", "label": "Titles under cards", "type": "toggle", "default": true }
+  ]
+  ```
+
+  | Field | Rules |
+  | --- | --- |
+  | `key` | Lowercase letters, digits and hyphens, starting with a letter, up to 32; unique in the list. |
+  | `label` | Up to 48 characters. |
+  | `description` | Optional, up to 160 characters. |
+  | `type` | `toggle` (default `true` or `false`), `choice` (2 to 8 `options`, each `{ value, label }` with a value like a key; the default is one of them) or `color` (default `#rrggbb`). |
+
+  While the theme paints the window (as the app theme, a screen's theme or the player theme), `<html>` carries each setting:
+
+  | Type | On `<html>` | Read it with |
+  | --- | --- | --- |
+  | `toggle` | `data-theme-setting-<key>="on"` or `"off"` | `:scope[data-theme-setting-card-titles="off"] [data-part="card.title"] { display: none }` |
+  | `choice` | `data-theme-setting-<key>="<value>"` | `:scope[data-theme-setting-corners="round"] [data-part="card.art"] { border-radius: 1.25rem }` |
+  | `color` | `--theme-setting-<key>: #rrggbb` | `[data-part="row.title"] { color: var(--theme-setting-heading) }` |
+
+  They are removed when another theme takes over, and absent in safe mode. Settings only feed the stylesheet: they don't change presentation keys, tokens or the layout. Demo: `docs/theme-packages/theme-settings-demo.json`. Format: `src/lib/themes/theme-settings.ts` (no imports, so the catalog's validator can copy it).
+
 ### Theme API 8
 
 A package declares `themeApi: 8` to use the keys below; the validator refuses them in an older package, and a client older than API 8 refuses the package whole with its "needs a newer izumi" message.
@@ -945,6 +977,7 @@ The client retains the existing limit of 24 saved designs. Install writes attemp
 | Host integration | `Hero.svelte` (its `list` action opens `MediaListSheet.svelte`), `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte` (with `PreviewCard.svelte` and `expand-pos.ts`), `BackdropTrailer.svelte`, `ContinueCard.svelte`, `SearchResults.svelte`, `AnimeDetail.svelte`, `Tabs.svelte`, `EpisodeCard.svelte`, `Sidebar.svelte`, `BottomNav.svelte`, `Seekbar.svelte`, `EpisodeList.svelte`, `EpisodeToolbar.svelte`, `SeasonPicker.svelte`, `FactList.svelte`, `RichMetadata.svelte` |
 | API 8 loading screens | `src/lib/components/themes/LoadingScreen.svelte` (hosts: `AnimeDetail.svelte`, `CatalogMediaDetail.svelte`, `SourceConnecting.svelte`, `PlayerOverlay.svelte`), `src/lib/themes/loading-clock.ts`, `episodeLoadingModel` in `host-model.ts` |
 | API 8 schedule entry | `airingDisplayModel` in `host-model.ts`, `AgendaWeek.svelte`, `DayColumn.svelte` (with `ScheduleGrid.svelte`, `PersonalSchedule.svelte`, `ScheduleNextUp.svelte` and `src/routes/app/schedule/+page.svelte` for the hooks) |
+| API 9 theme settings | `src/lib/themes/theme-settings.ts` (format and `<html>` hooks), `src/lib/themes/theme-setting-values.ts` (values per installed theme), `ThemeSettingsRows.svelte` (on `ThemePane.svelte` and the Appearance page), applied in `src/lib/theme.ts` |
 | API 8 theme screens | `themeScreens`, `homeLayoutFor` and `openThemeScreen` in `src/lib/themes/layout-state.ts`, `src/routes/app/screen/[id]/+page.svelte`, `src/lib/components/shell/theme-screen-icons.ts`, `Sidebar.svelte`, `NavDrawer.svelte`, `NavPanel.svelte` |
 | TV rows, caption template, grid keyboard and player buttons | `src/lib/nav/anchor.ts` and `revealAnchored` in `src/lib/nav/index.ts`, `card-registry.ts`, `src/lib/components/search/GridKeyboard.svelte` (with `grid-keyboard.ts` and `searchGridKeyboard` in `runtime.ts`), `AndroidPlayer.svelte` and `Controls.svelte` |
 

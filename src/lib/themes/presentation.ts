@@ -218,7 +218,7 @@ export interface RowPresentation {
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
  *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
-export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
 /** The newest theme API this client renders. API 3 adds stylesheets, fonts, template parts,
  *  airing and slide fields, and the text wordmark. API 4 adds the phone root size, scroll chrome,
  *  the series header buttons, fact keys, names and formats, the Information section, the synopsis
@@ -231,8 +231,8 @@ export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
  *  choice, the kind of title and the Continue Watching empty state. API 6 adds the TV block (applied on
  *  Android TV and in Game mode), the freshness badge field, artwork on card templates and the Suggested
  *  tab name; later API 6 keys add player controls, the expanding preview, trailer backgrounds, anchored
- *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. API 8 adds the loading screens (`loading`), the schedule entry template and fields (`schedule`) and theme screens (`layout.screens`). */
-export const LATEST_THEME_API: ThemeApi = 8
+ *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. API 8 adds the loading screens (`loading`), the schedule entry template and fields (`schedule`) and theme screens (`layout.screens`). API 9 adds theme settings (`design.settings`, theme-settings.ts). */
+export const LATEST_THEME_API: ThemeApi = 9
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
  *  API 3 `bottom`: on phones the tabs become a bar fixed to the bottom of the screen in place of the

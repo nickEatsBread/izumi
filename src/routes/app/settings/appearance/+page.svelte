@@ -15,9 +15,10 @@
   import { settingsControllerMode } from '$lib/settings/surface'
   import { m } from '$lib/paraglide/messages.js'
   import { catalogLabel, catalogScreen, customScreens } from '$lib/settings/catalog'
-  import { playerTheme, screenThemeName, screenThemeOptions, setScreenTheme, type ScreenThemeRef } from '$lib/themes/screen-theme'
+  import { effectiveStudioTheme, effectiveThemePreset, playerTheme, resolveScreenTheme, screenThemeName, screenThemeOptions, setScreenTheme, type ScreenThemeRef } from '$lib/themes/screen-theme'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { studioThemes } from '$lib/settings/theme-studio'
+  import ThemeSettingsRows from '$lib/components/settings/ThemeSettingsRows.svelte'
   import { playStartupAnimationNow, startupAnimationEnabled, startupAnimationInfo } from '$lib/startup/animation'
 
   const presets = [
@@ -28,6 +29,7 @@
     { value: 'light', label: 'Light', description: 'Light, crimson accent' },
     { value: 'system', label: 'System', description: 'Follows your device' },
   ]
+  const playerDesign = $derived(resolveScreenTheme($playerTheme, $studioThemes)?.design)
   // Installed and Theme Studio themes set the preset to 'custom': show it, but it is chosen in Themes.
   const presetOptions = $derived($themePreset === 'custom'
     ? [...presets, { value: 'custom', label: 'Custom', description: 'From Themes or Theme Studio', disabled: true }]
@@ -63,6 +65,13 @@
           <button type="button" data-focusable onclick={() => setScreenTheme($catalogScreen, null)} class="min-h-10 rounded-lg bg-secondary px-3 text-sm font-bold hover:bg-accent">Use app theme here</button>
         {/snippet}
       </SettingsRow>
+    {/if}
+    <!-- API 9: the settings of the theme showing here, then the player theme's when it is another design. -->
+    {#if $effectiveThemePreset === 'custom' && $effectiveStudioTheme.settings?.length}
+      <ThemeSettingsRows design={$effectiveStudioTheme} named />
+    {/if}
+    {#if playerDesign?.settings?.length && playerDesign.id !== $effectiveStudioTheme.id}
+      <ThemeSettingsRows design={playerDesign} named />
     {/if}
     <!-- While an episode opens or plays this theme paints the window; navigation and layout keep the app theme. -->
     <SettingsRow settingKey="player-theme" title="Player theme" description="The look of the player and an episode's loading screen" control={playerThemeMenu} />

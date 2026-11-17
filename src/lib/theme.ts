@@ -12,6 +12,8 @@ import { mirrorFocusSelectors, pinViewportUnits, sanitizeThemeCssCached, themeSt
 import { gameMode } from '$lib/player/session'
 import { setFocusWatches } from '$lib/themes/focus-mirror'
 import { protectedSurfaceCount, scopeSupported, themeSafeMode } from '$lib/themes/safe-mode'
+import { themeSettingHooks } from '$lib/themes/theme-settings'
+import { themeSettingValues } from '$lib/themes/theme-setting-values'
 
 export { resolvedThemeTokens, THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
 
@@ -70,6 +72,16 @@ function applyThemeCss(text: string | undefined): void {
   // Last in <head>, so an equally specific theme rule beats the app's own.
   if (!existing || stylesheetAfter(style)) document.head.append(style)
   if (get(themeCssStatus).state !== 'applied') themeCssStatus.set({ state: 'applied' })
+}
+
+/** The hooks `apply()` last put on <html> for the shown theme's settings, so a theme switch clears them. */
+let settingHooks: { attributes: string[]; properties: string[] } = { attributes: [], properties: [] }
+function applySettingHooks(root: HTMLElement, hooks: ReturnType<typeof themeSettingHooks>): void {
+  for (const name of settingHooks.attributes) if (!(name in hooks.attributes)) root.removeAttribute(name)
+  for (const name of settingHooks.properties) if (!(name in hooks.properties)) root.style.removeProperty(name)
+  for (const [name, value] of Object.entries(hooks.attributes)) if (root.getAttribute(name) !== value) root.setAttribute(name, value)
+  for (const [name, value] of Object.entries(hooks.properties)) root.style.setProperty(name, value)
+  settingHooks = { attributes: Object.keys(hooks.attributes), properties: Object.keys(hooks.properties) }
 }
 
 /** The active theme's stylesheet text, as `apply()` last resolved it. */
@@ -137,6 +149,8 @@ function apply() {
   root.dataset.theme = preset
   root.dataset.scheme = tokens.scheme
   root.dataset.themeBackdrop = customActive ? studio.backdrop : 'solid'
+  // API 9: the shown theme's settings, as attributes and custom properties its stylesheet reads.
+  applySettingHooks(root, themeSettingHooks(customActive ? studio.settings : undefined, get(themeSettingValues)[studio.id]))
   // API 8: a stylesheet acting as the player theme can tell it dresses only the player.
   if (!safe && !preview && get(activePlayerTheme)) root.dataset.themeRole = 'player'
   else delete root.dataset.themeRole
@@ -192,6 +206,7 @@ export function startThemeSync(): () => void {
   const subscriptions = [
     shownThemePreset, highContrast, largeInteractionTargets, motionPreference,
     shownStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, gameMode, themePresentation, effectiveStudioTheme,
+    themeSettingValues,
   ].map((store) => store.subscribe(apply))
   // A surface opening or closing changes only the stylesheet's form, never <html>: Game mode's OSD colours
   // watch <html> and open a surface to read them, which would otherwise feed back into themselves.
