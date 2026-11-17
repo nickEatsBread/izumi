@@ -7,9 +7,12 @@
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont as savedSubtitleFont, subtitleBold as savedSubtitleBold, subtitleFontSize as savedSubtitleFontSize,
     subtitleTextColor, subtitleBorderColor as savedSubtitleBorderColor,
     subtitleBorderSize as savedSubtitleBorderSize, subtitleShadow as savedSubtitleShadow,
-    subtitlePosition as savedSubtitlePosition,
+    subtitlePosition as savedSubtitlePosition, subtitleAssSnapshot,
   } from '$lib/settings/ui'
-  import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
+  import { effectiveSubtitleStyle, sessionSubtitleAdjustments, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
+  import { assTrackContent, isAssSubtitle, parseSubtitleFonts, type SubtitleFont } from '$lib/player/ass-subtitles'
+  import type { AssRenderer } from '$lib/player/ass-renderer'
+  import { NO_SUBTITLE_ADJUSTMENTS, type SubtitleAdjustments, type SubtitleStyle } from '$lib/player/subtitle-style'
   import { get } from 'svelte/store'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, shouldAutoReloadHardsub, waitForCatalog } from '$lib/player/preferred-drm'
@@ -119,11 +122,38 @@
   let subtitleShadow = $state(1)
   let subtitlePosition = $state(92)
   let subtitlePositionOverride = $state(false)
+  // ASS/SSA tracks are drawn by libass over the video (see syncAssRenderer); the cue renderer below
+  // keeps every other format and the plain-text fallback.
+  const assBodies = new Map<number, string>()
+  /** ASS tracks shown as plain text after all: their fonts did not arrive and their script needs them. */
+  const assTextOnly = new Set<number>()
+  let subtitleFonts: SubtitleFont[] = []
+  let assStyle: SubtitleStyle | null = null
+  let assAdjustments: SubtitleAdjustments = NO_SUBTITLE_ADJUSTMENTS
+  let assRenderer: AssRenderer | null = null
+  let assContent = ''
+  let assFailed = false
+  let assShown = $state(false)
+  let subDelay = 0
+  // The subtitle choice for the current track list (the user's, or the preferred one once made).
+  // Playback resuming must not pick again over it.
+  let subtitleChosen = false
+  // Shaka shows text as the video's own cues: drawn without the browser's black box, in the user's
+  // style when one is on, and hidden while libass draws the track (or a GIF leaves subtitles out).
+  const cueOutline = $derived.by(() => {
+    const b = subtitleBorderSize / 2
+    const c = subtitleBorderColor
+    const s = subtitleShadow
+    const ring = b > 0 ? `${b}px 0 0 ${c}, -${b}px 0 0 ${c}, 0 ${b}px 0 ${c}, 0 -${b}px 0 ${c}, ` : ''
+    return `${ring}${s}px ${s}px ${Math.max(1, s * 2)}px #000000cc`
+  })
+  // The page knows izumi's Nunito as 'Nunito Variable'; a font this device lacks falls back to it.
+  const cueFont = $derived(`"${subtitleFont.replace(/["\\]/g, '')}", 'Nunito Variable', sans-serif`)
   let activeReleaseUrl = ''
   const released = new Set<string>()
   const releaseJobs = new Map<string, Promise<void>>()
   let gifActive = false
-  let gifSubtitlesHidden = false
+  let gifSubtitlesHidden = $state(false)
   let gifPresentation: CapturePresentation | null = null
   let capturePresentationWarmed = false
   let abrWarmTimer: ReturnType<typeof setTimeout> | undefined
@@ -162,7 +192,11 @@
       borderSize: $savedSubtitleBorderSize,
       shadow: $savedSubtitleShadow,
       position: $savedSubtitlePosition,
+      assSnapshot: $subtitleAssSnapshot ?? undefined,
     })
+    assStyle = style
+    assAdjustments = $sessionSubtitleAdjustments
+    untrack(() => syncAssRenderer())
     subtitleOverride = style.enabled
     subtitleFont = style.font || 'Nunito'
     subtitleBold = style.bold
@@ -384,8 +418,10 @@
         subtitles?: DrmSubtitle[]
         audioTracks?: DrmAudioChoice[]
         previewUrl?: string
+        subtitleFonts?: unknown
       }
       if (typeof src.audioLang === 'string') liveAudioLang = src.audioLang
+      if (src.subtitleFonts !== undefined) subtitleFonts = parseSubtitleFonts(src.subtitleFonts)
       if (typeof src.previewUrl === 'string') {
         livePreviewUrl = src.previewUrl
         schedulePreviewWarm()
@@ -712,11 +748,86 @@
       } satisfies DrmTrack
     })
     textTracks = [...shaka, ...extras]
+    syncAssRenderer()
+  }
+
+  let assPlanInputs: [body: string | undefined, style: SubtitleStyle | null, adjustments: SubtitleAdjustments] | null = null
+  let assPlan: string | null = null
+
+  /** The script libass should draw now: the selected track's, restyled as the user's style says;
+   *  null when the selection is not ASS, is hidden, or is drawn as plain text in the user's style. */
+  function currentAssContent(): string | null {
+    const body = selectedSid >= 0 && !gifSubtitlesHidden && !assFailed && !assTextOnly.has(selectedSid)
+      ? assBodies.get(selectedSid)
+      : undefined
+    const [lastBody, lastStyle, lastAdjustments] = assPlanInputs ?? []
+    if (!assPlanInputs || lastBody !== body || lastStyle !== assStyle || lastAdjustments !== assAdjustments) {
+      assPlanInputs = [body, assStyle, assAdjustments]
+      assPlan = body && assStyle ? assTrackContent(body, assStyle, assAdjustments) : null
+    }
+    return assPlan
+  }
+
+  function dropAssRenderer() {
+    const current = assRenderer
+    assRenderer = null
+    assContent = ''
+    if (current) void current.destroy().catch(() => {})
+  }
+
+  /** A script libass cannot start or load falls back to the plain-text cues for this load. */
+  function assFailedOver(renderer: AssRenderer, error: unknown) {
+    if (assRenderer !== renderer) return
+    console.warn('[drm] styled subtitles unavailable, showing plain text', error)
+    assFailed = true
+    dropAssRenderer()
+    assShown = false
+  }
+
+  function syncAssRenderer() {
+    const content = currentAssContent()
+    const video = videoEl
+    assShown = !!content && !!video
+    if (!content || !video) {
+      dropAssRenderer()
+      return
+    }
+    if (content === assContent) return
+    assContent = content
+    const track = selectedSid
+    const draw = (renderer: AssRenderer) => renderer.setTrack(content).then((drawn) => {
+      if (drawn || assContent !== content) return
+      assTextOnly.add(track)
+      syncAssRenderer()
+    }, (error) => assFailedOver(renderer, error))
+    if (assRenderer) {
+      void draw(assRenderer)
+      return
+    }
+    const gen = loadGen
+    void import('$lib/player/ass-renderer').then(({ createAssRenderer }) => {
+      if (gen !== loadGen || assRenderer || assContent !== content || videoEl !== video) return
+      const renderer = createAssRenderer(video, subtitleFonts, -subDelay)
+      assRenderer = renderer
+      renderer.ready.catch((error) => assFailedOver(renderer, error))
+      void draw(renderer)
+    }).catch((error) => {
+      console.warn('[drm] styled subtitles unavailable, showing plain text', error)
+      assFailed = true
+      assContent = ''
+      assShown = false
+    })
+  }
+
+  function setSubDelay(seconds: number) {
+    subDelay = Math.round(seconds * 1000) / 1000
+    void assRenderer?.setTimeOffset(-subDelay).catch(() => {})
   }
 
   function sniffText(url: string, body: string): { mime: string; vtt: string } {
-    const ass = /\[script info\]/i.test(body) || /^dialogue:/im.test(body) || /\.ass(\?|$)/i.test(url) || /\.ssa(\?|$)/i.test(url)
-    if (ass) return { mime: 'text/vtt', vtt: assToVtt(body) }
+    // An ASS track is also listed as WebVTT: Shaka keeps the track list, and the text is the
+    // fallback when libass is unavailable or the user's style replaces the script's own.
+    if (isAssSubtitle(url, body)) return { mime: 'text/vtt', vtt: assToVtt(body) }
     if (/\.srt(\?|$)/i.test(url) || /^\d+\s*\r?\n\d{2}:\d{2}:\d{2}/.test(body)) {
       return { mime: 'text/srt', vtt: body }
     }
@@ -726,51 +837,61 @@
   async function attachSubtitles() {
     if (!player) return
     const soft = liveSubs.filter((track) => track.url && !track.switchUrl)
-    if (soft.length) {
-      await Promise.allSettled(soft.map(async (track) => {
-        const kind = track.kind === 'captions' ? 'captions' : 'subtitles'
-        try {
-          const res = await fetch(track.url)
-          const body = await res.text()
-          const sniffed = sniffText(track.url, body)
-          let uri = track.url
-          if (sniffed.mime === 'text/vtt' && sniffed.vtt !== body) {
-            const blob = URL.createObjectURL(new Blob([sniffed.vtt], { type: 'text/vtt' }))
-            blobUrls.push(blob)
-            uri = blob
-          }
-          await player.addTextTrackAsync(
-            uri,
-            track.lang || 'und',
-            kind,
-            sniffed.mime,
-            '',
-            track.title || track.lang || (kind === 'captions' ? 'CC' : 'Subtitle'),
-          )
-        } catch (err) {
-          console.warn('[drm] subtitle skipped', track.url, err)
+    assBodies.clear()
+    assTextOnly.clear()
+    // Fetched together, added in the source's order: the menu lists the tracks as the source does.
+    const bodies = soft.map((track) => fetch(track.url).then((res) => res.text()))
+    for (const body of bodies) body.catch(() => {}) // reported in order below
+    for (const [i, track] of soft.entries()) {
+      const kind = track.kind === 'captions' ? 'captions' : 'subtitles'
+      try {
+        const body = await bodies[i]!
+        const sniffed = sniffText(track.url, body)
+        let uri = track.url
+        if (sniffed.mime === 'text/vtt' && sniffed.vtt !== body) {
+          const blob = URL.createObjectURL(new Blob([sniffed.vtt], { type: 'text/vtt' }))
+          blobUrls.push(blob)
+          uri = blob
         }
-      }))
+        const added = await player.addTextTrackAsync(
+          uri,
+          track.lang || 'und',
+          kind,
+          sniffed.mime,
+          '',
+          track.title || track.lang || (kind === 'captions' ? 'CC' : 'Subtitle'),
+        ) as ShakaText | undefined
+        if (added?.id != null && isAssSubtitle(track.url, body)) assBodies.set(Number(added.id), body)
+      } catch (err) {
+        console.warn('[drm] subtitle skipped', track.url, err)
+      }
     }
     syncTextTracks()
+    // A new track list (new ids, maybe a new audio language): choose again, remembered pick first.
+    subtitleChosen = false
     const rememberedAudio = matchRememberedTrack(audioTracks, rememberedSeriesTrack(get(nowPlaying).id, 'audio'))
     if (rememberedAudio && !rememberedAudio.selected) setAid(rememberedAudio.id)
     applyPreferredSubtitles()
   }
 
   function applyPreferredSubtitles() {
+    if (subtitleChosen) return
     const remembered = matchRememberedTrack(textTracks, rememberedSeriesTrack(get(nowPlaying).id, 'subtitle'))
-    if (remembered === null) { setSid(-1); return }
-    if (remembered) { remembered.type === 'caption' ? setCcid(remembered.id) : setSid(remembered.id); return }
+    if (remembered === null) { subtitleChosen = true; setSid(-1); return }
+    if (remembered) { subtitleChosen = true; remembered.type === 'caption' ? setCcid(remembered.id) : setSid(remembered.id); return }
     const languages = languagesForMedia(get(nowPlayingMedia)?.media)
     const id = pickSubtitleTrackId(textTracks, liveAudioLang || audioLang || languages.audio[0], languages.subtitle)
     if (id === undefined) return
-    if (typeof id === 'number' && id >= SWITCH_ID && !shouldAutoReloadHardsub({
+    // Only a burned-in presentation reloads the stream. Shaka numbers side-loaded tracks from 1e9, so
+    // the id range alone would hold back every soft track too.
+    const burnedIn = typeof id === 'number' && textTracks.some((track) => track.id === id && track.switchUrl)
+    if (burnedIn && !shouldAutoReloadHardsub({
       preferredId: id,
       switchIdMin: SWITCH_ID,
       skipHardReload,
       playbackStarted: firstFrame || lastGoodDur > 0,
     })) return
+    subtitleChosen = true
     if (id === 'no') {
       selectedSid = -1
       selectedCcid = -1
@@ -935,6 +1056,7 @@
       try { player?.setTextTrackVisibility?.(selectedSid >= 0 || selectedCcid >= 0) } catch { /* keep going */ }
     }
     gifSubtitlesHidden = false
+    syncAssRenderer()
   }
 
   function gifVideoCrop(video: HTMLVideoElement) {
@@ -960,9 +1082,10 @@
     const plan = gifCapturePlan(get(gifScale), get(gifMaxSeconds))
     const boot = (async () => {
       if (!includeSubtitles && (selectedSid >= 0 || selectedCcid >= 0)) {
+        gifSubtitlesHidden = true
+        syncAssRenderer()
         try {
           player?.setTextTrackVisibility?.(false)
-          gifSubtitlesHidden = true
         } catch { /* burned-in subtitles cannot be hidden */ }
       }
       const video = videoEl
@@ -1203,12 +1326,14 @@
     command(name, args) {
       const video = videoEl
       if (!video) return
-      if (name === 'cycle' && args[0] === 'sid') { cycleSid(); return }
+      if (name === 'cycle' && args[0] === 'sid') { subtitleChosen = true; cycleSid(); return }
       if (name === 'set' && args[0] === 'sid') {
+        subtitleChosen = true
         setSid(args[1] === 'no' ? -1 : Number(args[1]))
         return
       }
       if (name === 'set' && args[0] === 'ccid') {
+        subtitleChosen = true
         setCcid(args[1] === 'no' ? -1 : Number(args[1]))
         return
       }
@@ -1238,6 +1363,12 @@
             ? Math.min(3, Math.max(0.25, value))
             : Math.min(3, Math.max(0.25, subtitleScale + value))
         }
+        publish()
+        return
+      }
+      if ((name === 'set' || name === 'add') && args[0] === 'sub-delay') {
+        const value = Number(args[1])
+        if (Number.isFinite(value)) setSubDelay(name === 'set' ? value : subDelay + value)
         publish()
         return
       }
@@ -1286,6 +1417,7 @@
       if (name === 'sid') return selectedSid < 0 ? 'no' : String(selectedSid)
       if (name === 'ccid') return selectedCcid < 0 ? 'no' : String(selectedCcid)
       if (name === 'sub-scale') return String(subtitleScale)
+      if (name === 'sub-delay') return String(subDelay)
       if (name === 'sub-pos') return String(subtitlePositionOverride ? subtitlePosition : 100)
       if (name === 'video-quality-options') return JSON.stringify(qualityInfo())
       if (!videoEl) return ''
@@ -1316,6 +1448,10 @@
       clearTimeout(bufferUiTimer)
       bufferUiTimer = undefined
     }
+    dropAssRenderer()
+    assBodies.clear()
+    assTextOnly.clear()
+    assShown = false
     while (blobUrls.length) {
       const u = blobUrls.pop()
       if (u) URL.revokeObjectURL(u)
@@ -1360,6 +1496,9 @@
     loopA = null
     loopB = null
     subtitleScale = 1
+    assFailed = false
+    subtitleChosen = false
+    subtitleFonts = []
     // Each load starts on Auto's fast-start rung; the preferred quality is applied once the
     // manifest names its heights, and a menu pick from then on lasts until the next load.
     qualityMode = 'auto'
@@ -1553,6 +1692,13 @@
   style:filter="opacity(0.999)"
   style:transform="translateZ(0)"
   style:clip-path="inset(0.5px)"
+  class:drm-cue-hidden={assShown || gifSubtitlesHidden}
+  class:drm-cue-override={subtitleOverride}
+  style:--drm-cue-size={subtitleOverride ? `${subtitleFontSize / 13.125 * subtitleScale}vmin` : `${3.2 * subtitleScale}vmin`}
+  style:--drm-cue-font={subtitleOverride ? cueFont : undefined}
+  style:--drm-cue-weight={subtitleOverride && subtitleBold ? '700' : undefined}
+  style:--drm-cue-color={subtitleOverride ? subtitleColor : undefined}
+  style:--drm-cue-outline={subtitleOverride ? cueOutline : undefined}
   autoplay
   playsinline
   disablepictureinpicture
@@ -1615,17 +1761,35 @@
   bind:this={textEl}
   class="drm-text pointer-events-none absolute inset-0 overflow-hidden text-center leading-snug"
   class:drm-text-override={subtitleOverride}
-  style:font-family={subtitleOverride ? subtitleFont : undefined}
+  class:invisible={assShown || gifSubtitlesHidden}
+  style:font-family={subtitleOverride ? cueFont : undefined}
   style:font-weight={subtitleOverride && subtitleBold ? '700' : undefined}
   style:font-size={subtitleOverride ? `${subtitleFontSize / 13.125 * subtitleScale}vmin` : `${3.2 * subtitleScale}vmin`}
   style:color={subtitleOverride ? subtitleColor : undefined}
-  style:padding-bottom={subtitleOverride || subtitlePositionOverride ? `${100 - subtitlePosition}%` : undefined}
+  style:padding-bottom={subtitleOverride || subtitlePositionOverride ? `${100 - subtitlePosition}%` : '4.5%'}
   style:--drm-sub-border={subtitleOverride ? `${subtitleBorderSize / 2}px ${subtitleBorderColor}` : undefined}
   style:--drm-sub-shadow={subtitleOverride ? `${subtitleShadow}px ${subtitleShadow}px ${Math.max(1, subtitleShadow * 2)}px #000000cc` : undefined}
 ></div>
 </div>
 
 <style>
+  video::cue {
+    background: transparent;
+    color: white;
+    font-size: var(--drm-cue-size);
+    text-shadow: 0 1px 2px #000, 0 0 6px #000;
+  }
+  video.drm-cue-override::cue {
+    font-family: var(--drm-cue-font);
+    font-weight: var(--drm-cue-weight, 400);
+    color: var(--drm-cue-color);
+    text-shadow: var(--drm-cue-outline);
+  }
+  video.drm-cue-hidden::cue { visibility: hidden; }
+  /* Shaka's own cue renderer, once it draws into this element: at the bottom, without its black box
+     (its stylesheet, which would place it, is not loaded). */
+  .drm-text :global(.shaka-text-container) { box-sizing: border-box; height: 100%; padding: 0 4%; }
+  .drm-text :global(.shaka-text-container span) { background-color: transparent !important; }
   .drm-text:not(.drm-text-override) { color: white; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
   .drm-text-override :global(*) {
     font-family: inherit !important;
