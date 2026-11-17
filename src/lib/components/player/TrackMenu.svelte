@@ -20,7 +20,7 @@
   import Brush from '@lucide/svelte/icons/brush'
   import Search from '@lucide/svelte/icons/search'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleStyle, pickSessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import { rememberSeriesTrack } from '$lib/player/track-preferences'
@@ -202,7 +202,7 @@
     const group = get(bingeSource)?.group
     const title = get(nowPlayingMedia)?.media.title?.userPreferred
     const preset = saveSubtitlePreset(subtitlePresetSourceName({ group, title }), style, { group, title })
-    sessionSubtitleStyle.set(preset)
+    pickSessionSubtitleStyle(preset)
     playerNotice.set(`Saved and applied subtitle style “${preset.name}”`)
     closeMenu()
     const path = await invoke<string>('player_get_property', { name: 'path' }).catch(() => '')
@@ -229,13 +229,13 @@
     if (leaf.kind === 'server') { await swapTo(leaf.target); return }
     if (leaf.kind === 'style-save') { await saveCurrentStyle(); return }
     if (leaf.kind === 'style-default') {
-      sessionSubtitleStyle.set(null)
+      pickSessionSubtitleStyle(null)
       playerNotice.set('Using default subtitle style')
       closeMenu()
       return
     }
     if (leaf.kind === 'style-preset') {
-      sessionSubtitleStyle.set(leaf.preset)
+      pickSessionSubtitleStyle(leaf.preset)
       playerNotice.set(`Applied subtitle style “${leaf.preset.name}”`)
       closeMenu()
       return

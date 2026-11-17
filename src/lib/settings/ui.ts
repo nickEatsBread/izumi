@@ -96,6 +96,8 @@ export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'auto')
 // --- Subtitle presentation + synchronization ---
 /** Apply Izumi's subtitle appearance instead of leaving styling entirely to the subtitle file. */
 export const subtitleStyleEnabled = persisted<boolean>('subtitle-style-enabled', false)
+/** Keep a style picked in the player for the show it was picked in (Settings › Subtitles › Saved styles). */
+export const rememberSubtitleStylePerShow = persisted<boolean>('remember-subtitle-style-per-show', false)
 /** Keep ASS signs/typesetting intact where possible, or deliberately restyle every subtitle element. */
 export type SubtitleOverrideScope = 'dialogue' | 'all'
 export const subtitleOverrideScope = persisted<SubtitleOverrideScope>('subtitle-override-scope', 'dialogue')

@@ -70,7 +70,7 @@ describe('player popup hook (API 9 player.menu)', () => {
       "onclick={() => { setFit(fit.id); optionsPage = 'root'; chosen() }}",
       'onclick={() => { pickOff(); chosen() }}',
       'onclick={() => { pick(leafKind, t.id); chosen() }}',
-      'onclick={() => { sessionSubtitleStyle.set(p); chosen() }}',
+      'onclick={() => { pickSessionSubtitleStyle(p); chosen() }}',
       "setSleep((event.currentTarget as HTMLSelectElement).value); chosen() }}",
       // Game mode's settings sheet: touch and pad.
       'onclick={() => { setSpeed(s); chosen() }}',

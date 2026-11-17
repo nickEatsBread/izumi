@@ -84,7 +84,7 @@
   import { banner, cover } from '$lib/anilist/media'
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, effectiveSubtitleStyle, resetSubtitleSession, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, pickSessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, effectiveSubtitleStyle, resetSubtitleSession, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource, oskOpen } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { navLayerOpen } from '$lib/nav/layers'
@@ -1699,7 +1699,7 @@
       group: get(bingeSource)?.group,
       title: np.animeTitle ?? np.title ?? undefined,
     })
-    sessionSubtitleStyle.set(preset)
+    pickSessionSubtitleStyle(preset)
     void mpvGet('path').catch(() => '')
       .then((path) => saveSubtitleStyleFonts(path, preset.style))
       .then((fonts) => { if (fonts.length) playerNotice.set(`Saved subtitle style “${preset.name}” with its fonts (${fonts.join(', ')})`) })
@@ -2661,9 +2661,9 @@
           {:else}
             <p class="mb-1 px-1 text-xs text-white/45">This track has no readable ASS styling to capture.</p>
           {/if}
-          <button onclick={() => sessionSubtitleStyle.set(null)} class="settings-choice {!$sessionSubtitleStyle ? 'settings-choice-selected' : ''}"><span>Your settings</span>{#if !$sessionSubtitleStyle}<Check size={18} />{/if}</button>
+          <button onclick={() => pickSessionSubtitleStyle(null)} class="settings-choice {!$sessionSubtitleStyle ? 'settings-choice-selected' : ''}"><span>Your settings</span>{#if !$sessionSubtitleStyle}<Check size={18} />{/if}</button>
           {#each $savedSubtitleStyles as p (p.id)}
-            <button onclick={() => sessionSubtitleStyle.set(p)} class="settings-choice {$sessionSubtitleStyle?.id === p.id ? 'settings-choice-selected' : ''}">
+            <button onclick={() => pickSessionSubtitleStyle(p)} class="settings-choice {$sessionSubtitleStyle?.id === p.id ? 'settings-choice-selected' : ''}">
               <span class="min-w-0"><span class="block truncate">{p.name}</span><span class="block truncate text-xs text-white/45">{p.style.font}</span></span>
               {#if $sessionSubtitleStyle?.id === p.id}<Check size={18} />{/if}
             </button>
