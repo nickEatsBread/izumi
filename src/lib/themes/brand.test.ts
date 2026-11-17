@@ -26,7 +26,8 @@ describe('brand shadow root', () => {
   })
   it("pins the host's own box with inline !important declarations", () => {
     const { host } = draw()
-    const pinned = { display: 'inline-flex', visibility: 'visible', opacity: '1', filter: 'none', transform: 'none', 'clip-path': 'none', 'content-visibility': 'visible', 'mix-blend-mode': 'normal', background: 'none', outline: 'none' }
+    // `outline: none` is checked through its style: the shorthand of all-initial values may serialize as 'medium'.
+    const pinned = { display: 'inline-flex', visibility: 'visible', opacity: '1', filter: 'none', transform: 'none', 'clip-path': 'none', 'content-visibility': 'visible', 'mix-blend-mode': 'normal', background: 'none', 'outline-style': 'none' }
     for (const [name, value] of Object.entries(pinned)) {
       expect(host.style.getPropertyValue(name), name).toContain(value)
       expect(host.style.getPropertyPriority(name), name).toBe('important')

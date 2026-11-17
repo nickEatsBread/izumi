@@ -39,11 +39,11 @@ describe('motion', () => {
     const config = motion(node, { opacity: [0, 1], y: [-5, 0], duration: 150 }, { direction: 'in' }) as { css?: unknown; tick: (t: number) => void }
     expect(config.css).toBeUndefined()
     // The anchor that keeps the element composited for its whole life.
-    expect(node.style.transform).toBe('translateZ(0)')
+    expect(node.style.transform).toBe('translateZ(0px)')
     expect(node.style.opacity).toBe('0')
     config.tick(1)
     expect(node.style.opacity).toBe('1')
-    expect(node.style.translate).toBe('0px 0px')
+    expect(node.style.translate).toBe('0px')
   })
 
   it('leaves an outro at its shown state until it runs', () => {
