@@ -44,7 +44,7 @@ const SEARCH: Array<[string, string, boolean]> = [
   ['Miniplayer when you leave the app', 'player-window', false],
   ['Keep screen awake while playing', 'player-window', false],
   ['Discord Rich Presence', 'player-window', false],
-  ['Hide sidebar while playing', 'player-window', false],
+  ['Hide navigation while playing', 'player-window', false],
   ['Trailers open in', 'player-window', false],
   ['P2P playback status', 'player-window', false],
   ['GIF recorder', 'player-window', false],
