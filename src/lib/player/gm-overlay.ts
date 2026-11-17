@@ -123,10 +123,9 @@ export function gameModeLiveMenuOpen(input: {
   connecting?: boolean
   cachingOpen?: boolean
   ratingOpen?: boolean
-  upNextOpen?: boolean
 }): boolean {
   return input.playerMenuOpen || input.trackMenuOpen || !!input.sourcePickerOpen || !!input.connecting
-    || !!input.cachingOpen || !!input.ratingOpen || !!input.upNextOpen
+    || !!input.cachingOpen || !!input.ratingOpen
 }
 
 /** Where the Game-mode video window sits: always full screen, unmapped while the menu stage shows

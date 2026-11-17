@@ -29,10 +29,9 @@ describe('series rating prompt contract', () => {
     expect(androidTracking).toContain('requestSeriesRating(p.media, p.episode)')
   })
 
-  it('mounts once at app level, beside Up Next, and outlives the player', () => {
-    expect(layout).toContain('<UpNextOverlay />')
+  it('mounts once at app level and outlives the player', () => {
     expect(layout).toContain('<SeriesRatingPrompt />')
-    // Unlike Up Next there is no "clear when the player closes" effect: the finale reached by
+    // There is no "clear when the player closes" effect: the finale reached by
     // backing out asks over the series page.
     expect(prompt).not.toContain('!$playing && !$androidMpvActive')
   })

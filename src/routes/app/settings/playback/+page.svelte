@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    autoSkip, skipPreviews, skipFiller, autoplayNext, upNextOverlay, seriesRatingPrompt, bingePreload,
+    autoSkip, skipPreviews, skipFiller, autoplayNext, seriesRatingPrompt, bingePreload,
     seekDuration, enableExternalPlayer, externalPlayerPath, scrubThumbnails, playerProgressAnimations,
     playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying, videoQualityPreset, rawMpvOptions,
     gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip, audioProcessing, windowsVsr,
@@ -201,9 +201,6 @@
     {#if $inAppPlayerAvailable}
       <SettingsRow settingKey="auto-play-next-episode" title={m.player_autoplay_next()} description={m.player_autoplay_next_hint()} onActivate={() => ($autoplayNext = !$autoplayNext)} pressed={$autoplayNext}>
         {#snippet control()}<SettingsSwitch value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} label={m.player_autoplay_next()} interactive={false} />{/snippet}
-      </SettingsRow>
-      <SettingsRow settingKey="show-up-next-countdown" title={m.player_up_next_overlay()} description={m.player_up_next_overlay_hint()} onActivate={() => ($upNextOverlay = !$upNextOverlay)} pressed={$upNextOverlay}>
-        {#snippet control()}<SettingsSwitch value={$upNextOverlay} onToggle={() => ($upNextOverlay = !$upNextOverlay)} label={m.player_up_next_overlay()} interactive={false} />{/snippet}
       </SettingsRow>
       <SettingsRow settingKey="binge-next-episode-preload" title="Binge next episode (preload)" description="Preloads the next episode; it then starts by itself, even with Auto-play off." learnMore="Keeps the same release across episodes and resolves and buffers the next one near the end, so Next and auto-play start instantly." onActivate={() => ($bingePreload = !$bingePreload)} pressed={$bingePreload}>
         {#snippet control()}<SettingsSwitch value={$bingePreload} onToggle={() => ($bingePreload = !$bingePreload)} label="Binge next episode (preload)" interactive={false} />{/snippet}

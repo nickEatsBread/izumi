@@ -3,6 +3,7 @@
   // compact numbered list where the playing episode opens up with its still. Picking one takes the
   // dock rail's route (`playEpisodeInPlayer`, the Next button's path), so playback never leaves the
   // player. Same data as DockEpisodes: the catalogue's episode records with AniZip layered over.
+  // The series title is the way out: it leaves the player and opens the series page.
   import { tick } from 'svelte'
   import { nowPlaying, nowPlayingMedia } from '$lib/player/session'
   import { playEpisodeInPlayer } from '$lib/stremio/play'
@@ -11,10 +12,12 @@
   import { anilistIdOf } from '$lib/catalog/identity'
   import { getEpisodeMeta } from '$lib/anizip'
   import type { EpMeta } from '$lib/anizip/types'
-  import { airedCount, title } from '$lib/anilist/media'
+  import { airedCount, mediaHref, title } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
+  import type { Media } from '$lib/anilist/types'
   import Play from '@lucide/svelte/icons/play'
 
-  let { onclose }: { onclose: () => void } = $props()
+  let { onclose, onseries }: { onclose: () => void; onseries: (media: Media) => void } = $props()
 
   const context = $derived($nowPlayingMedia)
   const media = $derived(context?.media ?? null)
@@ -59,7 +62,13 @@
 <div data-player-episodes role="dialog" aria-label="Episodes"
      class="pointer-events-auto absolute bottom-full right-0 z-30 mb-2 flex max-h-[min(60vh,32rem)] w-[26rem] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
   <header class="flex items-baseline justify-between gap-3 px-4 pb-2 pt-3">
-    <h2 class="truncate text-base font-bold">{media ? title(media) : 'Episodes'}</h2>
+    <h2 class="min-w-0 text-base font-bold">
+      {#if media}
+        <a href={mediaHref(media)} use:detailLink={media} data-focusable title="Go to the series page"
+           onclick={(event) => { event.preventDefault(); onclose(); onseries(media) }}
+           class="block truncate rounded-sm hover:underline focus-visible:underline">{title(media)}</a>
+      {:else}Episodes{/if}
+    </h2>
     <span class="shrink-0 text-xs text-white/50">{numbers.length} episodes</span>
   </header>
   <ol bind:this={list} class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
