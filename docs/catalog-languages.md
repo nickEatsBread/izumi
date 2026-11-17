@@ -41,29 +41,12 @@ source reports it (`es-419`). A subtitle order of `none` turns subtitles off.
 
 ## Remembering what the viewer picks
 
-Changing the audio or subtitles in the player also changes where the rest of that catalog starts,
-for the active profile (`src/lib/player/language-memory.ts`). Settings › Languages › Per catalog ›
-*Remember what I pick in the player* turns it off (`remember-language-picks-v1`, per profile, on by
-default).
+Changing the audio or subtitles in the player is remembered for that show only, for the active
+profile (`track-preferences.ts`, `series-track-preferences-v1`). The show's next episodes start in
+the exact track picked (same title and language, then codec, then language). Other shows from the
+same catalog keep starting in the catalog's languages, and a source account's languages are never
+changed by a pick in the player: change those in Settings › Languages.
 
-- The pick goes first in the catalog's own order (`catalog-languages-v1`), so the Per catalog rows
-  show it and can change it back. Subtitles off makes the order `none`.
-- A pick the catalog already starts in changes nothing, so a default stays a default.
-- A track without a language (`und`) is not remembered.
-- **A source catalog whose account holds its languages** also gets the pick saved to the account
-  (`saveSourceLanguagePick`), because the account outranks the catalog's own order. The account's
-  option for the language is used: the exact tag, else the current value when it is the same
-  language, else the first option of that language (`ja` becomes `ja-JP`). A language the account
-  has no option for (subtitles off on a service that can't store "off") stays izumi's own only, so
-  the account's language still applies there.
-
-**Which wins.** The series memory and the catalog memory are written by the same pick:
-
-1. Inside a series the viewer picked a track in, that exact track (series memory) wins.
-2. Everywhere else in the catalog, the catalog's languages (above) apply.
-
-So picking English subtitles once in one show makes English the catalog's subtitle language, while
-a show where the viewer chose Signs & Songs keeps Signs & Songs.
 - Subtitles in the audio's own language (an English dub with English subtitles) pick Signs/Forced, or
   turn subtitles off. This now holds for every language, not only English.
 
