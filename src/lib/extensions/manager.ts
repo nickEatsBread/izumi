@@ -236,6 +236,9 @@ export async function installCatalogPackage(
   // replacement — may change what kind of package is installed (never a background update or a
   // legacy claim), and a confirmed replacement isn't compared with the copy it replaces.
   const allowBackendChange = takesOver || (!options.updateOnly && isPackageOrigin(extension.id, origin))
+  // Windows refuses to replace a running program: stop the installed service before its files change
+  // (it starts again on its next request, from the new package).
+  if (onDisk?.backend === 'izumi-service') await invoke('extension_service_stop', { id: extension.id }).catch(() => {})
   const installed = extension.packageFormat === 'aniyomi-repo'
     ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
         url: extension.apk,
