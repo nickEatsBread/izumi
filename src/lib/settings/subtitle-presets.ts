@@ -1,10 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { persisted } from 'svelte-persisted-store'
 import { writable, get } from 'svelte/store'
+import { profiledPersisted } from '$lib/profiles/store'
+import { nowPlayingMedia } from '$lib/player/session'
 import { NO_SUBTITLE_ADJUSTMENTS, type SubtitleAdjustments, type SubtitleStyle } from '$lib/player/subtitle-style'
 import {
   subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
-  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
+  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot, rememberSubtitleStylePerShow,
 } from './ui'
 
 // Saved subtitle "fonting" presets — a release's captured ASS typesetting (or any style snapshot)
@@ -29,6 +31,30 @@ export const sessionSubtitleStyle = writable<SubtitleStylePreset | null>(null)
 /** Position and size set in the player (the position editor and "Subtitle size"). Session-only like
  *  the preset above: they last across episodes until the player closes, and never reach Settings. */
 export const sessionSubtitleAdjustments = writable<SubtitleAdjustments>(NO_SUBTITLE_ADJUSTMENTS)
+
+/** The style each show was last watched in, by show id: a saved preset's id, or null for the
+ *  viewer's own settings. Written only while remembering is on (per profile). */
+export const seriesSubtitleStyles = profiledPersisted<Record<string, string | null>>('series-subtitle-styles-v1', {})
+
+/** A style picked in the player. It shows now, and with remembering on it comes back the next time
+ *  the playing show starts. */
+export function pickSessionSubtitleStyle(preset: SubtitleStylePreset | null): void {
+  sessionSubtitleStyle.set(preset)
+  const show = get(nowPlayingMedia)?.media.id
+  if (show == null || !get(rememberSubtitleStylePerShow)) return
+  seriesSubtitleStyles.update((all) => ({ ...all, [String(show)]: preset?.id ?? null }))
+}
+
+/** A show starting: the style remembered for it, if remembering is on and it has one. A preset that
+ *  was deleted since falls back to the viewer's settings. */
+export function applySeriesSubtitleStyle(show: number): void {
+  if (!get(rememberSubtitleStylePerShow)) return
+  const all = get(seriesSubtitleStyles)
+  const key = String(show)
+  if (!(key in all)) return
+  const id = all[key]
+  sessionSubtitleStyle.set(id == null ? null : get(savedSubtitleStyles).find((preset) => preset.id === id) ?? null)
+}
 
 /** End of a player session: drop everything the player changed for it. */
 export function resetSubtitleSession(): void {

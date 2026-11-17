@@ -16,8 +16,8 @@ describe('Steam Deck subtitle style menu', () => {
   it('captures ASS fonting and applies the saved preset to the current session', () => {
     expect(src).toContain('captureFromExtradata(raw)')
     expect(src).toContain('saveSubtitlePreset(')
-    expect(src).toContain('sessionSubtitleStyle.set(preset)')
-    expect(src).toContain('sessionSubtitleStyle.set(leaf.preset)')
+    expect(src).toContain('pickSessionSubtitleStyle(preset)')
+    expect(src).toContain('pickSessionSubtitleStyle(leaf.preset)')
   })
 
   it('leaves save/apply to that menu, which takes touch too, rather than a fallback list in the bar', () => {

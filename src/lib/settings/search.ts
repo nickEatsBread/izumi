@@ -114,6 +114,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Use custom subtitle style', category: 'Subtitles', section: 'subtitles', subcategory: 'appearance', href: '/app/settings/subtitles', keywords: 'appearance font family size colour color border outline shadow position nunito', key: 'use-custom-subtitle-style' },
   { title: 'Subtitle dialogue style overrides', category: 'Subtitles', section: 'subtitles', subcategory: 'advanced', advanced: true, href: '/app/settings/subtitles', keywords: 'ASS signs songs karaoke typesetting preserve font readable dialogue only all elements', key: 'subtitle-dialogue-style-overrides', fallbackKey: 'use-custom-subtitle-style' },
+  { title: 'Remember the style for each show', category: 'Subtitles', section: 'subtitles', subcategory: 'styles', href: '/app/settings/subtitles', keywords: 'subtitle font style preset fonting per series show remember', key: 'remember-subtitle-style-per-show' },
   { title: 'OpenSubtitles', category: 'Subtitles', section: 'subtitles', subcategory: 'providers', href: '/app/settings/subtitles', keywords: 'provider captions', key: 'opensubtitles' },
   { title: 'SubDL', category: 'Subtitles', section: 'subtitles', subcategory: 'providers', href: '/app/settings/subtitles', keywords: 'provider captions api key', key: 'subdl' },
   { title: 'OpenSubtitles account', category: 'Subtitles', section: 'subtitles', subcategory: 'providers', href: '/app/settings/subtitles', keywords: 'login username password quota', key: 'opensubtitles' },

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { applySeriesSubtitleStyle } from '$lib/settings/subtitle-presets'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { playerCommand } from '$lib/player/native'
 import { DRM_ENDED_EVENT, DRM_PROGRESS_EVENT } from '$lib/player/drm'
@@ -3130,6 +3131,7 @@ export async function playStream(
   }
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
+  applySeriesSubtitleStyle(media.id)
   // A source catalog plays in its account's languages. Kept ones are refreshed in the background;
   // with none kept yet, the first play waits briefly so it does not start in the defaults.
   const languageCatalog = catalogOfMedia(media)

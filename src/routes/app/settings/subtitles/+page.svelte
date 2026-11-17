@@ -24,7 +24,7 @@
     secondarySubtitles,
     subtitleStripSdh,
     subtitleStripSdhHarder,
-    subtitleRegexFilter,
+    subtitleRegexFilter, rememberSubtitleStylePerShow,
   } from '$lib/settings/ui'
   import CredentialField from '$lib/components/settings/CredentialField.svelte'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
@@ -236,6 +236,9 @@
   </SettingsSubcategory>
 
   <SettingsSubcategory id="styles">
+    <SettingsRow settingKey="remember-subtitle-style-per-show" title="Remember the style for each show" description={$rememberSubtitleStylePerShow ? 'A style picked in the player comes back the next time you watch that show' : 'A style picked in the player lasts until the player closes'} onActivate={() => ($rememberSubtitleStylePerShow = !$rememberSubtitleStylePerShow)} pressed={$rememberSubtitleStylePerShow}>
+      {#snippet control()}<SettingsSwitch interactive={false} label="Remember the style for each show" value={$rememberSubtitleStylePerShow} onToggle={() => ($rememberSubtitleStylePerShow = !$rememberSubtitleStylePerShow)} />{/snippet}
+    </SettingsRow>
     {#if $savedSubtitleStyles.length}
       {#each $savedSubtitleStyles as preset (preset.id)}
         <div class="px-3 py-2.5">

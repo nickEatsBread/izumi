@@ -78,7 +78,7 @@
   import { providerBadge, candidateKey, isCandidateLoaded, subtitleErrorNotice, downloadArgs } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, pickSessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
   import { motion } from '$lib/motion/gm-motion'
@@ -757,7 +757,7 @@
       group: get(bingeSource)?.group,
       title: get(nowPlayingMedia)?.media.title?.userPreferred ?? undefined,
     })
-    sessionSubtitleStyle.set(preset) // hearing is believing — show the saved look right away
+    pickSessionSubtitleStyle(preset) // hearing is believing — show the saved look right away
     playerNotice.set(`Saved subtitle style “${preset.name}”`)
     void invoke<string>('player_get_property', { name: 'path' }).catch(() => '')
       .then((path) => saveSubtitleStyleFonts(path, preset.style))
@@ -1556,12 +1556,12 @@
                             <p class="px-3 py-2 text-xs text-white/45">The current subtitle track has no readable ASS styling to capture.</p>
                           {/if}
                           <!-- Session override picker: "Your settings" = no override. -->
-                          <button data-part="player.menu.item" data-state={!$sessionSubtitleStyle ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { sessionSubtitleStyle.set(null); chosen() }}>
+                          <button data-part="player.menu.item" data-state={!$sessionSubtitleStyle ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { pickSessionSubtitleStyle(null); chosen() }}>
                             <span class="truncate text-white/70">Your settings</span>
                             {#if !$sessionSubtitleStyle}<Check size={18} class="shrink-0 text-primary" />{/if}
                           </button>
                           {#each $savedSubtitleStyles as p (p.id)}
-                            <button data-part="player.menu.item" data-state={$sessionSubtitleStyle?.id === p.id ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { sessionSubtitleStyle.set(p); chosen() }}>
+                            <button data-part="player.menu.item" data-state={$sessionSubtitleStyle?.id === p.id ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { pickSessionSubtitleStyle(p); chosen() }}>
                               <span class="min-w-0">
                                 <span class="block truncate">{p.name}</span>
                                 <span class="block truncate text-xs text-white/45">{p.style.font}</span>

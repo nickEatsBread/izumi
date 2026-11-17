@@ -3,11 +3,14 @@ import { get } from 'svelte/store'
 import {
   savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, deleteSubtitlePreset,
   applyPresetGlobally, effectiveSubtitleStyle, subtitlePresetSourceName, subtitleStyleFonts, type SubtitleStylePreset,
+  seriesSubtitleStyles, pickSessionSubtitleStyle, applySeriesSubtitleStyle,
 } from './subtitle-presets'
 import {
   subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
-  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
+  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot, rememberSubtitleStylePerShow,
 } from './ui'
+import { nowPlayingMedia } from '$lib/player/session'
+import type { Media } from '$lib/anilist/types'
 import type { SubtitleStyle } from '$lib/player/subtitle-style'
 
 const STYLE: Omit<SubtitleStyle, 'enabled'> = {
@@ -136,5 +139,49 @@ describe('subtitleStyleFonts', () => {
     }
     expect(subtitleStyleFonts({ ...STYLE, assSnapshot })).toEqual(['Roboto Medium', 'Gandhi Sans'])
     expect(subtitleStyleFonts(STYLE)).toEqual(['Roboto Medium'])
+  })
+})
+
+describe('per-show style memory', () => {
+  const playing = (id: number) => nowPlayingMedia.set({ media: { id } as Media, episode: 1 })
+
+  beforeEach(() => {
+    seriesSubtitleStyles.set({})
+    rememberSubtitleStylePerShow.set(false)
+    nowPlayingMedia.set(null)
+  })
+
+  it('keeps a pick to the player session while remembering is off (the default)', () => {
+    const preset = saveSubtitlePreset('Fansub', STYLE)
+    playing(21)
+    pickSessionSubtitleStyle(preset)
+    expect(get(sessionSubtitleStyle)?.id).toBe(preset.id)
+    expect(get(seriesSubtitleStyles)).toEqual({})
+  })
+
+  it('brings a show’s style back when it starts, and leaves other shows alone', () => {
+    rememberSubtitleStylePerShow.set(true)
+    const preset = saveSubtitlePreset('Fansub', STYLE)
+    playing(21)
+    pickSessionSubtitleStyle(preset)
+    sessionSubtitleStyle.set(null) // the player closed
+    applySeriesSubtitleStyle(16498)
+    expect(get(sessionSubtitleStyle)).toBeNull()
+    applySeriesSubtitleStyle(21)
+    expect(get(sessionSubtitleStyle)?.id).toBe(preset.id)
+  })
+
+  it('remembers choosing the viewer’s own settings, and a deleted preset falls back to them', () => {
+    rememberSubtitleStylePerShow.set(true)
+    const preset = saveSubtitlePreset('Fansub', STYLE)
+    playing(21)
+    pickSessionSubtitleStyle(null)
+    sessionSubtitleStyle.set(preset)
+    applySeriesSubtitleStyle(21)
+    expect(get(sessionSubtitleStyle)).toBeNull()
+    pickSessionSubtitleStyle(preset)
+    deleteSubtitlePreset(preset.id)
+    applySeriesSubtitleStyle(21)
+    expect(get(sessionSubtitleStyle)).toBeNull()
   })
 })
