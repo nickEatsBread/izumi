@@ -12,6 +12,9 @@
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import TorrentDebridSettings from '$lib/components/settings/TorrentDebridSettings.svelte'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import { sourceCatalogs } from '$lib/catalog/source-catalogs'
+  import { disabledPlugins } from '$lib/settings/ui'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
 
   // shortcut: counts the added URLs, not orphan packages (Manage sources loads those), count them here if the two numbers confuse people.
@@ -23,6 +26,11 @@
     { value: 'prefer', label: 'Prefer', description: 'Listed sources first, then the rest' },
     { value: 'strict', label: 'Strict', description: 'Only listed sources, even when they find nothing' },
   ]
+
+  // Each source with its own screen keeps its account and languages in its settings: listed here, beside
+  // Manage sources, the way the source's handheld app has its Settings screen.
+  const sourceScreens = $derived($sourceCatalogs.filter((source) => !$disabledPlugins.includes(source.packageId)))
+  let sourceSheet = $state<{ id: string; name: string } | null>(null)
 
   let checkingUpdates = $state(false)
   let updateCheckFeedback = $state('')
@@ -66,6 +74,14 @@
       href="/app/settings/sources/manage"
       chevron
     />
+    {#each sourceScreens as source (source.packageId)}
+      <SettingsRow
+        title={`${source.name} settings`}
+        description="Account, languages and the source's own options"
+        onActivate={() => (sourceSheet = { id: source.packageId, name: source.name })}
+        chevron
+      />
+    {/each}
   </SettingsSubcategory>
 
   <SettingsSubcategory id="store">
@@ -129,3 +145,7 @@
     </SettingsRow>
   </SettingsSubcategory>
 </SettingsSection>
+
+{#if sourceSheet}
+  <ExtensionServiceSettings id={sourceSheet.id} name={sourceSheet.name} onclose={() => (sourceSheet = null)} />
+{/if}

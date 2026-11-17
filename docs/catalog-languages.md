@@ -38,6 +38,32 @@ source reports it (`es-419`). A subtitle order of `none` turns subtitles off.
   subtitles become Automatic. Any other stored choice is kept.
 - A remembered pick for a series comes first. If the viewer chose a track in that series before
   (`track-preferences.ts`), that pick still wins over the catalog's order.
+
+## Remembering what the viewer picks
+
+Changing the audio or subtitles in the player also changes where the rest of that catalog starts,
+for the active profile (`src/lib/player/language-memory.ts`). Settings › Languages › Per catalog ›
+*Remember what I pick in the player* turns it off (`remember-language-picks-v1`, per profile, on by
+default).
+
+- The pick goes first in the catalog's own order (`catalog-languages-v1`), so the Per catalog rows
+  show it and can change it back. Subtitles off makes the order `none`.
+- A pick the catalog already starts in changes nothing, so a default stays a default.
+- A track without a language (`und`) is not remembered.
+- **A source catalog whose account holds its languages** also gets the pick saved to the account
+  (`saveSourceLanguagePick`), because the account outranks the catalog's own order. The account's
+  option for the language is used: the exact tag, else the current value when it is the same
+  language, else the first option of that language (`ja` becomes `ja-JP`). A language the account
+  has no option for (subtitles off on a service that can't store "off") stays izumi's own only, so
+  the account's language still applies there.
+
+**Which wins.** The series memory and the catalog memory are written by the same pick:
+
+1. Inside a series the viewer picked a track in, that exact track (series memory) wins.
+2. Everywhere else in the catalog, the catalog's languages (above) apply.
+
+So picking English subtitles once in one show makes English the catalog's subtitle language, while
+a show where the viewer chose Signs & Songs keeps Signs & Songs.
 - Subtitles in the audio's own language (an English dub with English subtitles) pick Signs/Forced, or
   turn subtitles off. This now holds for every language, not only English.
 
@@ -79,8 +105,15 @@ the existing service settings document (`GET/POST /__izumi/settings`), with two 
   - Leave `languages` out while signed out. izumi then drops what it kept.
   - A document that names the fields but has no values yet (details still loading) leaves izumi's copy
     alone.
-- **`section: "languages"`** on a field shows it in izumi's Settings › Languages › Per catalog, under
-  the source's catalog. This is the source's Language section. Rules:
+- **`section: "languages"`** on a field makes it part of the source's Language section. izumi shows
+  that section in three places:
+  - at the top of the source's settings sheet, as rows that save each change on their own (the sheet
+    leaves these fields out of its form, whatever their `visibleWhen`);
+  - in Settings › Languages › Per catalog, under the source's catalog;
+  - the sheet itself is listed in Settings › Sources and store › My sources as *<Source> settings*,
+    next to Manage sources, so the account and its languages are one step from Settings.
+
+  Rules:
   - A `visibleWhen` there counts only when it names another field of the same section.
   - izumi saves a change by posting just the changed field, with no action field. The source must
     accept such a save and change only the fields it is given. Re-sending the section's other values

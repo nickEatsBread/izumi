@@ -3,7 +3,8 @@
  *  Language section izumi shows in Settings › Languages. Reading a document keeps izumi's copy
  *  (manager.ts); saving a field of the section writes izumi's change back to the account. */
 import { get } from 'svelte/store'
-import { sourceAccountLanguages } from '$lib/settings/catalog-languages'
+import { sourceAccountLanguages, SUBTITLES_OFF, type LanguageKind } from '$lib/settings/catalog-languages'
+import { langsEqual } from '$lib/stremio/sublang'
 import {
   extensionServiceSettings,
   saveExtensionServiceSettings,
@@ -60,4 +61,25 @@ export async function saveSourceLanguageSection(
   return result?.version === 1 && Array.isArray(result.fields) && result.values
     ? result as ServiceSettingsDocument
     : extensionServiceSettings(packageId)
+}
+
+/** The account's option for a picked language: the exact tag, else the current value when it is the
+ *  same language, else the first option of that language (`ja` → `ja-JP`). */
+export function accountOption(options: ReadonlyArray<{ value: string }>, tag: string, current: unknown): string | undefined {
+  if (tag === SUBTITLES_OFF) return options.find((option) => option.value.toLowerCase() === SUBTITLES_OFF)?.value
+  const exact = options.find((option) => option.value.toLowerCase() === tag.toLowerCase())
+  if (exact) return exact.value
+  if (typeof current === 'string' && current && langsEqual(current, tag)) return current
+  return options.find((option) => option.value && langsEqual(option.value, tag))?.value
+}
+
+/** A language picked in the player, saved to the account field that holds that kind
+ *  (player/language-memory.ts). Nothing is sent when the account has no such option or already
+ *  holds it. */
+export async function saveSourceLanguagePick(packageId: string, kind: LanguageKind, tag: string): Promise<void> {
+  const document = await extensionServiceSettings(packageId)
+  const key = document.languages?.[kind]
+  const field = key ? document.fields.find((candidate) => candidate.key === key && candidate.type === 'select') : undefined
+  const option = field ? accountOption(field.options ?? [], tag, document.values[field.key]) : undefined
+  if (field && option !== undefined && option !== document.values[field.key]) await saveSourceLanguageSection(packageId, field.key, option)
 }
