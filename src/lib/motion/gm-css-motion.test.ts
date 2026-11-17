@@ -193,9 +193,10 @@ describe('startGmCssMotion', () => {
       transitionProperty: 'opacity, color', transitionDuration: '0.2s, 0.3s', transitionTimingFunction: 'ease, linear', transitionDelay: '0s, 0s',
     } as CSSStyleDeclaration)
     start(el, fakeAnimation({ name: 'fade', keyframes: fade(['0', '1']) }), 'animationstart')
-    expect(el.style.transition).toBe('color 0.3s linear 0s')
+    // Read back the way browsers serialize it: default values (ease, a 0s delay) are dropped.
+    expect(el.style.transition).toBe('color 0.3s linear')
     step(200)
-    expect(el.style.transition).toBe('opacity 0.2s ease, color 0.3s linear')
+    expect(el.style.transition).toBe('opacity 0.2s, color 0.3s linear')
   })
 })
 

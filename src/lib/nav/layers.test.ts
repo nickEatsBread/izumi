@@ -408,6 +408,11 @@ describe('navLayer action', () => {
   it('leaves a hint instead of moving focus after a touch close', () => {
     inputType.set('touch')
     html(page)
+    // A tapped opener is not :focus-visible in a browser; jsdom matches it after any focus().
+    const matches = Element.prototype.matches
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
+      return selector === ':focus-visible' ? false : matches.call(this, selector)
+    })
     byId('opener').focus()
     const action = mount(byId('menu'), { onClose: () => {}, initialFocus: 'none' })
     byId('option').focus()

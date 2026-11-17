@@ -39,9 +39,9 @@ describe('gmPanel', () => {
     const node = document.createElement('div')
     const action = gmPanel(node, 'right')
     // Pinned to its own layer for life, starting at the hidden state.
-    expect(node.style.transform).toBe('translateZ(0)')
+    expect(node.style.transform).toBe('translateZ(0px)')
     expect(node.style.opacity).toBe('0')
-    expect(node.style.translate).toBe('56px 0px')
+    expect(node.style.translate).toBe('56px')
     flushFrame()
     flushFrame(100)
     expect(node.style.opacity).toBe('0')
@@ -50,7 +50,7 @@ describe('gmPanel', () => {
     expect(Number(node.style.opacity)).toBeGreaterThan(0)
     flushFrame(GM_PANEL_IN_MS)
     expect(node.style.opacity).toBe('1')
-    expect(node.style.translate).toBe('0px 0px')
+    expect(node.style.translate).toBe('0px')
     action.destroy?.()
   })
 
@@ -64,7 +64,7 @@ describe('gmPanel', () => {
       flushFrame()
       flushFrame(GM_PANEL_IN_MS + 16)
       expect(node.style.opacity, stage).toBe('1')
-      expect(node.style.translate, stage).toBe('0px 0px')
+      expect(node.style.translate, stage).toBe('0px')
     }
   })
 })
