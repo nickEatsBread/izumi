@@ -12,6 +12,7 @@
     serviceSubmitPresentation,
     visibleServiceSettingFields,
   } from '$lib/extensions/service-settings-form'
+  import { languageSectionFields, saveSourceLanguageSection } from '$lib/extensions/source-languages'
   import { copyToClipboard } from '$lib/util/clipboard'
   import QrCode from '$lib/components/QrCode.svelte'
   import { navLayer } from '$lib/nav/overlay'
@@ -49,7 +50,13 @@
   let destroyed = false
   const dirtyKeys = new Set<string>()
 
-  const visibleFields = $derived(document ? visibleServiceSettingFields(document, values) : [])
+  // The source's Language section sits above the form and saves each change on its own, as the
+  // source's handheld app's Preferences do; the form below keeps the rest.
+  const languageFields = $derived(document ? languageSectionFields(document) : [])
+  let languageSaving = $state('')
+  const visibleFields = $derived(document
+    ? visibleServiceSettingFields(document, values).filter((field) => field.section !== 'languages')
+    : [])
   const submit = $derived(document ? serviceSubmitPresentation(document, values) : null)
   const notice = $derived(
     document?.notice && matchesServiceSettingCondition(document.notice.visibleWhen, values)
@@ -142,6 +149,18 @@
     finally { saving = false }
   }
 
+  async function saveLanguage(key: string, value: ServiceSettingValue) {
+    if (languageSaving || saving) return
+    languageSaving = key
+    error = ''
+    message = ''
+    try {
+      applyDocument(await saveSourceLanguageSection(id, key, value), true)
+      message = 'Saved to your account.'
+    } catch (cause) { error = errorText(cause) }
+    finally { languageSaving = '' }
+  }
+
   function copyCode(code: string) {
     codeCopied = copyToClipboard(code)
     if (!codeCopied) error = 'The code could not be copied. You can still enter it manually.'
@@ -220,6 +239,48 @@
             class="mt-3 flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold text-secondary-foreground"
           ><ExternalLink size={16} /> {notice.action.label}</button>
         {/if}
+      </section>
+    {/if}
+    {#if languageFields.length}
+      <section aria-label="Languages" class="mb-5">
+        <h4 class="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Languages</h4>
+        <div class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-input/40">
+          {#each languageFields as field (field.key)}
+            <label class="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+              <span class="min-w-0">
+                <span class="block font-bold">{field.label}</span>
+                {#if languageSaving === field.key}<span class="block text-xs text-muted-foreground">Saving…</span>
+                {:else if field.description}<span class="block text-xs text-muted-foreground">{field.description}</span>{/if}
+              </span>
+              {#if field.type === 'boolean'}
+                <button
+                  type="button"
+                  data-focusable
+                  data-switch
+                  role="switch"
+                  aria-label={field.label}
+                  aria-checked={document.values[field.key] === true}
+                  disabled={!!languageSaving}
+                  onclick={() => saveLanguage(field.key, document?.values[field.key] !== true)}
+                  class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {document.values[field.key] === true ? 'bg-theme' : 'bg-white/20 ring-1 ring-inset ring-white/20'}"
+                ><span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {document.values[field.key] === true ? 'translate-x-4' : 'translate-x-0.5'}"></span></button>
+              {:else if field.type === 'select'}
+                <select
+                  data-focusable
+                  value={String(document.values[field.key] ?? '')}
+                  disabled={!!languageSaving}
+                  onchange={(event) => saveLanguage(field.key, event.currentTarget.value)}
+                  class="w-44 shrink-0 rounded-lg bg-input px-3 py-2 text-sm"
+                >
+                  {#each field.options ?? [] as option (option.value)}
+                    <option value={option.value}>{option.label}</option>
+                  {/each}
+                </select>
+              {/if}
+            </label>
+          {/each}
+        </div>
+        <p class="mt-2 text-xs text-muted-foreground">Saved to your {name} account as you change them. izumi plays {name} in these languages.</p>
       </section>
     {/if}
     <div class="space-y-4">

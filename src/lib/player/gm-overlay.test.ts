@@ -216,7 +216,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('await new Promise((resolve) => setTimeout(resolve, GM_OSD_CLEAR_MS))')
     expect(overlay).toContain(':global(html.gm-frozen [data-gm-menu-surface])')
     expect(overlay).not.toContain('gm-docked')
-    for (const file of ['TrackMenu', 'StreamPicker', 'SourceConnecting', 'UpNextOverlay', 'SeriesRatingPrompt', 'Controls']) {
+    for (const file of ['TrackMenu', 'StreamPicker', 'SourceConnecting', 'SeriesRatingPrompt', 'Controls']) {
       const source = readFileSync(fileURLToPath(new URL(`../components/player/${file}.svelte`, import.meta.url)), 'utf8')
       expect(source, file).toContain('data-gm-menu-surface')
       expect(source, file).not.toContain('data-gm-dock-avoid')
@@ -266,7 +266,7 @@ describe('gameModeDock', () => {
 
   it('names every live menu surface', () => {
     expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false })).toBe(false)
-    expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false, upNextOpen: true })).toBe(true)
+    expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false, ratingOpen: true })).toBe(true)
   })
 })
 
@@ -353,7 +353,7 @@ describe('Game-mode Leanback motion', () => {
     // The overlay is mounted for the whole playback (Controls only while the bar shows): it leaves
     // Up to whatever owns it, reveals the bar, then hands the request to the mounted Controls.
     const handler = overlay.slice(overlay.indexOf('const onRequest = async () => {'))
-    expect(handler).toContain('if (subtitleEditorOpen || get(playerStatsOpen) || get(upNextPrompt) || get(connecting) || get(debridCaching)')
+    expect(handler).toContain('if (subtitleEditorOpen || get(playerStatsOpen) || get(connecting) || get(debridCaching)')
     expect(handler.indexOf('poke()')).toBeLessThan(handler.indexOf('await tick()'))
     expect(handler.indexOf('await tick()')).toBeLessThan(handler.indexOf("window.dispatchEvent(new Event('player-open-settings'))"))
     expect(overlay).toContain("window.addEventListener('player-settings-request', onRequest)")

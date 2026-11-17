@@ -30,7 +30,7 @@ describe('Appearance section', () => {
     const entries = SETTINGS_SEARCH_INDEX.filter((item) => item.section === 'appearance' && item.key && new URL(item.href, BASE).pathname === '/app/settings/appearance')
     expect(entries.map((item) => item.key).sort()).toEqual([
       'android-tv-layout', 'haptics', 'high-contrast', 'larger-interaction-targets', 'motion', 'mouse-drag-carousels',
-      'navigation-items', 'startup-animation', 'theme-preset', 'theme-trailers', 'ui-scale', 'wheel-scroll-carousels',
+      'navigation-items', 'player-theme', 'startup-animation', 'theme-preset', 'theme-trailers', 'ui-scale', 'wheel-scroll-carousels',
     ])
     for (const item of entries) {
       expect([...keysIn(item.subcategory)], item.title).toContain(item.key)

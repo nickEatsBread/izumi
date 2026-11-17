@@ -13,14 +13,14 @@
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
   import NativeDrmSurface from './NativeDrmSurface.svelte'
-  import { nativeDrmSupported, usesNativeDrm } from '$lib/player/native-drm'
+  import { nativeDrmPlayback, usesNativeDrm } from '$lib/player/native-drm'
   import { playerCommand, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching, upNextPrompt } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -40,7 +40,7 @@
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
-    preferredAudioLang, preferredSubLang, scrubThumbnails,
+    scrubThumbnails,
   } from '$lib/settings/ui'
   import { registerThumbTiles } from '$lib/player/thumb-tiles'
   import { get } from 'svelte/store'
@@ -54,7 +54,8 @@
   import { reportWatchPlayback, watchParty } from '$lib/watch-together/client'
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, reportDirectTorrentFirstFrame, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
-  import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import { pickSubtitleTrackId, selectedAudioLang } from '$lib/player/track-policy'
+  import { languagesForMedia } from '$lib/settings/catalog-languages'
   import type { Track } from '$lib/player/track-label'
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { sessionSubtitleStyle, sessionSubtitleAdjustments, effectiveSubtitleStyle, resetSubtitleSession } from '$lib/settings/subtitle-presets'
@@ -75,9 +76,11 @@
   import PlayPauseIcon from './PlayPauseIcon.svelte'
   import { isMobile, isWindows } from '$lib/platform'
   import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
+  import { episodeLoadingModel } from '$lib/themes/host-model'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { protectedSurface } from '$lib/themes/safe-mode'
-  import { oskDismissedAt, playerStage, playerChromeVisible } from '$lib/player/session'
+  import { oskDismissedAt, playerStage, playerChromeVisible, lateSubtitleRevision } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import DockEpisodes from './DockEpisodes.svelte'
@@ -323,7 +326,7 @@
   $effect(() => {
     const armed = playerControls.paused === 'summary' && transportPaused && !loading && !eof && !gmMode && !docked && !$isMobile && !$pictureInPicture
       && !$scrubActive && !$playerMenuOpen && !$trackMenuOpen && !$commentsOpen && !subtitleEditorOpen
-      && !sourcePickerVisible && !sourceConnectingVisible && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
+      && !sourcePickerVisible && !sourceConnectingVisible && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
       && !$playerStatsOpen && !remoteCastOwnsPlayback
     pausedIdle = false
     if (!armed) return
@@ -454,7 +457,7 @@
   const drmActive = $derived(!!$nowPlayingStream.drm)
   // Linux plays protected streams in izumi's own mpv player: the mpv-side features (subtitle
   // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
-  const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported))
+  const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmPlayback))
   const drmWebview = $derived(drmActive && !drmNative)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell
@@ -799,20 +802,30 @@
   // show theirs. Game mode draws it natively (gm_osd.rs rating card); elsewhere the page does.
   const RATING_CARD_MS = 4_300
   const ratingIntro = $derived($themePresentation?.player?.rating === 'intro')
+  // API 8 `loading.episode`: the theme's screen over the black cover until the first frame (the opening
+  // screen hands over to it). Not over Game mode's frozen frame, where a source switch keeps the picture.
+  const episodeScreen = $derived($themePresentation?.loading?.episode)
+  // While it is drawn it is the black cover, so the loading layer over it stops painting its own.
+  const episodeCover = $derived(!!episodeScreen && !!$nowPlayingMedia && !(gmBitmapMode && $gmFrozenFrame != null))
   const ratingLabel = $derived(ratingIntro ? ($nowPlayingStream.rating?.label ?? $nowPlayingMedia?.media?.sourceFacts?.rating ?? '') : '')
   const ratingDetail = $derived(ratingIntro ? ($nowPlayingStream.rating?.descriptors ?? []).join(' · ') : '')
   let ratingShownAt = $state(0)
   let ratingOn = $state(false)
   let ratingFor = ''
+  function showRatingCard() {
+    if (!ratingLabel || ratingFor === loadedKey) return
+    ratingFor = loadedKey
+    ratingShownAt = Date.now()
+    scheduleGmDynamicOverlay()
+  }
   onMount(() => {
-    const off = listen<string>('player-file-loaded', () => {
-      if (!ratingLabel || ratingFor === loadedKey) return
-      ratingFor = loadedKey
-      ratingShownAt = Date.now()
-      scheduleGmDynamicOverlay()
-    })
+    const off = listen<string>('player-file-loaded', showRatingCard)
     return () => { void off.then((unlisten) => unlisten()) }
   })
+  // The webview's protected player loads no mpv file, and the player opening for the first time can
+  // still be registering the listener above when mpv's event comes: the first frame of each load
+  // brings the card too (once per load).
+  $effect(() => { if (firstFrame && ratingLabel) untrack(showRatingCard) })
   $effect(() => {
     if (!ratingShownAt) return
     const frame = requestAnimationFrame(() => (ratingOn = true))
@@ -1008,19 +1021,28 @@
   })
 
   // Re-select once the file is actually loaded. A per-series semantic preference (language,
-  // title, codec) wins; global language policy remains the fallback for unseen shows.
+  // title, codec) wins; global language policy remains the fallback for unseen shows. A subtitle
+  // that arrives later runs the choice again, but may only switch subtitles on: never away from a
+  // track already showing, which may be the viewer's own pick.
   let subtitlePolicyKey = ''
+  let subtitlePolicyRevision = 0
   $effect(() => {
     const key = loadedKey
-    if (drmWebview || !firstFrame || !key || subtitlePolicyKey === key) return
+    const revision = $lateSubtitleRevision
+    if (drmWebview || !firstFrame || !key || (subtitlePolicyKey === key && subtitlePolicyRevision === revision)) return
+    const late = subtitlePolicyKey === key
     subtitlePolicyKey = key
+    subtitlePolicyRevision = revision
     void playerTracks()
       .then((raw) => {
         if (key !== loadedKey) return
         const tracks = JSON.parse(raw) as Track[]
-        const audioPref = rememberedSeriesTrack(np.id, 'audio')
-        const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
-        if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        if (late && tracks.some((track) => (track.type === 'sub' || track.type === 'caption') && track.selected)) return
+        if (!late) {
+          const audioPref = rememberedSeriesTrack(np.id, 'audio')
+          const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
+          if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        }
 
         const subPref = rememberedSeriesTrack(np.id, 'subtitle')
         const rememberedSub = matchRememberedTrack(
@@ -1029,7 +1051,8 @@
         )
         if (rememberedSub === null) { cmd('set', ['sid', 'no']); return }
         if (rememberedSub) { cmd('set', [rememberedSub.type === 'caption' ? 'ccid' : 'sid', String(rememberedSub.id)]); return }
-        const id = pickSubtitleTrackId(tracks, get(preferredAudioLang), get(preferredSubLang))
+        const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+        const id = pickSubtitleTrackId(tracks, selectedAudioLang(tracks) ?? languages.audio[0], languages.subtitle)
         if (id !== undefined) cmd('set', ['sid', String(id)])
       })
       .catch(() => {})
@@ -1069,7 +1092,6 @@
     connecting: sourceConnectingVisible,
     cachingOpen: !!$debridCaching,
     ratingOpen: !!$seriesRatingPrompt,
-    upNextOpen: !!$upNextPrompt,
   }))
   let gmFrameImg = $state<HTMLImageElement | null>(null)
   let gmSpinnerTurn = $state(0)
@@ -1331,12 +1353,12 @@
   let gmScrubWasActive = false
   // The native OSD draws in the theme's colours. Read once the player opens, then whenever theme.ts
   // rewrites <html>'s palette or theme mark, so a theme switch reaches an open player too.
-  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '' })
+  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '', themeSpinnerSize: 0, themeSpinnerStroke: 0 })
   $effect(() => {
     if (!gmBitmapMode) return
     const read = () => {
       const next = readGmOsdTheme()
-      if (next.themeAccent !== gmTheme.themeAccent || next.themeFocus !== gmTheme.themeFocus) gmTheme = next
+      if ((Object.keys(next) as (keyof GmOsdTheme)[]).some((key) => next[key] !== gmTheme[key])) gmTheme = next
     }
     untrack(read)
     const observer = new MutationObserver(read)
@@ -1798,7 +1820,7 @@
   // with whatever surface already owns it (the subtitle mover, stats, a prompt, the switching card).
   $effect(() => {
     const onRequest = async () => {
-      if (subtitleEditorOpen || get(playerStatsOpen) || get(upNextPrompt) || get(connecting) || get(debridCaching)
+      if (subtitleEditorOpen || get(playerStatsOpen) || get(connecting) || get(debridCaching)
         || get(seriesRatingPrompt) || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen)
         || get(oskOpen) || topNavLayer()) return
       const picker = get(streamPicker)
@@ -1915,6 +1937,13 @@
         else if (e.payload.action === 'setPosition') cmd('seek', [String(value), 'absolute+exact'])
       }),
     ]
+    // A saved file can finish loading before these listeners are live (the overlay mounts as playback
+    // starts), and its missed file-loaded event left it without scrub previews. Ask mpv instead.
+    void Promise.all(uns).then(async () => {
+      if (loadedUrl) return
+      const path = await playerGetProperty('path').catch(() => '')
+      if (!loadedUrl && path && path === get(nowPlayingStream).url) loadedUrl = path
+    })
     // Safety net: end any active scrub on a window-level pointer release. If a seekbar drag
     // runs off the element/screen edge, its own pointerup can be missed — leaving the scrub
     // "active" forever, which pins the controls at opacity-0 (they vanish). Ending it here
@@ -2226,6 +2255,11 @@
     </button>
   {/if}
 
+  {#if episodeScreen && episodeCover && $nowPlayingMedia}
+    <LoadingScreen screen={episodeScreen} episode loading={!firstFrame} variant="player" class="izumi-hud pointer-events-none absolute inset-0 bg-black"
+      model={episodeLoadingModel($nowPlayingMedia.media, $nowPlayingMedia.episode)} />
+  {/if}
+
   <!-- Loading/buffering. Black backdrop ONLY before the first frame (covers the
        white webview + the transparent hole). Mid-playback stalls show just the
        spinner over the frozen frame. Stall-show is debounced in DrmSurface
@@ -2235,7 +2269,7 @@
          which suspends transition frames and can leave an outro spinner mounted forever. -->
     <div
       class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
-      class:bg-black={!firstFrame}
+      class:bg-black={!firstFrame && !episodeCover}
     >
       <!-- One ring for every playback wait, the same as the connecting screen's and in the same
            place, so starting playback shows one loader from the press to the picture. -->
@@ -2245,7 +2279,7 @@
     <!-- Game mode before mpv's window is up (a protected stream fetches its licence first): mpv's
          own spinner cannot draw yet, so the page draws the same ring in the same place, colour and
          turn (Spinner `player`) and the handover to it does not show. -->
-    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
+    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center" class:bg-black={!episodeCover}>
       <Spinner size="player" />
     </div>
   {/if}

@@ -151,3 +151,57 @@ fn macos_embed_attaches_owned_opengl_surface() {
         "stop() must drop the macOS render context before quitting the core"
     );
 }
+
+#[test]
+fn macos_closed_player_hides_its_last_frame() {
+    // close_player idles the warm core and keeps the NSOpenGLView, whose surface still holds the
+    // closed episode's last frame. Only the browse page's CSS covered it, so that frame flashed
+    // whenever WebKit repainted, e.g. as the window came back from the background.
+    let player = include_str!("../src/player/mod.rs");
+    let embed = include_str!("../src/player/macos_embed.rs");
+    let idle = player
+        .split("pub fn idle(&self)")
+        .nth(1)
+        .and_then(|rest| rest.split("\n    }\n").next())
+        .expect("PlayerHandle::idle");
+    assert!(
+        idle.contains("macos_embed::idle()"),
+        "closing the player must hide the macOS video view"
+    );
+    let load = player
+        .split("fn load_file(")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .expect("load_file");
+    assert!(
+        load.contains("macos_embed::wake()"),
+        "every file load must let the macOS video view show again"
+    );
+    let hide = embed
+        .split("pub fn idle()")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .expect("macos_embed::idle");
+    assert!(
+        hide.contains("setHidden(true)"),
+        "idle must hide the video view"
+    );
+    let render = embed
+        .split("fn render_now()")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .expect("render_now");
+    let gate = render
+        .find("IDLE.load")
+        .expect("render_now must not draw while no file is open");
+    let draw = render
+        .find(".render::<")
+        .expect("render_now draws mpv's frame");
+    let show = render
+        .find("setHidden(false)")
+        .expect("the first render after wake must show the view");
+    assert!(
+        gate < show && show < draw,
+        "show the view only from a render that then draws over the old frame"
+    );
+}

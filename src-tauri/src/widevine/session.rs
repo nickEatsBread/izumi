@@ -421,6 +421,7 @@ async fn media_files(manifest_url: &str, max_height: Option<u32>, forced: Option
             width: saved.width,
             height: saved.height,
             codecs: saved.codecs.clone(),
+            mime: "video/mp4".into(),
             lang: None,
         };
         (

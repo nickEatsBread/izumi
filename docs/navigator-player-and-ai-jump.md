@@ -189,8 +189,8 @@ Decision 3 is in only for the one endpoint the viewer types.
 
 - **Package.** `plugin.json` (app, kind `plugin`, schemaVersion 1, pluginApi 1, id, name, version, author,
   description, `main` path and SHA-256, permissions, settings, optional `panel`) plus one `main.js` ES
-  module: `export default { activate(izumi) { … } }`. `node scripts/plugins/pin-main.mjs <folder>` writes
-  the hash. Files under `plugins/` are kept LF so the hash survives a Windows checkout.
+  module: `export default { activate(izumi) { … } }`. The plugin marketplace's `scripts/pin-main.mjs <folder>`
+  writes the hash ([izumi-plugins](https://github.com/nickEatsBread/izumi-plugins)).
 - **Scopes.**
   - `network`: listed https domains, plus the host of a `url` setting (`fromSetting`). Local and private
     addresses are refused, except that endpoint, which may use http only when it is on this computer.
@@ -201,9 +201,24 @@ Decision 3 is in only for the one endpoint the viewer types.
     downloading gives the lines of the parts it has. http streams answer `remote-stream`.
   - `player.control`: seek.
   - `player.panel`: a prompt, a status line and up to 20 results, all drawn by izumi.
+  - `signin` (pluginApi 2): sign-in in the viewer's own browser, the native-app way (RFC 8252).
+    `izumi.signin.listen(path)` has Rust (`plugin_signin.rs`) listen on a free `127.0.0.1` port (and the
+    same port on `::1`, for `localhost` redirects) and answers `{ port }`. `signin.open(url)` opens the
+    system browser, but only at an https address on the plugin's `network.domains`. `signin.wait()`
+    returns the query of the first request to that path, after up to 10 minutes. `signin.cancel()` stops
+    waiting. The listener answers once, then closes; other paths get a 404. The plugin checks `state`,
+    and does PKCE and the token exchange itself. The scope needs fixed network domains.
 
   Always available: settings (secrets in `plugin-secret-<id>`, which key-policy classes as a secret),
-  5 MB of storage, and a log.
+  5 MB of storage, and a log. API 2 adds:
+  - `izumi.secrets.get/set/delete(key)`, for tokens a plugin gets at sign-in. They are kept with its
+    secret settings, and only the plugin reads them; removing the plugin deletes them.
+  - `izumi.ui.setAccount({ text, buttons })`, an account block at the top of the plugin's settings. It
+    has up to four buttons, and a click sends the plugin an `account` event with the button's id.
+  - A setting's `links` (up to four https pages, such as where to get an API key), which izumi opens in
+    the browser.
+
+  izumi runs plugins with pluginApi 1 or 2, and the store shows "Needs a newer izumi" for anything newer.
 - **Sandbox.** Each plugin runs in a hidden `<iframe sandbox="allow-scripts">` srcdoc. Its CSP is
   `default-src 'none'; script-src 'sha256-<bootstrap>' blob:; worker-src blob:`, so it can make no
   connections. The bootstrap starts a classic Worker, which imports the plugin module from a blob. A
@@ -238,8 +253,11 @@ Decision 3 is in only for the one endpoint the viewer types.
   title's cover, filled in by izumi, so a plugin cannot load a URL to track the viewer. The beam is drawn
   in CSS, because Navigator's BorderBeam is a React package. Navigator's Ship icon is its own logo;
   plugins get Sparkles.
-- **Jump to a moment** (`plugins/jump-to-moment`). It needs four settings: the model address, the model,
-  an optional key, and "Only search what I've watched". To answer a question it:
+- **Jump to a moment** (now `official/jump-to-moment` in izumi-plugins, listed in its store). Version 1.1
+  (pluginApi 2) signs in with ChatGPT (the viewer's plan) or OpenRouter (Claude, Gemini and more), or
+  takes an OpenAI, Anthropic or Google AI Studio API key, or the model address it always had. It leaves
+  out logins that reuse a consumer subscription outside its own flow (Claude.ai, Gemini apps, CLI
+  proxies): Anthropic and Google forbid them. To answer a question it:
   1. keeps the lines around keyword hits (±5 lines, top 12 hits), or all lines when nothing matches;
   2. asks for up to three line numbers as JSON;
   3. drops numbers it did not send;
@@ -256,7 +274,7 @@ Decision 3 is in only for the one endpoint the viewer types.
   A real model's answer quality is not measured here.
 - **Not in v1:**
   - reading subtitle tracks embedded in a video streamed over http (debrid and addon links);
-  - store listings for plugins (the store branch lists sources, themes and packs);
+  - store listings for plugins (added 2026-11-16: see [PLUGINS.md](PLUGINS.md));
   - automatic updates and pending-permission review on update;
   - DNS-level private-address checks (the guard reads the URL's host; Rust follows redirects);
   - the other spec slots and scopes.

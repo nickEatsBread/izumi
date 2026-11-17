@@ -21,6 +21,7 @@
   import Spinner from '$lib/components/Spinner.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState, type ResolveSession } from '$lib/stremio/play'
+  import { catalogLanguages, languagesForMedia, rankingLanguages, sourceAccountLanguages } from '$lib/settings/catalog-languages'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, preferredSubLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority, adaptiveSourceMode } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
@@ -120,10 +121,15 @@
 
   // Ranking inputs the ordering can't derive from a stream alone: the language the user asked to
   // hear, the group the previous episode of THIS title played from, and the curated recommendation.
+  // The title's catalog decides the languages (see catalog-languages.ts).
+  const languages = $derived.by(() => {
+    // languagesForMedia reads its stores once; name them so a change re-ranks the open list.
+    void $catalogLanguages; void $sourceAccountLanguages; void $preferredAudioLang; void $preferredSubLang
+    return rankingLanguages(languagesForMedia(pick?.media))
+  })
   const rankOpts = $derived({
     runtimeSeconds: pick?.media.duration && pick.media.duration > 0 ? pick.media.duration * 60 : undefined,
-    audioLang: $preferredAudioLang,
-    subtitleLang: $preferredSubLang,
+    ...languages,
     previousGroup: $bingeSource?.mediaId === pick?.media.id ? $bingeSource?.group : undefined,
     directP2p,
     seadexHashes,
@@ -203,8 +209,7 @@
     ? planSources(baselineCandidates, {
         directP2p,
         policy: $adaptiveSourceMode === 'shadow' ? 'preview' : 'active',
-        audioLang: $preferredAudioLang,
-        subtitleLang: $preferredSubLang,
+        ...languages,
         sourcePriority: $sourcePriority,
         outcomeOf: sourceOutcomeSummary,
       })
@@ -225,8 +230,10 @@
   const AUTO_MAX_TRIES = $derived(autoImmediate ? (directP2p ? 4 : 8) : 3)
   let autoTries = $state(0)
   let recoveryOrder = $state<StreamInfo['stream'][]>([])
-  const bestStream = $derived(
-    recoveryOrder.find((stream) => candidates.includes(stream) && !hasFailed(stream))
+  // Choosing a download: the best row is the one the download rules would have saved.
+  const bestStream = $derived(pick?.download
+    ? pick.download.suggest(visible.map((i) => i.stream))
+    : recoveryOrder.find((stream) => candidates.includes(stream) && !hasFailed(stream))
       ?? candidates.find((stream) => !hasFailed(stream)),
   )
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
@@ -555,6 +562,14 @@
     // peers via the magnet's trackers. We dim it as a hint but never block the click; sinking a
     // mislabeled source (see extToStream/dedupe) to unclickable was the actual complaint.
     if (busy || !pick) return
+    // Choosing what to download: hand the row over and close; nothing plays.
+    if (pick.download) {
+      const download = pick.download
+      cancelResolve(resolveSession)
+      pickerStore.set(null)
+      download.choose(info.stream)
+      return
+    }
     // Picking a source supersedes the in-flight resolve: stop it folding in more sources (and, for
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
     commitResolveSelection(resolveSession)
@@ -615,8 +630,7 @@
     recoveryOrder = $adaptiveSourceMode === 'active'
       ? planRecoveryCandidates(remaining, info.stream, failureClass, {
           directP2p,
-          audioLang: $preferredAudioLang,
-          subtitleLang: $preferredSubLang,
+          ...languages,
           sourcePriority: $sourcePriority,
         })
       : remaining
@@ -932,6 +946,7 @@
           {/if}
           <div class="min-w-0 flex-1">
             <h2 class="sp-title font-black leading-tight drop-shadow {$isMobile ? 'line-clamp-1 text-base' : 'line-clamp-2 text-xl'}">{title(pick.media)}</h2>
+            {#if pick.download}<p data-part="sources.download" class="mt-0.5 text-xs font-bold text-theme">Choose a source to download{pick.episode != null ? ` · Episode ${pick.episode}` : ''}</p>{/if}
             <p data-part="sources.status" data-state={resolving ? 'loading' : undefined} class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               {#if resolving}<Spinner size="xs" frame={$gameMode ? spinnerFrame : undefined} />{$jvmRuntimeState === 'starting' ? 'Starting extension runtime…' : 'Finding sources…'}{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>

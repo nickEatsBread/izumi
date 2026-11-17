@@ -40,6 +40,8 @@ mod jvm_extensions;
 mod net_interfaces;
 #[cfg(not(target_os = "android"))]
 mod oauth;
+#[cfg(not(target_os = "android"))]
+mod plugin_signin;
 mod reset;
 #[cfg(not(target_os = "android"))]
 mod reset_data;
@@ -76,9 +78,9 @@ mod subsync;
 #[cfg(target_os = "linux")]
 mod steam_osk;
 // Protected (Widevine) handling by hosting Google's module directly. Linux also plays protected
-// streams through izumi's own player; Windows uses it only to save protected episodes as clear
-// files (its webview still streams them live). macOS keeps the webview path for both.
-// `widevine_host` is set by build.rs for x86-64 Linux and Windows.
+// streams through izumi's own player; Windows and macOS use it only to save protected episodes as
+// clear files (their webview still streams them live).
+// `widevine_host` is set by build.rs for x86-64 Linux and Windows, and macOS (arm64 and x86-64).
 #[cfg(widevine_host)]
 mod widevine;
 // Optional native modules (packs ask for them by id), downloaded in the background.
@@ -274,6 +276,11 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) theme_accent: String,
     #[serde(default)]
     pub(crate) theme_focus: String,
+    // The theme's loading ring in screen px (theme-gm-osd.ts); 0 keeps the OSD's 48 px ring and 4 px stroke.
+    #[serde(default)]
+    pub(crate) theme_spinner_size: f64,
+    #[serde(default)]
+    pub(crate) theme_spinner_stroke: f64,
     /// The age rating card at the top right as an episode opens (theme `player.rating: "intro"`): the
     /// rating ("14"), its content descriptors on one line, and when it was first shown (Unix ms; 0 =
     /// none). The OSD fades it in, holds it and fades it out from that time.
@@ -553,7 +560,9 @@ fn module_release(id: String, by: Option<String>) -> Result<(), String> {
     modules::module_release(id, by)
 }
 
-/// Whether izumi's own player can play protected streams here, and which module version is ready.
+/// Whether this build can save protected episodes through izumi's module host (`supported`), whether
+/// it also plays them through izumi's own player (`playback`, Linux only), and which module version
+/// is ready. See `widevine::Status`.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
@@ -562,7 +571,7 @@ fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
     #[cfg(not(widevine_host))]
     {
         let _ = app;
-        Ok(serde_json::json!({ "supported": false, "installed": null }))
+        Ok(serde_json::json!({ "supported": false, "playback": false, "installed": null, "available": null }))
     }
 }
 
@@ -2221,29 +2230,41 @@ async fn opensubtitles_login(
     parse_opensubtitles_login(&text, now_ms)
 }
 
-/// Pick the first subtitle entry from a SubDL ZIP archive and return its raw (still-encoded) bytes.
-/// Prefers the first `.srt`; falls back to the first `.ass`/`.ssa`. SubDL always returns a ZIP (a
-/// non-`unpack` response is never a bare `.srt`). Two-pass so a later `.srt` beats an earlier `.ass`.
-fn unzip_first_subtitle(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
+/// Pick the subtitle entry from a SubDL/Jimaku ZIP archive and return its raw (still-encoded) bytes.
+/// SubDL always returns a ZIP (a non-`unpack` response is never a bare `.srt`), and a season pack
+/// holds one file per episode, so the entry naming `episode` wins. Among the candidates the first
+/// `.srt` beats the first `.ass`/`.ssa`.
+fn unzip_subtitle(zip_bytes: &[u8], episode: Option<u32>) -> Result<Vec<u8>, String> {
     let mut zip =
         zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).map_err(|e| e.to_string())?;
-    let mut srt_idx: Option<usize> = None;
-    let mut ass_idx: Option<usize> = None;
+    // (entry index, is .srt, episode its filename names)
+    let mut subs = Vec::new();
     for i in 0..zip.len() {
         let name = zip
             .by_index(i)
             .map_err(|e| e.to_string())?
             .name()
             .to_ascii_lowercase();
-        if name.ends_with(".srt") {
-            if srt_idx.is_none() {
-                srt_idx = Some(i);
-            }
-        } else if (name.ends_with(".ass") || name.ends_with(".ssa")) && ass_idx.is_none() {
-            ass_idx = Some(i);
+        let srt = name.ends_with(".srt");
+        if srt || name.ends_with(".ass") || name.ends_with(".ssa") {
+            subs.push((i, srt, direct_torrent_select::file_episode(&name)));
         }
     }
-    let idx = srt_idx.or(ass_idx).ok_or("no subtitle entry in archive")?;
+    let named = |wanted: u32| subs.iter().filter(move |sub| sub.2 == Some(wanted));
+    let pool: Vec<_> = match episode {
+        Some(wanted) if named(wanted).next().is_some() => named(wanted).collect(),
+        // A season pack without this episode: any file in it belongs to another one.
+        Some(wanted) if subs.iter().filter(|sub| sub.2.is_some()).count() > 1 => {
+            return Err(format!("no subtitle for episode {wanted} in archive"))
+        }
+        _ => subs.iter().collect(),
+    };
+    let idx = pool
+        .iter()
+        .find(|sub| sub.1)
+        .or(pool.first())
+        .map(|sub| sub.0)
+        .ok_or("no subtitle entry in archive")?;
     let mut entry = zip.by_index(idx).map_err(|e| e.to_string())?;
     let mut buf = Vec::with_capacity(entry.size() as usize);
     std::io::Read::read_to_end(&mut entry, &mut buf).map_err(|e| e.to_string())?;
@@ -2292,6 +2313,7 @@ async fn fetch_normalize_subtitle(
     provider: &str,
     url: Option<&str>,
     file_id: Option<i64>,
+    episode: Option<u32>,
     api_key: Option<&str>,
     token: Option<&str>,
 ) -> Result<String, String> {
@@ -2363,7 +2385,7 @@ async fn fetch_normalize_subtitle(
                 .bytes()
                 .await
                 .map_err(|_| "zip read failed".to_string())?;
-            unzip_first_subtitle(&zip_bytes)?
+            unzip_subtitle(&zip_bytes, episode)?
         }
         "jimaku" => {
             let file_url = url.ok_or("missing file url")?;
@@ -2394,7 +2416,7 @@ async fn fetch_normalize_subtitle(
             // Plain subtitles and ZIPs sit in the same listing, so sniff the local-header magic
             // rather than trusting the extension, and reuse the SubDL unzip path when it is one.
             if bytes.starts_with(b"PK\x03\x04") {
-                unzip_first_subtitle(&bytes)?
+                unzip_subtitle(&bytes, episode)?
             } else {
                 bytes
             }
@@ -2425,6 +2447,7 @@ async fn player_add_subtitle(
     provider: String,
     url: Option<String>,
     file_id: Option<i64>,
+    episode: Option<u32>,
     lang: String,
     title: String,
     api_key: Option<String>,
@@ -2436,6 +2459,7 @@ async fn player_add_subtitle(
         &provider,
         url.as_deref(),
         file_id,
+        episode,
         api_key.as_deref(),
         token.as_deref(),
     )
@@ -2453,6 +2477,7 @@ async fn player_add_subtitle(
     provider: String,
     url: Option<String>,
     file_id: Option<i64>,
+    episode: Option<u32>,
     _lang: String,
     _title: String,
     api_key: Option<String>,
@@ -2463,6 +2488,7 @@ async fn player_add_subtitle(
         &provider,
         url.as_deref(),
         file_id,
+        episode,
         api_key.as_deref(),
         token.as_deref(),
     )
@@ -6819,7 +6845,11 @@ pub fn run() {
             http_get,
             opensubtitles_moviehash,
             subtitle_fonts::subtitle_fonts_save,
+            subtitle_fonts::subtitle_fonts_fetch,
             embedded_subtitles::embedded_subtitle_cues,
+            plugin_signin::plugin_signin_listen,
+            plugin_signin::plugin_signin_wait,
+            plugin_signin::plugin_signin_cancel,
             http_post,
             ext_fetch,
             http_cancel,
@@ -6988,6 +7018,7 @@ pub fn run() {
         http_get,
         opensubtitles_moviehash,
         subtitle_fonts::subtitle_fonts_save,
+        subtitle_fonts::subtitle_fonts_fetch,
         http_post,
         ext_fetch,
         http_cancel,
@@ -7261,7 +7292,7 @@ mod subtitle_zip_tests {
             ),
         ]);
         assert_eq!(
-            unzip_first_subtitle(&zip).unwrap(),
+            unzip_subtitle(&zip, None).unwrap(),
             b"1\n00:00:01,000 --> 00:00:02,000\nHello\n"
         );
     }
@@ -7269,13 +7300,35 @@ mod subtitle_zip_tests {
     #[test]
     fn falls_back_to_ass() {
         let zip = make_zip(&[("a.txt", b"x"), ("b.ass", b"[Events]")]);
-        assert_eq!(unzip_first_subtitle(&zip).unwrap(), b"[Events]");
+        assert_eq!(unzip_subtitle(&zip, None).unwrap(), b"[Events]");
     }
 
     #[test]
     fn errors_when_no_subtitle() {
         let zip = make_zip(&[("a.txt", b"x"), ("b.nfo", b"y")]);
-        assert!(unzip_first_subtitle(&zip).is_err());
+        assert!(unzip_subtitle(&zip, None).is_err());
+    }
+
+    #[test]
+    fn a_season_pack_yields_the_requested_episode() {
+        // Real pack layout: the archive does not list its episodes in order.
+        let zip = make_zip(&[
+            ("Show.S01E28.WEBRip.en.srt", b"twenty-eight"),
+            ("Show.S01E01.WEBRip.en.srt", b"one"),
+            ("Show.S01E02.WEBRip.en.srt", b"two"),
+        ]);
+        assert_eq!(unzip_subtitle(&zip, Some(2)).unwrap(), b"two");
+        assert_eq!(unzip_subtitle(&zip, Some(28)).unwrap(), b"twenty-eight");
+        // A season pack without the episode must not hand back another episode's file.
+        assert!(unzip_subtitle(&zip, Some(5)).is_err());
+    }
+
+    #[test]
+    fn an_episode_number_never_rejects_a_single_episode_archive() {
+        let zip = make_zip(&[("Show - S01E01.English[SDH].ass", b"[Events]")]);
+        assert_eq!(unzip_subtitle(&zip, Some(13)).unwrap(), b"[Events]");
+        let zip = make_zip(&[("English.srt", b"en"), ("English SDH.srt", b"sdh")]);
+        assert_eq!(unzip_subtitle(&zip, Some(4)).unwrap(), b"en");
     }
 }
 

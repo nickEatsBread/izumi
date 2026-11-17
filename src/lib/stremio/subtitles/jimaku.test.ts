@@ -261,7 +261,7 @@ describe('createJimaku().search', () => {
         provider: 'jimaku',
         lang: 'ja',
         release: 'Show - 07.srt',
-        download: { needsFetch: true, fileUrl: 'https://jimaku.cc/entry/9/download/Show%20-%2007.srt' },
+        download: { needsFetch: true, fileUrl: 'https://jimaku.cc/entry/9/download/Show%20-%2007.srt', episode: 7 },
       },
     ])
   })

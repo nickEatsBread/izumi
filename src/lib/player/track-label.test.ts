@@ -35,10 +35,13 @@ describe('distinctiveTitle', () => {
     expect(distinctiveTitle('English', 'eng')).toBeUndefined()      // would read "English · English"
     expect(distinctiveTitle('English SDH', 'eng')).toBeUndefined()  // SDH rendered as its own badge
     expect(distinctiveTitle('', 'eng')).toBeUndefined()
+    expect(distinctiveTitle('en-US', 'en-US')).toBeUndefined()  // a source that labels tracks by locale
+    expect(distinctiveTitle('es-419', 'es-419')).toBeUndefined()
   })
   it('keeps titles that add real information', () => {
     expect(distinctiveTitle('Signs & Songs', 'eng')).toBe('Signs & Songs')
     expect(distinctiveTitle('Commentary', 'eng')).toBe('Commentary')
+    expect(distinctiveTitle('es-419', 'es-ES')).toBe('es-419')
   })
 })
 

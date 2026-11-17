@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Minimal host for Google's unmodified Widevine CDM through the Chromium CDM interface (11, else 10).
 // Single-threaded by design: the CDM is only ever called from the thread that owns the wv_host, and
 // timers, deferred host replies and promise waits are all pumped on that thread. Persistent state is

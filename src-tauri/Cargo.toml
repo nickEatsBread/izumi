@@ -1,10 +1,10 @@
 [package]
 name = "izumi"
-version = "0.1.74"
+version = "0.1.76"
 description = "A native desktop anime client"
 authors = ["izumi contributors"]
 edition = "2021"
-license = "AGPL-3.0-or-later"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -112,7 +112,7 @@ futures-util = "0.3"
 # segments plus a persistent licence. `widevine` runs the L3 licence exchange (device/challenge/
 # keys); `aes`+`ctr`+`cipher` implement AES-CTR for CENC sample decryption; `data-encoding` decodes
 # the base64 pssh box. All pure Rust, so the Android target keeps cross-compiling (the command is
-# desktop-only at runtime). GPL-3.0 `widevine` is compatible with this crate's AGPL-3.0-or-later.
+# desktop-only at runtime). GPL-3.0 `widevine` is compatible with this crate's GPL-3.0-or-later.
 widevine = "0.1"
 aes = "0.8"
 ctr = "0.9"
@@ -239,6 +239,9 @@ objc2-app-kit = { version = "0.3.2", features = [
   "NSOpenGL",
   "NSOpenGLView",
 ] }
+# Loads Google's Widevine module (libwidevinecdm.dylib) for the same pure-Rust CDM host Windows uses
+# (src/widevine/host_win.rs); see the Windows entry above.
+libloading = "0.8"
 
 # Linux: embed mpv via its OpenGL render API into a wl_subsurface placed below the
 # transparent webview (see player/linux_embed.rs). gtk3/gdk/glib match Tauri 2.11's

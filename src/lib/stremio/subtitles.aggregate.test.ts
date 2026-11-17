@@ -106,6 +106,30 @@ describe('fetchExternalSubtitles', () => {
     expect(mocks.osSearch).toHaveBeenCalledOnce()
   })
 
+  it('asks with the ids and per-season episode a catalog title carries, never its synthetic id', async () => {
+    const media: Media = {
+      id: -918864748, title: {}, format: 'TV',
+      catalog: { provider: 'tmdb', id: '307853', type: 'series' },
+      externalIds: { tmdb: 307853, imdb: 'tt0000009' },
+      videos: [{ number: 14, season: 2, episode: 2 }],
+    }
+    await fetchExternalSubtitles([], media, 14)
+    expect(mocks.getExtensionIds).not.toHaveBeenCalled()
+    for (const search of [mocks.osSearch, mocks.subdlSearch, mocks.jimakuSearch]) {
+      expect(search.mock.calls[0][0]).toMatchObject({
+        imdbId: 'tt0000009', parentImdbId: 'tt0000009', tmdbId: '307853', season: 2, seasonEpisode: 2, episode: 14,
+      })
+      expect(search.mock.calls[0][0].anilistId).toBeUndefined()
+    }
+  })
+
+  it('asks with the mapped per-season episode and keeps the AniList one for Jimaku', async () => {
+    mocks.getExtensionIds.mockResolvedValue({ imdbId: 'tt0000123', season: 1, episodeNumber: 14 })
+    await fetchExternalSubtitles([], MEDIA, 2)
+    expect(mocks.osSearch.mock.calls[0][0]).toMatchObject({ season: 1, seasonEpisode: 14, episode: 2 })
+    expect(mocks.jimakuSearch.mock.calls[0][0]).toMatchObject({ anilistId: 1, episode: 2 })
+  })
+
   it('passes the AniList id through so Jimaku can resolve its entry', async () => {
     await fetchExternalSubtitles(['https://addon'], MEDIA, 5, 'Show.S01E05.mkv')
     expect(mocks.jimakuSearch).toHaveBeenCalledWith(expect.objectContaining({ anilistId: MEDIA.id, episode: 5 }))

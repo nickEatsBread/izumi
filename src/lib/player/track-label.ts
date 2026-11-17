@@ -163,6 +163,8 @@ const GENERIC_TITLE =
 export function distinctiveTitle(title?: string, lang?: string): string | undefined {
   const t = title?.trim()
   if (!t || GENERIC_TITLE.test(t)) return undefined
+  // A title that is only the track's own language code ("en-US" on an en-US track) restates it.
+  if (/^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i.test(t) && langName(t) === langName(lang)) return undefined
   const ln = langName(lang)?.toLowerCase()
   let rest = t.toLowerCase()
   if (ln) rest = rest.split(ln).join(' ')

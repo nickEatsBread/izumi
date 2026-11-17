@@ -281,7 +281,7 @@ The diagram distinguishes two modes; implementing it must not upload the same se
 through both paths and count it twice. The normal encrypted transport stays encrypted.
 
 Suggested Worker modules are a consumption validator/aggregator, a metadata candidate cache
-and a recommendation handler. Reuse the pure engine in the AGPL Worker build; preserve
+and a recommendation handler. Reuse the pure engine in the GPL Worker build; preserve
 the existing boundary that the separately licensed TV consumes data rather than bundling
 that engine. Exact new route/table names should be finalized during implementation.
 

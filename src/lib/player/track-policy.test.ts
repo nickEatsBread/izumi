@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickSubtitleTrackId } from './track-policy'
+import { pickSubtitleTrackId, selectedAudioLang } from './track-policy'
 import type { Track } from './track-label'
 
 const sub = (partial: Partial<Track>): Track => ({ id: 0, type: 'sub', ...partial })
@@ -48,5 +48,40 @@ describe('pickSubtitleTrackId', () => {
     expect(pickSubtitleTrackId([
       sub({ id: 7, title: 'Full Subtitles' }),
     ], 'jpn', 'eng')).toBe(7)
+  })
+
+  it('walks the subtitle order to the first language that has a track', () => {
+    const tracks = [
+      sub({ id: 1, lang: 'fre', title: 'Français' }),
+      sub({ id: 2, lang: 'ger', title: 'Deutsch' }),
+    ]
+    expect(pickSubtitleTrackId(tracks, 'jpn', ['eng', 'ger', 'fre'])).toBe(2)
+    expect(pickSubtitleTrackId(tracks, 'jpn', 'eng,fre')).toBe(1)
+  })
+
+  it('keeps a regional subtitle apart from another region of the same language', () => {
+    const tracks = [
+      sub({ id: 1, lang: 'es-ES', title: 'Español (España)' }),
+      sub({ id: 2, lang: 'es-419', title: 'Español (América Latina)' }),
+    ]
+    expect(pickSubtitleTrackId(tracks, 'ja-JP', ['es-419'])).toBe(2)
+    expect(pickSubtitleTrackId(tracks, 'ja-JP', ['spa'])).toBe(1)
+  })
+
+  it('treats subtitles in the playing audio’s own language as a dub, for any language', () => {
+    expect(pickSubtitleTrackId([
+      sub({ id: 1, lang: 'ger', title: 'Deutsch' }),
+      sub({ id: 2, lang: 'ger', title: 'Deutsch [Forced]', forced: true }),
+    ], 'de-DE', ['ger'])).toBe(2)
+  })
+})
+
+describe('selectedAudioLang', () => {
+  it('reads the language of the selected audio track', () => {
+    expect(selectedAudioLang([
+      { id: 1, type: 'audio', lang: 'jpn' },
+      { id: 2, type: 'audio', lang: 'eng', selected: true },
+      sub({ id: 3, lang: 'fre', selected: true }),
+    ])).toBe('eng')
   })
 })

@@ -361,7 +361,9 @@ async function settingsWriter(profile: CloudflareResolverProfile): Promise<() =>
   if (addons.some(url => !url)) throw new Error('A restored source address is invalid. Keep your settings or correct the setup on the TV.')
   const quality = profile.quality === '1440' ? '1080' : profile.quality === '360' ? '480' : profile.quality
   const audio = /^(?:en|eng|english)$/i.test(profile.audioLang) ? 'eng'
-    : /^(?:ja|jpn|japanese)$/i.test(profile.audioLang) ? 'jpn' : get(ui.preferredAudioLang)
+    // Japanese is what the anime catalog plays by default, so it restores as Automatic rather than
+    // forcing Japanese audio on every catalog.
+    : /^(?:ja|jpn|japanese)$/i.test(profile.audioLang) ? 'auto' : get(ui.preferredAudioLang)
   const catalogPlan = profile.catalog ? (() => {
     const saved = profile.catalog!
     const knownDefault = catalog.CATALOG_SELECTIONS.find(provider => provider === saved.defaultScreen)

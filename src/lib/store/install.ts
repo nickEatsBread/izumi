@@ -8,12 +8,15 @@ import { ADULT_SOURCES_LOCKED_MESSAGE, adultSourcesPermitted } from '$lib/profil
 import type { InstallRef, StoreAdapterId, StoreEntry } from './types'
 
 // Installing a Store entry reuses the existing flows: addons → addonUrls, remote extensions →
-// extensionUrls, packages → the Rust package installer, themes → the Themes page preview.
+// extensionUrls, packages → the Rust package installer, themes → the Themes page preview, packs → the
+// pack review screen, plugins → their page on the Plugins page, where the viewer reviews permissions.
 
 export type InstallOutcome =
   | { kind: 'installed'; message: string }
   | { kind: 'configure'; name: string; id: string; configureUrl: string }
   | { kind: 'open-theme'; path: string }
+  | { kind: 'open-pack'; path: string }
+  | { kind: 'open-plugin'; path: string }
 
 export interface InstallContext {
   /** URL of the store the entry came from ('' for the addon directory). */
@@ -38,6 +41,9 @@ export interface InstalledState {
   /** Stores that may claim packages installed before origins were recorded (see origins.ts). */
   legacyStores: readonly string[]
   themes: readonly { id: string; origin: string }[]
+  /** Ids of the packs set up on this device. */
+  packs?: readonly string[]
+  plugins?: readonly { id: string; origin: string }[]
 }
 
 /** Own properties only: ids such as `constructor` must never resolve through the prototype. */
@@ -82,6 +88,8 @@ export function installedRef(entry: StoreEntry, state: InstalledState, storeUrl:
       : state.legacyStores.includes(storeUrl) && (onDisk.backend === undefined || onDisk.backend === install.pkg.backend)
     return claimed ? install.pkg.id : null
   }
+  if (install.type === 'pack') return state.packs?.includes(entry.id) ? entry.id : null
+  if (install.type === 'plugin') return state.plugins?.some((plugin) => plugin.id === entry.id && plugin.origin === storeUrl) ? entry.id : null
   return state.themes.some((theme) => theme.id === install.release.id && theme.origin === storeUrl) ? install.release.id : null
 }
 
@@ -144,6 +152,12 @@ export async function installStoreEntry(
     if (context.update) return { kind: 'installed', message: `${installed.name} updated.` }
     disabledPlugins.set(without(get(disabledPlugins), installed.id))
     return { kind: 'installed', message: `${installed.name} installed and enabled.` }
+  }
+  // A pack is never applied from here: its review screen shows everything it will do first.
+  if (install.type === 'pack') return { kind: 'open-pack', path: `/app/pack?url=${encodeURIComponent(install.url)}` }
+  // Nor is a plugin: its page lists what it will be allowed to do, and Install there is the consent.
+  if (install.type === 'plugin') {
+    return { kind: 'open-plugin', path: `/app/settings/plugins?store=${encodeURIComponent(entry.storeId)}&plugin=${encodeURIComponent(entry.id)}` }
   }
   return {
     kind: 'open-theme',

@@ -17,7 +17,8 @@ describe('TV surface wiring (API 6)', () => {
   it('publishes data-surface on the document only while a theme is active on a TV surface', () => {
     expect(theme).toContain("root.dataset.surface = 'tv'")
     expect(theme).toContain('delete root.dataset.surface')
-    expect(theme).toContain('resolvePresentation(studio.presentation, get(isMobile), get(tvSurface))')
-    expect(theme).toMatch(/effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface,/)
+    // Document chrome reads the same resolved presentation as the components (runtime.ts).
+    expect(theme).toContain('const presentation = get(themePresentation)')
+    expect(theme).toMatch(/shownStudioTheme, themeStudioPreview, isMobile, tvSurface,/)
   })
 })

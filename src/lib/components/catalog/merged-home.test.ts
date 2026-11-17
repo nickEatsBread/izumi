@@ -24,7 +24,9 @@ describe('merged catalog Home', () => {
 
   it('never lets a theme Home layout rearrange or lock a custom screen', () => {
     const editor = readFileSync(fileURLToPath(new URL('./HomeEditor.svelte', import.meta.url)), 'utf8')
-    for (const source of [home, editor]) expect(source).toContain('const themeLayout = $derived(isCustomScreen(target) ? null : $activeThemeLayout)')
+    expect(editor).toContain('const themeLayout = $derived(isCustomScreen(target) ? null : $activeThemeLayout)')
+    // Only a theme screen (API 8), the theme's own page, draws its entries on a custom screen.
+    expect(home).toContain('const themeLayout = $derived(isCustomScreen(target) && !themeScreen ? null : $homeLayout)')
     expect(editor).toContain('{#if !isCustomScreen(target)}<ThemeLayoutNotice')
     expect(home).toContain("params = new URLSearchParams({ provider: selection })")
   })

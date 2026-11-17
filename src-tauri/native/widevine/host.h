@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Minimal C API over Google's Widevine CDM through the Chromium CDM interface (11, falling back to
 // 10). The module is loaded once per process; each playback opens its own CDM instance. Every
 // function on one wv_host must be called from the same thread.

@@ -13,9 +13,9 @@ use std::time::Duration;
 use super::fmp4::Sample;
 
 // The CDM host boundary. On Linux it is the C++ shim (native/widevine/host.cc), linked by build.rs
-// and called through this extern block. On Windows the same C ABI is a pure-Rust host in the crate
-// (host_win.rs), so there `WvCallbacks`/`WvHost` and the wv_* functions are imported from it; the
-// rest of this file is identical either way.
+// and called through this extern block. On Windows and macOS the same C ABI is a pure-Rust host in
+// the crate (host_win.rs), so there `WvCallbacks`/`WvHost` and the wv_* functions are imported from
+// it; the rest of this file is identical either way.
 #[cfg(target_os = "linux")]
 #[repr(C)]
 struct WvCallbacks {
@@ -50,7 +50,7 @@ extern "C" {
     fn wv_host_close(h: *mut WvHost);
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use super::host_win::{
     wv_decrypt, wv_host_close, wv_host_interface, wv_host_open, wv_host_tick, wv_module_load, wv_module_version, wv_session_close, wv_session_create,
     wv_session_update, wv_set_server_certificate, wv_video_decode, wv_video_init, wv_video_reset, WvCallbacks, WvHost,

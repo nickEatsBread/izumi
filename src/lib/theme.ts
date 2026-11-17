@@ -1,17 +1,19 @@
 import { get, writable } from 'svelte/store'
 import { highContrast, largeInteractionTargets, motionPreference } from '$lib/settings/ui'
 import { themeStudioPreview, type StudioTheme } from '$lib/settings/theme-studio'
-import { effectiveStudioTheme, effectiveThemePreset } from '$lib/themes/screen-theme'
+import { activePlayerTheme, effectiveStudioTheme, effectiveThemePreset, shownStudioTheme, shownThemePreset } from '$lib/themes/screen-theme'
 import { resolvedThemeTokens } from '$lib/theme-tokens'
 import { isMobile, isTv } from '$lib/platform'
 import { resolvePresentation } from '$lib/themes/presentation'
-import { shellNav, tvSurface } from '$lib/themes/runtime'
+import { shellNav, themePresentation, tvSurface } from '$lib/themes/runtime'
 import { fontStack } from '$lib/themes/font-ids'
 import { loadThemeFont } from '$lib/themes/fonts'
 import { mirrorFocusSelectors, pinViewportUnits, sanitizeThemeCssCached, themeStyleText } from '$lib/themes/css'
 import { gameMode } from '$lib/player/session'
 import { setFocusWatches } from '$lib/themes/focus-mirror'
 import { protectedSurfaceCount, scopeSupported, themeSafeMode } from '$lib/themes/safe-mode'
+import { themeSettingHooks } from '$lib/themes/theme-settings'
+import { themeSettingValues } from '$lib/themes/theme-setting-values'
 
 export { resolvedThemeTokens, THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
 
@@ -72,6 +74,16 @@ function applyThemeCss(text: string | undefined): void {
   if (get(themeCssStatus).state !== 'applied') themeCssStatus.set({ state: 'applied' })
 }
 
+/** The hooks `apply()` last put on <html> for the shown theme's settings, so a theme switch clears them. */
+let settingHooks: { attributes: string[]; properties: string[] } = { attributes: [], properties: [] }
+function applySettingHooks(root: HTMLElement, hooks: ReturnType<typeof themeSettingHooks>): void {
+  for (const name of settingHooks.attributes) if (!(name in hooks.attributes)) root.removeAttribute(name)
+  for (const name of settingHooks.properties) if (!(name in hooks.properties)) root.style.removeProperty(name)
+  for (const [name, value] of Object.entries(hooks.attributes)) if (root.getAttribute(name) !== value) root.setAttribute(name, value)
+  for (const [name, value] of Object.entries(hooks.properties)) root.style.setProperty(name, value)
+  settingHooks = { attributes: Object.keys(hooks.attributes), properties: Object.keys(hooks.properties) }
+}
+
 /** The active theme's stylesheet text, as `apply()` last resolved it. */
 let themeCss: string | undefined
 
@@ -95,10 +107,13 @@ function apply() {
   syncViewportUnits()
   const safe = get(themeSafeMode)
   const media = matchMedia('(prefers-color-scheme: dark)')
-  // The active catalog screen's own theme, else the app theme (screen-theme.ts).
-  const preset = get(effectiveThemePreset)
+  // The player theme while an episode opens or plays, else the active catalog screen's own theme, else the
+  // app theme (screen-theme.ts). The player theme only paints: the layout keys below follow the others.
+  const preset = get(shownThemePreset)
   const preview = get(themeStudioPreview)
-  const studio = preview ?? get(effectiveStudioTheme)
+  const studio = preview ?? get(shownStudioTheme)
+  const layoutStudio = preview ?? get(effectiveStudioTheme)
+  const layoutCustom = !safe && (get(effectiveThemePreset) === 'custom' || preview != null)
   // The open Theme Studio applies drafts live without persisting them until Save. Safe mode
   // overrides both: it always resolves the default izumi palette for the session.
   const tokens = safe
@@ -125,7 +140,7 @@ function apply() {
   // The brand's rem (app.css --izumi-safe-rem) follows the design's font scale through a reserved copy.
   root.style.setProperty('--izumi-safe-font-scale', customActive ? String(studio.fontScale) : '1')
   // `mobile.rootSize` (API 4): the phone root size. Only app.css's phone media query reads it.
-  const rootSize = customActive ? resolvePresentation(studio.presentation, true)?.rootSize : undefined
+  const rootSize = layoutCustom ? resolvePresentation(layoutStudio.presentation, true)?.rootSize : undefined
   if (rootSize !== undefined) root.style.setProperty('--theme-phone-root', `${rootSize}px`)
   else root.style.removeProperty('--theme-phone-root')
   root.style.setProperty('--theme-backdrop-strength', customActive ? String(studio.backdropStrength) : '0')
@@ -134,8 +149,14 @@ function apply() {
   root.dataset.theme = preset
   root.dataset.scheme = tokens.scheme
   root.dataset.themeBackdrop = customActive ? studio.backdrop : 'solid'
-  // Document chrome follows the same phone/TV/shared resolution as the component renderers.
-  const presentation = customActive ? resolvePresentation(studio.presentation, get(isMobile), get(tvSurface)) : undefined
+  // API 9: the shown theme's settings, as attributes and custom properties its stylesheet reads.
+  applySettingHooks(root, themeSettingHooks(customActive ? studio.settings : undefined, get(themeSettingValues)[studio.id]))
+  // API 8: a stylesheet acting as the player theme can tell it dresses only the player.
+  if (!safe && !preview && get(activePlayerTheme)) root.dataset.themeRole = 'player'
+  else delete root.dataset.themeRole
+  // Document chrome follows the same phone/TV/shared resolution as the component renderers, with the
+  // player theme's player keys while it is in force (runtime.ts).
+  const presentation = get(themePresentation)
   // API 6: theme stylesheets scope their TV rules under `:scope[data-surface="tv"]`.
   if (customActive && get(tvSurface) && !get(isMobile)) root.dataset.surface = 'tv'
   else delete root.dataset.surface
@@ -162,6 +183,12 @@ function apply() {
     const color = presentation.player.seekbarColor
     root.style.setProperty('--theme-seekbar-color', color.startsWith('#') || color === 'transparent' ? color : `hsl(var(--${color}))`)
   } else root.style.removeProperty('--theme-seekbar-color')
+  // API 9 `player.menu`: the player popups' rows (app.css holds izumi's own 36 and 12 px).
+  const menu = presentation?.player?.menu
+  if (menu?.rowHeight !== undefined) root.style.setProperty('--theme-player-menu-row-height', `${menu.rowHeight}px`)
+  else root.style.removeProperty('--theme-player-menu-row-height')
+  if (menu?.rowPadding !== undefined) root.style.setProperty('--theme-player-menu-row-padding', `${menu.rowPadding}px`)
+  else root.style.removeProperty('--theme-player-menu-row-padding')
   // The page keeps its bottom margin clear of the tab bar; a taller or floating bar needs more.
   const bottomNav = presentation?.shell?.bottomNav
   if (bottomNav) {
@@ -183,8 +210,9 @@ export function startThemeSync(): () => void {
   started = true
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
-    effectiveThemePreset, highContrast, largeInteractionTargets, motionPreference,
-    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, gameMode,
+    shownThemePreset, highContrast, largeInteractionTargets, motionPreference,
+    shownStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, gameMode, themePresentation, effectiveStudioTheme,
+    themeSettingValues,
   ].map((store) => store.subscribe(apply))
   // A surface opening or closing changes only the stylesheet's form, never <html>: Game mode's OSD colours
   // watch <html> and open a surface to read them, which would otherwise feed back into themselves.

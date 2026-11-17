@@ -109,7 +109,7 @@ const titles = (query: string, env?: Parameters<typeof searchSettings>[1]) => se
 
 /** Rows the in-app player owns (commit 12's gates): desktop and Android full builds, not the lite build. */
 const IN_APP_PLAYER_ROWS = [
-  'Audio processing', 'Rendering preset', 'P2P playback status', 'Auto-play next episode', 'Show Up Next countdown',
+  'Audio processing', 'Rendering preset', 'P2P playback status', 'Auto-play next episode',
   'Keep screen awake while playing', 'Binge next episode (preload)', 'Auto-skip openings & endings',
   'Auto-skip next-episode previews', 'Skip filler episodes', 'Scrub preview thumbnails', 'Include subtitles in GIFs',
   'Seek duration', 'Home-theatre audio', 'Dolby Vision source handling',
@@ -210,7 +210,6 @@ describe('settings search entries', () => {
     expect(searchSettings('app language', true)[0]).toMatchObject({ title: 'App language', key: 'app-language' })
     expect(searchSettings('tmdb token')[0]).toMatchObject({ title: 'TMDB read access token', key: 'tmdb-token', fallbackKey: 'catalog-platform-tmdb' })
     expect(searchSettings('omdb')[0]).toMatchObject({ title: 'OMDb API key', key: 'omdb-key', fallbackKey: 'catalog-platform-tmdb' })
-    expect(searchSettings('up next overlay', true)[0]).toMatchObject({ title: 'Show Up Next countdown', key: 'show-up-next-countdown' })
     expect(searchSettings('catalog platforms')[0]).toMatchObject({ key: 'catalog-platform-auto' })
   })
 

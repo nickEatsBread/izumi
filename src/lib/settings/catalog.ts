@@ -170,6 +170,11 @@ export const catalogProvider = writable<CatalogSelection>(resolveCatalogStartup(
   get(catalogProviders),
 ))
 
+/** Browse (the catalog's sorts and categories, with Categories in the drawer) is opt-in. A source
+ *  screen always lists it: a source pack's look is built around that menu. */
+export const browseScreen = persisted<boolean>('browse-screen-v1', false)
+export const browseShown = derived([browseScreen, catalogProvider], ([on, provider]) => on || isSourceSelection(provider))
+
 export const catalogLastScreen = persisted<CatalogScreen>(
   'catalog-last-screen',
   legacyWasMerged ? 'merged' : get(catalogLastProvider),

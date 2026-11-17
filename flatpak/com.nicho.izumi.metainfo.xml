@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>com.nicho.izumi</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>AGPL-3.0-or-later</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <name>izumi</name>
   <summary>Controller-first desktop anime client</summary>
   <description>
@@ -25,6 +25,6 @@
     <name>nickEatsBread</name>
   </developer>
   <releases>
-    <release version="0.1.74" date="2026-10-24"/>
+    <release version="0.1.76" date="2026-11-17"/>
   </releases>
 </component>
