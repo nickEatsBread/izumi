@@ -30,7 +30,7 @@
   import { collectionIdOf, collectionRowOptions } from '$lib/catalog/collections/rows'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
-  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { homeLayoutFor, openThemeScreen } from '$lib/themes/layout-state'
   import { themePresentation } from '$lib/themes/runtime'
   import { isThemeBlockId, resolveThemeHome, themeHomeHas } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
@@ -55,7 +55,10 @@
 
   // A custom screen is arranged by its owner: the theme styles it, but its Home layout never replaces the
   // sections the user chose (nor locks Edit Home's Add section).
-  const themeLayout = $derived(isCustomScreen(target) ? null : $activeThemeLayout)
+  // API 8: a theme screen's entries apply on every catalog screen, a custom one included.
+  const themeScreen = openThemeScreen()
+  const homeLayout = homeLayoutFor(themeScreen)
+  const themeLayout = $derived(isCustomScreen(target) && !themeScreen ? null : $homeLayout)
 
   let options = $state<Awaited<ReturnType<typeof homeRowOptions>>>([])
   // Catalog homes are immutable snapshots. A raw root preserves Media identity between the first

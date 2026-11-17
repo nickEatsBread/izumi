@@ -25,7 +25,8 @@
   import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
   import { homeCollections } from '$lib/catalog/collections/store'
   import { collectionIdOf, collectionRowOptions } from '$lib/catalog/collections/rows'
-  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { homeLayoutFor, openThemeScreen, themeScreens } from '$lib/themes/layout-state'
+  import { screenDestination } from '$lib/components/shell/theme-screen-icons'
   import { themePresentation } from '$lib/themes/runtime'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
   import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
@@ -58,6 +59,10 @@
   import { rankFeaturedMedia } from '$lib/catalog/featured-context'
 
   const client = getContextClient()
+  // API 8: a theme screen (`/app/screen/<id>`) renders this page with its own entries in place of the
+  // theme's Home, without the phone Home header or Edit Home.
+  const themeScreen = openThemeScreen()
+  const activeThemeLayout = homeLayoutFor(themeScreen)
   const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
   const mergedUsesAniList = $derived(mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)))
   const searchMode = $derived($interfaceMode === 'search')
@@ -172,7 +177,7 @@
 
 </script>
 
-{#if $isMobile && !searchMode}
+{#if $isMobile && !searchMode && !themeScreen}
   <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
        (NOT pinned) so it only shows at the very top and scrolls away with the page. Kept ABOVE the
        offline/online split so the offline home shares the same chrome. -->
@@ -190,7 +195,7 @@
           <Wordmark white />
         </div>
       {/if}
-      {#if topNav.length}
+      {#if topNav.length || $themeScreens.length}
       <div data-part="home.header.actions" class="flex items-center gap-1">
         {#each topNav as c (c.id)}
           {@const meta = NAV_META[c.id]}
@@ -198,6 +203,13 @@
           <a data-part="home.header.action" data-dest={c.id} href={meta.href} data-focusable aria-label={meta.label} onclick={() => h.tap()}
              class="grid size-9 place-items-center rounded-full text-foreground transition-colors active:bg-white/10">
             <Icon size={22} />
+          </a>
+        {/each}
+        <!-- API 8: a phone reaches the theme's own screens from here. -->
+        {#each $themeScreens.map(screenDestination) as screen (screen.href)}
+          <a data-part="home.header.action" data-dest="screen" data-screen={screen.screen} href={screen.href} data-focusable aria-label={screen.label} onclick={() => h.tap()}
+             class="grid size-9 place-items-center rounded-full text-foreground transition-colors active:bg-white/10">
+            <screen.icon size={22} />
           </a>
         {/each}
       </div>
@@ -209,7 +221,7 @@
   </div>
 {/if}
 
-{#if !$offlineMode && !searchMode}<HomeEditor target={$catalogScreen} />{/if}
+{#if !$offlineMode && !searchMode && !themeScreen}<HomeEditor target={$catalogScreen} />{/if}
 
 {#if searchMode}
   <ReleaseSearchHome />

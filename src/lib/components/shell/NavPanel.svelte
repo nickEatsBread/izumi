@@ -5,7 +5,8 @@
   // down the left under the bar, the way a site keeps its menu open beside the page on a wide
   // window. The page moves over for it through --theme-shell-left (set by the shell).
   // `id` is the destination's `data-dest` (`home`, `schedule`, `settings`, …).
-  type Destination = { id: string; href: string; label: string; icon: Component<{ size?: number }> }
+  // `screen` names a theme screen (API 8, `data-dest="screen"`).
+  type Destination = { id: string; href: string; label: string; icon: Component<{ size?: number }>; screen?: string }
   let { items, active, width }: { items: Destination[]; active: (href: string) => boolean; width: number } = $props()
 </script>
 
@@ -13,7 +14,7 @@
      class="fixed bottom-0 left-0 top-[var(--theme-top-bar)] z-20 flex flex-col gap-1 overflow-y-auto border-r border-border/50 bg-background p-3">
   {#each items as item (item.href)}
     {@const on = active(item.href)}
-    <a data-part="nav.item" data-dest={item.id} data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined}
+    <a data-part="nav.item" data-dest={item.id} data-screen={item.screen} data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined}
        class="flex h-11 shrink-0 items-center gap-3 rounded-md px-2 text-base transition-colors hover:bg-accent {on ? 'bg-foreground/[0.06] text-foreground' : 'text-foreground/80'}">
       <span data-part="nav.item.icon" class="grid w-8 shrink-0 place-items-center"><item.icon size={22} /></span>
       <span data-part="nav.item.label" class="truncate">{item.label}</span>

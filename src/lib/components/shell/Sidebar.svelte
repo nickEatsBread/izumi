@@ -58,6 +58,8 @@
   import { m } from '$lib/paraglide/messages.js'
   import { isTv } from '$lib/platform'
   import { themePresentation } from '$lib/themes/runtime'
+  import { themeScreens } from '$lib/themes/layout-state'
+  import { screenDestination } from './theme-screen-icons'
 
   let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' | 'drawer' } = $props()
   const compact = $derived($themePresentation?.shell?.compact === true)
@@ -95,7 +97,9 @@
   ]
   const settingsItem = { id: 'settings', href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }
   const listed = $derived($browseShown ? items : items.filter((it) => it.id !== 'browse'))
-  const shown = $derived($interfaceMode === 'search' ? searchModeNav(listed) : searchField ? listed.filter((it) => it.href !== '/app/search') : listed)
+  // API 8 `layout.screens`: the theme's own screens follow the destinations (not in Search box mode).
+  const screenItems = $derived($themeScreens.map(screenDestination))
+  const shown = $derived($interfaceMode === 'search' ? searchModeNav(listed) : [...(searchField ? listed.filter((it) => it.href !== '/app/search') : listed), ...screenItems])
   // The drawer has room for Categories after Browse (the catalog's categories as a wall of chips);
   // the rail and the top bar keep their set.
   const categoriesItem = { id: 'categories', href: '/app/categories', icon: Shapes, label: 'Categories', anim: '' }
@@ -226,7 +230,8 @@
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
   // A menu list's address carries its query, so it lights up only on its own list.
-  const active = (href: string) => !$playing && ((page.url.pathname + page.url.search).startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
+  // A theme screen matches its own page only: `/app/screen/a` is not active on `/app/screen/ab`.
+  const active = (href: string) => !$playing && ((href.startsWith('/app/screen/') ? page.url.pathname === href : (page.url.pathname + page.url.search).startsWith(href)) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
   // The tab L1/R1 steps from: the current page's, else the last one visited (a series page opened
   // from Home still steps from Home).
   let lastSection = $state<string | undefined>()
@@ -346,7 +351,7 @@
   {/if}
 </nav>
 {/if}
-{#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, settingsItem]} {active} />{/if}
+{#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, ...screenItems, settingsItem]} {active} />{/if}
 {#if panelShown}<NavPanel width={sideWidth} items={[...shown, settingsItem]} {active} />{/if}
 {#if $themePresentation?.shell?.hints}<ButtonHints />{/if}
 
@@ -435,7 +440,7 @@
   {#if bumpers && padUi}<span data-part="nav.bumper" data-button="l1" class="grid shrink-0 place-items-center px-1"><Glyph {family} button="l1" /></span>{/if}
   {#each sideMenu ? [] : shown as it (it.href)}
     {@const on = active(it.href)}
-    <a data-part="nav.item" data-dest={it.id} data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
+    <a data-part="nav.item" data-dest={it.id} data-screen={'screen' in it ? it.screen : undefined} data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
        class={destClass(on, true)}>
       {#if labelMode !== 'text'}
         <span data-part="nav.item.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>

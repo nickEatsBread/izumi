@@ -11,6 +11,9 @@
   import type { ScheduleBadge } from '$lib/anilist/my-shows'
   import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
   import ScheduleRemove from './ScheduleRemove.svelte'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { airingDisplayModel } from '$lib/themes/host-model'
+  import { themePresentation } from '$lib/themes/runtime'
 
   let { days, start, todayIdx, badgeOf, infoOf, headerOffset = 0 }:
     { days: Airing[][]; start: number; todayIdx: number; badgeOf?: (airing: Airing) => ScheduleBadge | null
@@ -18,6 +21,8 @@
 
   // Only the leading delay line fits a schedule row; the detail page carries the full set.
   const delayOf = (m: Media) => delayLines(infoOf?.(m) ?? null)[0] ?? ''
+  // API 8 `schedule.item`: a theme's template for the entry, inside the same link.
+  const itemTemplate = $derived($themePresentation?.schedule?.item)
 
   const FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const dayDate = (i: number) =>
@@ -62,12 +67,12 @@
 </script>
 
 {#if filled.length === 0}
-  <p class="text-muted-foreground">Nothing scheduled this week.</p>
+  <p data-part="schedule.empty" class="text-muted-foreground">Nothing scheduled this week.</p>
 {:else}
   <div class="flex flex-col gap-8">
     {#each filled as { d, i } (i)}
       <section data-part="schedule.day" bind:this={sections[i]} data-schedule-day={i}>
-        <h3 class="mb-3 text-base font-black {i === todayIdx ? 'text-sky-400' : ''}">
+        <h3 data-part="schedule.day.title" data-today={i === todayIdx || undefined} class="mb-3 text-base font-black {i === todayIdx ? 'text-sky-400' : ''}">
           {FULL[i]} · {dayDate(i)}{#if i === todayIdx} · Today{/if}
         </h3>
         <div class="flex flex-col gap-2">
@@ -75,31 +80,37 @@
             {@const mine = badgeOf?.(a)}
             {@const delay = delayOf(a.media)}
             {@const source = scheduleSourceLabel(a)}
-            <div data-part="schedule.item" class="relative" data-schedule-item>
+            <div data-part="schedule.item" class="relative" data-schedule-item data-aired={aired(a.airingAt) && !a.delayPlaceholder || undefined}>
+            {#if itemTemplate}
+              <a data-focusable href={mediaHref(a.media)} use:detailLink={a.media} class="block {mine ? 'pr-14' : ''}">
+                <ThemeNode node={itemTemplate} model={airingDisplayModel(a, mine, delay)} />
+              </a>
+            {:else}
             <a
               data-focusable
               href={mediaHref(a.media)}
               use:detailLink={a.media}
               class="flex items-center gap-4 rounded-lg border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) && !a.delayPlaceholder ? 'opacity-55' : ''} {mine ? 'border-border/80 pr-14' : 'border-transparent'}"
             >
-              <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
+              <img data-part="schedule.item.poster" src={cover(a.media)} alt="" loading="lazy" decoding="async"
                    class="h-24 w-16 shrink-0 rounded object-cover" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <p class="line-clamp-2 text-base font-bold leading-tight">{title(a.media)}</p>
-                  {#if mine}<span class="shrink-0 rounded bg-foreground/[0.08] px-1.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watched' ? 'Watched' : mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
-                  {#if source}<span class="shrink-0 rounded bg-foreground/[0.08] px-1.5 py-0.5 text-[0.6rem] font-black text-foreground/70">{source}</span>{/if}
+                  <p data-part="schedule.item.title" class="line-clamp-2 text-base font-bold leading-tight">{title(a.media)}</p>
+                  {#if mine}<span data-part="schedule.item.badge" data-variant="status" class="shrink-0 rounded bg-foreground/[0.08] px-1.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watched' ? 'Watched' : mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
+                  {#if source}<span data-part="schedule.item.badge" data-variant="source" class="shrink-0 rounded bg-foreground/[0.08] px-1.5 py-0.5 text-[0.6rem] font-black text-foreground/70">{source}</span>{/if}
                 </div>
-                <p class="mt-1 text-sm text-muted-foreground">{scheduleItemLabel(a)}{#if !a.delayPlaceholder && a.timeKnown !== false} · {airTime(a.airingAt)}{/if}</p>
-                {#if a.context}<p class="mt-0.5 text-xs text-muted-foreground">{a.context}</p>{/if}
+                <p data-part="schedule.item.meta" class="mt-1 text-sm text-muted-foreground">{scheduleItemLabel(a)}{#if !a.delayPlaceholder && a.timeKnown !== false} · {airTime(a.airingAt)}{/if}</p>
+                {#if a.context}<p data-part="schedule.item.context" class="mt-0.5 text-xs text-muted-foreground">{a.context}</p>{/if}
                 {#if delay}
-                  <p class="mt-0.5 text-xs font-bold text-amber-400">{delay}</p>
+                  <p data-part="schedule.item.delay" class="mt-0.5 text-xs font-bold text-amber-400">{delay}</p>
                 {/if}
               </div>
               {#if !a.delayPlaceholder && !aired(a.airingAt)}
-                <span class="shrink-0 text-sm font-bold text-emerald-400">{until(a.airingAt)}</span>
+                <span data-part="schedule.item.countdown" class="shrink-0 text-sm font-bold text-emerald-400">{until(a.airingAt)}</span>
               {/if}
             </a>
+            {/if}
             {#if mine}<ScheduleRemove media={a.media} />{/if}
             </div>
           {/each}

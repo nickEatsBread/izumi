@@ -7,7 +7,8 @@
   // navigation with `shell.nav: "drawer"`, which adds a head, a section after the destinations and a
   // foot, slides the full width in and closes on Right).
   // `id` is the destination's `data-dest` (`home`, `schedule`, `settings`, …).
-  type Destination = { id: string; href: string; label: string; icon: Component<{ size?: number }> }
+  // `screen` names a theme screen (API 8, `data-dest="screen"`).
+  type Destination = { id: string; href: string; label: string; icon: Component<{ size?: number }>; screen?: string }
   let { open = $bindable(false), items, active, head, after, foot, slide = 24, duration = 160, closeOnRight = false }: {
     open: boolean; items: Destination[]; active: (href: string) => boolean
     head?: Snippet; after?: Snippet; foot?: Snippet; slide?: number; duration?: number; closeOnRight?: boolean
@@ -48,7 +49,7 @@
     <div data-part="nav.drawer.list" class="-mx-3 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3">
     {#each items as item (item.href)}
       {@const on = active(item.href)}
-      <a data-part="nav.item" data-dest={item.id} data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined} onclick={() => (open = false)}
+      <a data-part="nav.item" data-dest={item.id} data-screen={item.screen} data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined} onclick={() => (open = false)}
         class="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-semibold transition-colors hover:bg-accent {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
         <span data-part="nav.item.icon" class="grid w-6 place-items-center"><item.icon size={19} /></span>
         <span data-part="nav.item.label">{item.label}</span>
