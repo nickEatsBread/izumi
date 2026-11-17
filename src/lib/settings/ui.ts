@@ -182,9 +182,6 @@ export const seadexAnnotations = persisted<boolean>('seadex-annotations', true)
 export const p2pStatusVisibility = persisted<P2PStatusVisibility>('player-p2p-status-visibility', 'initial')
 /** Auto-play the next episode when one finishes. Default on. */
 export const autoplayNext = persisted<boolean>('player-autoplay-next', true)
-/** Show a cancellable countdown before autoplaying the next episode. Kept opt-in so existing
- * binge playback remains uninterrupted unless the viewer explicitly asks for the prompt. */
-export const upNextOverlay = persisted<boolean>('player-up-next-overlay', false)
 /** Ask for a 1-10 rating when the last episode of a finished series completes. Only ever shown
  * while a tracker is connected (there is nowhere else to save the answer); "Don't ask again" on
  * the prompt turns this off. Default on. */

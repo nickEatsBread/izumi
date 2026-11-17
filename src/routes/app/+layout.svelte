@@ -91,7 +91,6 @@
   // only while onboarding is incomplete, so a normal boot never loads that graph.
   import { onboardingComplete } from '$lib/settings/onboarding'
   const loadFirstRunSetup = () => import('$lib/components/onboarding/FirstRunSetup.svelte')
-  import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
   import SeriesRatingPrompt from '$lib/components/player/SeriesRatingPrompt.svelte'
   import ProfileSwitcher from '$lib/components/profiles/ProfileSwitcher.svelte'
   // The main-PIN keypad for household actions on restricted profiles (spec §6.5). Lazy: it is
@@ -782,8 +781,7 @@
 <UpdateToast />
 <!-- A pack runs its own setup (it ends onboarding when it finishes). -->
 {#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore' && page.url.pathname !== '/app/pack'}<Lazy load={loadFirstRunSetup} />{/if}
-<UpNextOverlay />
-<!-- End-of-series rating; app-level for the same reason as Up Next, and it outlives the player so
+<!-- End-of-series rating; app-level so it works over either player, and it outlives the player so
      a finale finished by backing out after the watch threshold asks over the series page. -->
 <SeriesRatingPrompt />
 <ProfileSwitcher />

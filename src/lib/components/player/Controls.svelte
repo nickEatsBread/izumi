@@ -49,6 +49,8 @@
   import DesktopCastButton from './DesktopCastButton.svelte'
   import PlayerContextMenu, { type PlayerMenuItem } from './PlayerContextMenu.svelte'
   import PlayerEpisodes from './PlayerEpisodes.svelte'
+  import { openDetail as openSeriesPage } from '$lib/anilist/detail-hint'
+  import type { Media } from '$lib/anilist/types'
   import ListVideo from '@lucide/svelte/icons/list-video'
   import Activity from '@lucide/svelte/icons/activity'
   import Cast from '@lucide/svelte/icons/cast'
@@ -123,7 +125,7 @@
     paused: boolean
     segments: Segment[]
     cmd: (name: string, args?: string[]) => void
-    onclose: () => void
+    onclose: () => void | Promise<void>
     // Game mode (Deck/gamescope touch player): no windowed/fullscreen toggle, and the
     // play button must swap the fullscreen video back in (not just unpause under a black
     // screen). `ontoggleplay` overrides the default cycle-pause when provided.
@@ -289,6 +291,14 @@
     gmSettingsPage = 'root'
     gmSetIdx = 0
   }
+  // API 9 `player.menu.closeOnSelect`: a chosen option (a track, speed, quality, framing, sleep timer or
+  // subtitle style) closes its popup, the Game-mode settings sheet included, instead of staying on its page.
+  const closeOnSelect = $derived($themePresentation?.player?.menu?.closeOnSelect === true)
+  function chosen() {
+    if (!closeOnSelect) return
+    closePlayerMenus()
+    bumpPlayerOverlay()
+  }
   function openSubtitleEditor() {
     closePlayerMenus()
     oneditsubtitles?.()
@@ -339,11 +349,12 @@
     else if (gmSettingsPage === 'subs') {
       if (i === 0) gmPickTrack(null)
       else if (gmSubTracks[i - 1]) gmPickTrack(gmSubTracks[i - 1])
-    } else if (gmSettingsPage === 'speed') setSpeed(speeds[i] ?? 1)
+    } else if (gmSettingsPage === 'speed') { setSpeed(speeds[i] ?? 1); chosen() }
     else if (gmSettingsPage === 'quality') {
       if (i === 0) void setVideoQuality('auto')
       else void setVideoQuality(qualityInfo.heights[i - 1] ?? 'auto')
-    } else if (gmSettingsPage === 'fit') setFit(VIDEO_FITS[i]?.id ?? 'best')
+      chosen()
+    } else if (gmSettingsPage === 'fit') { setFit(VIDEO_FITS[i]?.id ?? 'best'); chosen() }
     else if (gmSettingsPage === 'tools') {
       if ($sceneBookmarksEnabled && i === 0) void bookmarkScene()
       else {
@@ -552,6 +563,8 @@
     playerNotice.set('A/B loop cleared')
   }
   async function toggleGifRecording() {
+    // Recording (or stopping) from a menu is the menu's last word: it gets out of the way.
+    closePlayerMenus()
     if ($gifRecordingStart == null) {
       captureBusy = true
       try {
@@ -838,6 +851,7 @@
     if (!track && captions.length) cmd('set', ['ccid', 'no'])
     pick(track?.type === 'audio' ? 'aid' : track?.type === 'caption' ? 'ccid' : 'sid', track?.id ?? -1)
     gmOpenPage('root')
+    chosen()
   }
   // The theme's Audio and Subtitles words open straight on their page: the settings sheet's in Game
   // mode, the tracks menu's on desktop (Closed captions when a stream has no subtitles).
@@ -939,6 +953,7 @@
       tracks = JSON.parse(await playerTracks()) as Track[]
       subtitleNotice.set('')
       if ($subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
+      chosen()
     }
     catch (e) {
       console.warn('add online subtitle failed', e)
@@ -963,6 +978,11 @@
 
   // Episode switcher (Player buttons › Episodes, or the right-click menu).
   let showEpisodes = $state(false)
+  // Its series title leaves the player the way Back does, then opens the series page.
+  async function openSeries(media: Media) {
+    await onclose()
+    await openSeriesPage(media)
+  }
   function toggleEpisodes() {
     const opening = !showEpisodes
     closePlayerMenus()
@@ -1204,11 +1224,11 @@
           {#if showOptions && !gm}
             <!-- Match the subtitle picker: a compact summary column drills into one focused list
                  instead of exposing every control in one tall wall. -->
-            <div data-options-menu data-part="player.menu" data-variant="options" class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
+            <div data-options-menu data-part="player.menu" data-variant="options" class="absolute bottom-full right-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
               <div class="overflow-hidden transition-[height] duration-200 ease-out" style="height:{optionsPage === 'root' ? optionsRootH : optionsDetailH}px">
                 <div class="flex w-[200%] [transition:transform_200ms_cubic-bezier(.25,1,.5,1)]" style="transform:translateX({optionsPage === 'root' ? '0' : '-50%'})">
                   <div class="w-1/2 p-2" bind:clientHeight={optionsRootH}>
-                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={changeSource}>
+                    <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={changeSource}>
                       <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                         <ServerIcon size={16} class="row-span-2 shrink-0 text-white/55" />
                         <span class="text-xs uppercase tracking-wide text-white/45">Source</span>
@@ -1216,7 +1236,7 @@
                       </span>
                       <ChevronRight size={18} class="shrink-0 text-white/40" />
                     </button>
-                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'speed')}>
+                    <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'speed')}>
                       <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                         <Gauge size={16} class="row-span-2 shrink-0 text-white/55" />
                         <span class="text-xs uppercase tracking-wide text-white/45">Speed</span>
@@ -1225,7 +1245,7 @@
                       <ChevronRight size={18} class="shrink-0 text-white/40" />
                     </button>
                     {#if qualityInfo.heights.length}
-                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'quality')}>
+                      <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'quality')}>
                         <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                           <Gauge size={16} class="row-span-2 shrink-0 text-white/55" />
                           <span class="text-xs uppercase tracking-wide text-white/45">Quality</span>
@@ -1234,7 +1254,7 @@
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
                     {/if}
-                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'fit')}>
+                    <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'fit')}>
                       <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                         <Ratio size={16} class="row-span-2 shrink-0 text-white/55" />
                         <span class="text-xs uppercase tracking-wide text-white/45">Video fit</span>
@@ -1242,7 +1262,7 @@
                       </span>
                       <ChevronRight size={18} class="shrink-0 text-white/40" />
                     </button>
-                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openSubtitleEditor}>
+                    <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openSubtitleEditor}>
                       <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                         <Captions size={16} class="row-span-2 shrink-0 text-white/55" />
                         <span class="text-xs uppercase tracking-wide text-white/45">Subtitle position</span>
@@ -1250,7 +1270,7 @@
                       </span>
                       <ChevronRight size={18} class="shrink-0 text-white/40" />
                     </button>
-                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'timing')}>
+                    <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'timing')}>
                       <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                         <SlidersHorizontal size={16} class="row-span-2 shrink-0 text-white/55" />
                         <span class="text-xs uppercase tracking-wide text-white/45">Sync &amp; size</span>
@@ -1258,7 +1278,7 @@
                       </span>
                       <ChevronRight size={18} class="shrink-0 text-white/40" />
                     </button>
-                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'tools')}>
+                    <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'tools')}>
                       <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
                         <Wrench size={16} class="row-span-2 shrink-0 text-white/55" />
                         <span class="text-xs uppercase tracking-wide text-white/45">Tools</span>
@@ -1269,35 +1289,35 @@
                   </div>
 
                   <div class="w-1/2 p-2" bind:clientHeight={optionsDetailH}>
-                    <button data-focusable class="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (optionsPage = 'root')}>
+                    <button data-part="player.menu.back" data-focusable class="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (optionsPage = 'root')}>
                       <ChevronLeft size={18} class="shrink-0 text-white/60" />
                       {optionsPage === 'speed' ? 'Speed' : optionsPage === 'quality' ? 'Quality' : optionsPage === 'fit' ? 'Video fit' : optionsPage === 'timing' ? 'Sync & size' : 'Tools'}
                     </button>
                     <div class="max-h-72 overflow-y-auto">
                       {#if optionsPage === 'speed'}
                         {#each speeds as s}
-                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left tabular-nums transition hover:bg-white/10" onclick={() => { setSpeed(s); optionsPage = 'root' }}>
+                          <button data-part="player.menu.item" data-state={speed === s ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left tabular-nums transition hover:bg-white/10" onclick={() => { setSpeed(s); optionsPage = 'root'; chosen() }}>
                             <span>{s}×</span>{#if speed === s}<Check size={18} class="shrink-0 text-primary" />{/if}
                           </button>
                         {/each}
                       {:else if optionsPage === 'quality'}
-                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { void setVideoQuality('auto'); optionsPage = 'root' }}>
+                        <button data-part="player.menu.item" data-state={qualityInfo.mode === 'auto' ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { void setVideoQuality('auto'); optionsPage = 'root'; chosen() }}>
                           <span>Auto{#if qualityInfo.activeHeight} · {qualityInfo.activeHeight}p{/if}</span>{#if qualityInfo.mode === 'auto'}<Check size={18} class="shrink-0 text-primary" />{/if}
                         </button>
                         {#each qualityInfo.heights as height}
-                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { void setVideoQuality(height); optionsPage = 'root' }}>
+                          <button data-part="player.menu.item" data-state={qualityInfo.mode === height ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { void setVideoQuality(height); optionsPage = 'root'; chosen() }}>
                             <span>{height}p</span>{#if qualityInfo.mode === height}<Check size={18} class="shrink-0 text-primary" />{/if}
                           </button>
                         {/each}
                       {:else if optionsPage === 'fit'}
                         {#each VIDEO_FITS as fit (fit.id)}
-                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { setFit(fit.id); optionsPage = 'root' }}>
+                          <button data-part="player.menu.item" data-state={$videoFit === fit.id ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { setFit(fit.id); optionsPage = 'root'; chosen() }}>
                             <span>{fit.label}</span>{#if $videoFit === fit.id}<Check size={18} class="shrink-0 text-primary" />{/if}
                           </button>
                         {/each}
                       {:else if optionsPage === 'timing'}
                         {#each ($nowPlayingStream.drm && !usesNativeDrm($nowPlayingStream.drm, $nativeDrmPlayback) ? [['Subtitle delay', 'sub-delay'], ['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
-                          <div class="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5">
+                          <div data-part="player.menu.item" class="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5">
                             <span>{label}</span>
                             <span class="flex shrink-0 items-center gap-1">
                               <button data-focusable onclick={() => adjust(prop, -0.1)} class="grid size-7 place-items-center rounded-lg bg-white/10 hover:bg-white/20" aria-label="Decrease {label}">−</button>
@@ -1308,12 +1328,12 @@
                         {/each}
                       {:else if optionsPage === 'tools'}
                         {#if $sceneBookmarksEnabled}
-                          <button data-focusable onclick={() => void bookmarkScene()} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Save scene bookmark</span></button>
+                          <button data-part="player.menu.item" data-focusable onclick={() => void bookmarkScene()} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Save scene bookmark</span></button>
                         {/if}
-                        <button data-focusable onclick={() => playerStatsOpen.update((value) => !value)} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</span></button>
-                        <label class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2">
+                        <button data-part="player.menu.item" data-focusable onclick={() => playerStatsOpen.update((value) => !value)} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</span></button>
+                        <label data-part="player.menu.item" class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2">
                           <span>Sleep timer</span>
-                          <select data-focusable aria-label="Sleep timer" onchange={(event) => setSleep((event.currentTarget as HTMLSelectElement).value)} class="max-w-36 rounded-lg bg-white/10 px-2 py-1.5 text-xs">
+                          <select data-focusable aria-label="Sleep timer" onchange={(event) => { setSleep((event.currentTarget as HTMLSelectElement).value); chosen() }} class="max-w-36 rounded-lg bg-white/10 px-2 py-1.5 text-xs">
                             <option value="off">Off</option>
                             <option value="15">15 minutes</option>
                             <option value="30">30 minutes</option>
@@ -1321,12 +1341,12 @@
                             <option value="end">Episode end</option>
                           </select>
                         </label>
-                        <button data-focusable onclick={markLoopA} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Set loop A</span>{#if $playerAbLoop.a != null}<Check size={18} class="text-primary" />{/if}</button>
-                        <button data-focusable onclick={markLoopB} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Set loop B</span>{#if $playerAbLoop.b != null}<Check size={18} class="text-primary" />{/if}</button>
-                        {#if $playerAbLoop.a != null}<button data-focusable onclick={clearLoop} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10">Clear loop</button>{/if}
-                        <button data-focusable disabled={captureBusy} onclick={toggleGifRecording} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40">{$gifRecordingStart == null ? 'Record GIF' : 'Stop GIF'}</button>
+                        <button data-part="player.menu.item" data-focusable onclick={markLoopA} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Set loop A</span>{#if $playerAbLoop.a != null}<Check size={18} class="text-primary" />{/if}</button>
+                        <button data-part="player.menu.item" data-focusable onclick={markLoopB} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Set loop B</span>{#if $playerAbLoop.b != null}<Check size={18} class="text-primary" />{/if}</button>
+                        {#if $playerAbLoop.a != null}<button data-part="player.menu.item" data-focusable onclick={clearLoop} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10">Clear loop</button>{/if}
+                        <button data-part="player.menu.item" data-focusable disabled={captureBusy} onclick={toggleGifRecording} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40">{$gifRecordingStart == null ? 'Record GIF' : 'Stop GIF'}</button>
                         {#if !$nowPlayingStream.drm}
-                          <button data-focusable disabled={captureBusy} onclick={saveRecentClip} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40">Save last 30s</button>
+                          <button data-part="player.menu.item" data-focusable disabled={captureBusy} onclick={saveRecentClip} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40">Save last 30s</button>
                         {/if}
                       {/if}
                     </div>
@@ -1362,12 +1382,12 @@
                    active track; picking one slides (Miller-column) into just that category's
                    list — not one flat wall. The port height morphs between the two columns'
                    measured heights so the panel resizes with the slide. -->
-              <div data-part="player.menu" data-variant="tracks" class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
+              <div data-part="player.menu" data-variant="tracks" class="absolute bottom-full right-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
                 <div class="overflow-hidden transition-[height] duration-200 ease-out" style="height:{menuLevel === 'root' ? rootH : detailH}px">
                   <div class="flex w-[200%] [transition:transform_200ms_cubic-bezier(.25,1,.5,1)]" style="transform:translateX({menuLevel === 'root' ? '0' : '-50%'})">
                     <!-- ROOT: media track and source categories -->
                     <div class="w-1/2 p-2" bind:clientHeight={rootH}>
-                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('audio')}>
+                      <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('audio')}>
                         <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2" data-track-summary="audio">
                           <Volume2 size={16} class="shrink-0 text-white/55" />
                           <span class="block text-xs uppercase tracking-wide text-white/45">Audio</span>
@@ -1375,7 +1395,7 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
-                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('subs')}>
+                      <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('subs')}>
                         <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2" data-track-summary="subtitles">
                           <Captions size={16} class="shrink-0 text-white/55" />
                           <span class="block text-xs uppercase tracking-wide text-white/45">Subtitles</span>
@@ -1384,7 +1404,7 @@
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
                       {#if altServers.length}
-                        <button data-focusable disabled={swapping} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40" onclick={() => openDetail('server')}>
+                        <button data-part="player.menu.item" data-focusable disabled={swapping} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40" onclick={() => openDetail('server')}>
                           <ServerIcon size={18} class="shrink-0 text-white/55" />
                           <span class="min-w-0 flex-1">
                             <span class="block text-xs uppercase tracking-wide text-white/45">Server</span>
@@ -1394,7 +1414,7 @@
                         </button>
                       {/if}
                       {#if captions.length}
-                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('captions')}>
+                        <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('captions')}>
                           <span class="min-w-0">
                             <span class="block text-xs uppercase tracking-wide text-white/45">Closed captions</span>
                             <span class="block truncate">{curCaptionLabel}</span>
@@ -1405,7 +1425,7 @@
                       <!-- Hidden entirely (not just empty) when the file has no chapters: most anime
                            web releases ship none, and an empty category is worse than no category. -->
                       {#if $chapterStore.length}
-                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('chapters')}>
+                        <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('chapters')}>
                           <span class="min-w-0">
                             <span class="block text-xs uppercase tracking-wide text-white/45">Chapters</span>
                             <span class="block truncate">{$chapterStore.length} chapters</span>
@@ -1414,7 +1434,7 @@
                         </button>
                       {/if}
                       {#if $secondarySubtitles}
-                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('secondary')}>
+                        <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('secondary')}>
                           <span class="min-w-0">
                             <span class="block text-xs uppercase tracking-wide text-white/45">Secondary subtitles</span>
                             <span class="block truncate">{curSecondaryLabel}</span>
@@ -1423,19 +1443,19 @@
                         </button>
                       {/if}
                       <!-- Online subtitles (OpenSubtitles / SubDL): searched on play, picked here. -->
-                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('online')}>
+                      <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('online')}>
                         <span class="flex min-w-0 items-center gap-2">
                           <Languages size={15} class="shrink-0 text-white/45" />
                           <span class="block truncate text-white/80">Online subtitles</span>
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
-                      <button data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={addSubtitleFile}>
+                      <button data-part="player.menu.item" data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={addSubtitleFile}>
                         <FileUp size={15} class="shrink-0 text-white/45" />
                         <span class="block truncate text-white/80">Subtitle file…</span>
                       </button>
                       <!-- Saved fonting presets: capture this release's look / override this session. -->
-                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openStyleDetail}>
+                      <button data-part="player.menu.item" data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openStyleDetail}>
                         <span class="flex min-w-0 items-center gap-2">
                           <Brush size={15} class="shrink-0 text-white/45" />
                           <span class="block truncate text-white/80">Subtitle style</span>
@@ -1447,7 +1467,7 @@
                       </button>
                       {#if dev}
                         <!-- Dev-only (tree-shaken from release): tools like Copy URL. -->
-                        <button data-focusable class="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border-t border-white/10 px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('dev')}>
+                        <button data-part="player.menu.item" data-focusable class="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border-t border-white/10 px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('dev')}>
                           <span class="flex min-w-0 items-center gap-2">
                             <Wrench size={15} class="shrink-0 text-white/45" />
                             <span class="block truncate text-white/80">Dev tools</span>
@@ -1459,7 +1479,7 @@
                     <!-- DETAIL: the chosen category's list -->
                     <div class="w-1/2 p-2" bind:clientHeight={detailH}>
                       <div class="mb-1 flex items-center gap-1">
-                        <button data-focusable class="flex flex-1 items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (menuLevel = 'root')}>
+                        <button data-part="player.menu.back" data-focusable class="flex flex-1 items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (menuLevel = 'root')}>
                           <ChevronLeft size={18} class="shrink-0 text-white/60" />
                           {detailTitle}
                         </button>
@@ -1476,7 +1496,7 @@
                                zero-length chapter can share a timestamp with its neighbour, and the
                                store is always replaced wholesale (never spliced), so index is stable. -->
                           {#each $chapterStore as c, i (i)}
-                            <button data-focusable onclick={() => { seekTo(c.time); showTracks = false }}
+                            <button data-part="player.menu.item" data-state={i === activeChapter ? 'active' : undefined} data-focusable onclick={() => { seekTo(c.time); showTracks = false }}
                                     class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10">
                               <span class="min-w-0">
                                 <span class="block truncate">{c.title?.trim() || 'Chapter'}</span>
@@ -1502,7 +1522,7 @@
                             </div>
                           {:else if filteredCandidates.length}
                             {#each filteredCandidates as c (candidateKey(c))}
-                              <button data-focusable disabled={downloadingKey === candidateKey(c)} onclick={() => addOnlineSub(c)}
+                              <button data-part="player.menu.item" data-state={isCandidateLoaded(c, loadedSubTitles) ? 'active' : undefined} data-focusable disabled={downloadingKey === candidateKey(c)} onclick={() => addOnlineSub(c)}
                                       class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10 disabled:opacity-50">
                                 <span class="min-w-0">
                                   <span class="flex items-center gap-1.5">
@@ -1523,25 +1543,25 @@
                           {/if}
                         </div>
                       {:else if detailCat === 'style'}
-                        <div class="max-h-64 overflow-y-auto">
+                        <div class="max-h-[calc(7_*_var(--theme-player-menu-row-height)_+_4px)] overflow-y-auto">
                           {#if capturedStyle}
                             <!-- Capture row: name (prefilled with the release group) + save. -->
                             <label class="mb-1 flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5">
                               <input data-focusable bind:value={styleSaveName} placeholder="Preset name" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
                             </label>
-                            <button data-focusable class="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-primary transition hover:bg-white/10" onclick={saveCapturedStyle}>
+                            <button data-part="player.menu.item" data-focusable class="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-primary transition hover:bg-white/10" onclick={saveCapturedStyle}>
                               <span class="truncate">Save this release’s fonting ({capturedStyle.font})</span>
                             </button>
                           {:else}
                             <p class="px-3 py-2 text-xs text-white/45">The current subtitle track has no readable ASS styling to capture.</p>
                           {/if}
                           <!-- Session override picker: "Your settings" = no override. -->
-                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => sessionSubtitleStyle.set(null)}>
+                          <button data-part="player.menu.item" data-state={!$sessionSubtitleStyle ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { sessionSubtitleStyle.set(null); chosen() }}>
                             <span class="truncate text-white/70">Your settings</span>
                             {#if !$sessionSubtitleStyle}<Check size={18} class="shrink-0 text-primary" />{/if}
                           </button>
                           {#each $savedSubtitleStyles as p (p.id)}
-                            <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => sessionSubtitleStyle.set(p)}>
+                            <button data-part="player.menu.item" data-state={$sessionSubtitleStyle?.id === p.id ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { sessionSubtitleStyle.set(p); chosen() }}>
                               <span class="min-w-0">
                                 <span class="block truncate">{p.name}</span>
                                 <span class="block truncate text-xs text-white/45">{p.style.font}</span>
@@ -1551,24 +1571,25 @@
                           {/each}
                         </div>
                       {:else if detailCat === 'server'}
-                        <div class="max-h-64 overflow-y-auto">
+                        <div class="max-h-[calc(7_*_var(--theme-player-menu-row-height)_+_4px)] overflow-y-auto">
                           {#if currentStream}
-                            <button data-focusable disabled class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left opacity-80">
+                            <button data-part="player.menu.item" data-state="active" data-focusable disabled class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left opacity-80">
                               <span class="truncate">{serverMenuLabels[0]}</span>
                               <Check size={18} class="shrink-0 text-primary" />
                             </button>
                           {/if}
                           {#each altServers as alt, i (alt.url)}
-                            <button data-focusable disabled={swapping} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10 disabled:opacity-40" onclick={() => swapTo(alt)}>
+                            <button data-part="player.menu.item" data-focusable disabled={swapping} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10 disabled:opacity-40" onclick={() => swapTo(alt)}>
                               <span class="truncate">{serverMenuLabels[i + 1]}</span>
                             </button>
                           {/each}
                         </div>
                       {:else}
-                        <div class="max-h-64 overflow-y-auto">
+                        <!-- Seven options before it scrolls: 256 px at izumi's 36 px rows, taller with a theme's taller rows. -->
+                        <div class="max-h-[calc(7_*_var(--theme-player-menu-row-height)_+_4px)] overflow-y-auto">
                           {#if detailCat === 'dev'}
                             {#each devTools as tool (tool.label)}
-                              <button data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={tool.run}>
+                              <button data-part="player.menu.item" data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={tool.run}>
                                 <span class="truncate">{tool.label}</span>
                               </button>
                             {/each}
@@ -1576,14 +1597,14 @@
                             <!-- Subs/CC can be disabled. Audio cannot — turning the soundtrack
                                  "off" would keep playing it with no way to get it back. -->
                             {#if detailCat !== 'audio'}
-                              <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={pickOff}>
+                              <button data-part="player.menu.item" data-state={detailOff ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { pickOff(); chosen() }}>
                                 <span class="truncate text-white/70">Off</span>
                                 {#if detailOff}<Check size={18} class="shrink-0 text-primary" />{/if}
                               </button>
                             {/if}
                             {#if detailItems.length}
                               {#each detailItems as t (t.id)}
-                                <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => pick(leafKind, t.id)}>
+                                <button data-part="player.menu.item" data-state={(detailCat === 'secondary' ? String(t.id) === secondaryId : t.selected) ? 'active' : undefined} data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => { pick(leafKind, t.id); chosen() }}>
                                   <span class="truncate">{label(t, detailItems)}</span>
                                   {#if detailCat === 'secondary' ? String(t.id) === secondaryId : t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
                                 </button>
@@ -1612,7 +1633,7 @@
         {#if !gm && hasEpisodes && !hiddenControls.has('episodes')}
           <button data-focusable class={iconBtn} onclick={toggleEpisodes} aria-label="Episodes" aria-expanded={showEpisodes}><ListVideo size={icSize} /></button>
         {/if}
-        {#if showEpisodes && !gm}<PlayerEpisodes onclose={() => (showEpisodes = false)} />{/if}
+        {#if showEpisodes && !gm}<PlayerEpisodes onclose={() => (showEpisodes = false)} onseries={openSeries} />{/if}
 
         {#if $subtitleLineNavigation}
           <div class="hidden items-center gap-1 sm:flex" aria-label="Subtitle line navigation">
@@ -1699,16 +1720,16 @@
           {/each}
         {:else if gmSettingsPage === 'speed'}
           {#each speeds as s, i}
-            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => setSpeed(s)}>{s}×</button>
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => { setSpeed(s); chosen() }}>{s}×</button>
           {/each}
         {:else if gmSettingsPage === 'quality'}
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => setVideoQuality('auto')}>Auto</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => { void setVideoQuality('auto'); chosen() }}>Auto</button>
           {#each qualityInfo.heights as height, i}
-            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 2} class:text-black={gmSetIdx === i + 2} onclick={() => setVideoQuality(height)}>{height}p</button>
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 2} class:text-black={gmSetIdx === i + 2} onclick={() => { void setVideoQuality(height); chosen() }}>{height}p</button>
           {/each}
         {:else if gmSettingsPage === 'fit'}
           {#each VIDEO_FITS as fit, i (fit.id)}
-            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => setFit(fit.id)}>{fit.label}</button>
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => { setFit(fit.id); chosen() }}>{fit.label}</button>
           {/each}
         {:else}
           {#if $sceneBookmarksEnabled}

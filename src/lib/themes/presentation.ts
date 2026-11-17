@@ -218,7 +218,7 @@ export interface RowPresentation {
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
  *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
-export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
 /** The newest theme API this client renders. API 3 adds stylesheets, fonts, template parts,
  *  airing and slide fields, and the text wordmark. API 4 adds the phone root size, scroll chrome,
  *  the series header buttons, fact keys, names and formats, the Information section, the synopsis
@@ -231,8 +231,8 @@ export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
  *  choice, the kind of title and the Continue Watching empty state. API 6 adds the TV block (applied on
  *  Android TV and in Game mode), the freshness badge field, artwork on card templates and the Suggested
  *  tab name; later API 6 keys add player controls, the expanding preview, trailer backgrounds, anchored
- *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. API 8 adds the loading screens (`loading`), the schedule entry template and fields (`schedule`) and theme screens (`layout.screens`). */
-export const LATEST_THEME_API: ThemeApi = 8
+ *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. API 8 adds the loading screens (`loading`), the schedule entry template and fields (`schedule`) and theme screens (`layout.screens`). API 9 adds the player popups' rows and close-on-select (`player.menu`). */
+export const LATEST_THEME_API: ThemeApi = 9
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
  *  API 3 `bottom`: on phones the tabs become a bar fixed to the bottom of the screen in place of the
@@ -435,6 +435,17 @@ export interface PlayerPresentation {
   /** API 7: `intro` fades the title's age rating in at the top right as an episode opens, holds it for
    *  3.6 s and fades it out, as TV apps show their rating card. */
   rating?: 'none' | 'intro'
+  /** API 9: the desktop player's popups (the options, media and right-click menus). */
+  menu?: PlayerMenuPresentation
+}
+export interface PlayerMenuPresentation {
+  /** The least height of each option, in px (izumi's own: 36). */
+  rowHeight?: number
+  /** The space left and right of each option's content, in px (izumi's own: 12). */
+  rowPadding?: number
+  /** Choosing an option (a track, a speed, a quality, a framing) closes its popup, in Game mode's
+   *  settings sheet too, instead of staying on or going back to its page. */
+  closeOnSelect?: boolean
 }
 export type PlayerButton = 'restart' | 'next' | 'fit'
 /** API 8: a loading screen drawn from a display-only template while a title page or an episode loads. */
@@ -792,6 +803,7 @@ const api4 = (api: ThemeApi, keys: string[]) => (api >= 4 ? keys : [])
 const api6 = (api: ThemeApi, keys: string[]) => (api >= 6 ? keys : [])
 const api7 = (api: ThemeApi, keys: string[]) => (api >= 7 ? keys : [])
 const api8 = (api: ThemeApi, keys: string[]) => (api >= 8 ? keys : [])
+const api9 = (api: ThemeApi, keys: string[]) => (api >= 9 ? keys : [])
 function parseHeading(value: unknown): RowHeading {
   const raw = record(value); only(raw, ['weight', 'transform', 'accent', 'viewMore'])
   const result: RowHeading = {}
@@ -1022,7 +1034,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window']), ...api7(api, ['trackButtons', 'rating', 'endTime'])])
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window']), ...api7(api, ['trackButtons', 'rating', 'endTime']), ...api9(api, ['menu'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
@@ -1049,6 +1061,13 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.window !== undefined) result.window = choice(raw.window, ['app', 'full'])
   if (raw.trackButtons !== undefined) result.trackButtons = choice(raw.trackButtons, ['icon', 'text'])
   if (raw.rating !== undefined) result.rating = choice(raw.rating, ['none', 'intro'])
+  if (raw.menu !== undefined) {
+    const menu = record(raw.menu); only(menu, ['rowHeight', 'rowPadding', 'closeOnSelect'])
+    result.menu = {}
+    if (menu.rowHeight !== undefined) result.menu.rowHeight = number(menu.rowHeight, 28, 96)
+    if (menu.rowPadding !== undefined) result.menu.rowPadding = number(menu.rowPadding, 0, 32)
+    if (menu.closeOnSelect !== undefined) result.menu.closeOnSelect = flag(menu.closeOnSelect)
+  }
   return result
 }
 /** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */

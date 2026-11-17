@@ -85,7 +85,7 @@
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, effectiveSubtitleStyle, resetSubtitleSession, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
-  import { bingeSource, oskOpen, upNextPrompt } from '$lib/player/session'
+  import { bingeSource, oskOpen } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { navLayerOpen } from '$lib/nav/layers'
   import { themePresentation } from '$lib/themes/runtime'
@@ -1863,7 +1863,7 @@
   $effect(() => {
     const armed = playerControls.paused === 'summary' && paused && landscape && firstFrameSeen && !loading && !recovering
       && !atEof && !locked && !scrubbing && !miniLayout && !handover && !resolvingNext && !overlayHidden
-      && !sheet && !subtitleEditorOpen && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
+      && !sheet && !subtitleEditorOpen && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
     pausedIdle = false
     if (!armed) return
     void inputTick
