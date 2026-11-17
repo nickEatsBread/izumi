@@ -1,4 +1,4 @@
-import { env as publicEnv } from '$env/dynamic/public'
+import * as publicEnv from '$app/env/public'
 import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
 import { showAdult } from '$lib/settings/ui'

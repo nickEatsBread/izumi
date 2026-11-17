@@ -4,7 +4,7 @@ import { get } from 'svelte/store'
 import { isMobile } from '$lib/platform'
 import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
 import { exitPrompt, onboardingNav, oskOpen, streamPicker } from '$lib/player/session'
-import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
+import { HISTORY_METADATA, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import {
   computeBackHint, handleLayeredBack, publishBackHint, resetLayeredBackForTests, startBackHint,
   type BackHint, type LayeredBackSource,
@@ -24,7 +24,7 @@ vi.mock('$lib/player/series-rating', async () => {
 const byId = (id: string) => document.getElementById(id)!
 const at = (path: string) => history.replaceState(null, '', path)
 function visit(index: number, path: string) {
-  history.replaceState({ [HISTORY_INDEX]: index }, '', path)
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: index } }, '', path)
   recordTrail(path, 'link')
 }
 /** The desktop/Deck Settings layout with commit 7's markers; the rail item for the page is lit. */

@@ -59,7 +59,7 @@ exports[`phone Settings markup > keeps the phone settings shell as it was 1`] = 
         <h1 class="text-lg font-black">{childTitle}</h1>
         <span class="ml-auto"><SettingsSearch compact /></span>
       </div>
-      {#key $page.url.pathname}
+      {#key page.url.pathname}
         <!-- Vertical, short, and fading: a push that reads as a platform screen change rather than
              a carousel. app.css shortens every transition under the reduced-motion gate. -->
         <div class="settings-child" data-nav-surface="settings" in:fly={{ y: 12, duration: 160, opacity: 0 }}>{@render children()}</div>

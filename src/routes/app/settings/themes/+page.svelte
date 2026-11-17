@@ -185,7 +185,7 @@
 
   function onopen(item: ThemeEntry) {
     message = null; pushed = true
-    const url = new URL(`?${paramsFor(item.key)}`, page.url)
+    const url = new URL(`?${paramsFor(item.key)}`, page.url.href)
     // A theme page opened from the gallery starts at its top, never at a scroll remembered for it.
     forgetScroll(url)
     void goto(url)
@@ -250,7 +250,7 @@
     const updating = !!install
     try {
       const item = installTheme(prepared); applyInstalledTheme(item)
-      if (current === LOOSE) { loose = null; void goto(`?${paramsFor(themeKey(item.origin, item.id))}`, { replaceState: true, keepFocus: true, noScroll: true }) }
+      if (current === LOOSE) { loose = null; void goto(`?${paramsFor(themeKey(item.origin, item.id))}`, { replaceState: true, reset: false }) }
       message = { text: `${item.package.name} ${updating ? 'updated' : 'installed'} and applied. Your personal edits are kept when updating.`, error: false }
     } catch (cause) { message = { text: failure(cause), error: true } }
   }

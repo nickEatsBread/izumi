@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { isMobile } from '$lib/platform'
-import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
+import { HISTORY_METADATA, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { RAIL_RETURN_ID } from '$lib/settings/back'
 import { handleLayeredBack, resetLayeredBackForTests } from './back'
 import { setFocusHint } from './focus-hint'
@@ -68,9 +68,9 @@ beforeEach(() => {
   clearBackPending()
   isMobile.set(false)
   inputType.set('dpad')
-  history.replaceState({ [HISTORY_INDEX]: 1 }, '', '/app/home')
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: 1 } }, '', '/app/home')
   recordTrail('/app/home', 'link')
-  history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings/appearance')
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: 2 } }, '', '/app/settings/appearance')
   recordTrail('/app/settings/appearance', 'link')
   vi.spyOn(history, 'go').mockImplementation(() => {})
   vi.spyOn(history, 'back').mockImplementation(() => {})

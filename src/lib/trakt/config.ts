@@ -1,5 +1,5 @@
 import { profiledPersisted } from '$lib/profiles/store'
-import * as publicEnv from '$env/static/public'
+import * as publicEnv from '$app/env/public'
 import type { TraktQueuedAction } from './types'
 import { TRAKT_SITE_REDIRECT_URI } from './oauth'
 export { TRAKT_SITE_REDIRECT_URI } from './oauth'

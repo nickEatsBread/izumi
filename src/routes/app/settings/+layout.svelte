@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte'
-  import { page } from '$app/stores'
+  import { page } from '$app/state'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import SettingsNav from '$lib/components/settings/SettingsNav.svelte'
   import SettingsSearch from '$lib/components/settings/SettingsSearch.svelte'
@@ -49,19 +49,19 @@
   // Mobile is a two-level push/pop: the grouped list index lives at the exact /app/settings path;
   // every other settings route is a "child" that shows a back-header. Treat the exact /app/settings
   // path as the index on mobile.
-  const isIndex = $derived($page.url.pathname === '/app/settings')
+  const isIndex = $derived(page.url.pathname === '/app/settings')
 
   // Category title for the mobile back-header, so each child page's own leading heading can be
   // hidden (see <style>) — one title in the bar, app-style, not a redundant second heading below.
   // Titles and parents live in the shared route table (settings/hierarchy.ts).
-  const childTitle = $derived(settingsPageTitle($page.url.pathname) ?? m.nav_settings())
+  const childTitle = $derived(settingsPageTitle(page.url.pathname) ?? m.nav_settings())
 
   // Back goes one level up, not straight to the index: a sub-screen like the source reorder is
   // reached FROM its category, and dropping the user two levels loses their place in that page.
   // The href is the structural parent; a tap runs the same Back as B and the system Back
   // (settingsBack), which returns through history when the parent is the previous page instead of
   // pushing it again: the header no longer ping-pongs between two pages.
-  const parentHref = $derived(settingsParent($page.url.pathname)?.href ?? '/app/settings')
+  const parentHref = $derived(settingsParent(page.url.pathname)?.href ?? '/app/settings')
 
   // A search hit (SettingsSearch → settingHref) or a deep link such as ListEditor's
   // `?setting=rating-style` names a row. After every navigation into or within Settings, including
@@ -126,14 +126,14 @@
 
   // Desktop content is keyed by section: a rail switch fades the new section in (sectionFade), a
   // sub-page move inside one section does not.
-  const railSection = $derived(sectionForPath($page.url.pathname)?.id ?? $page.url.pathname)
+  const railSection = $derived(sectionForPath(page.url.pathname)?.id ?? page.url.pathname)
 
   // A rail switch to another section starts at that section's top; the app layout would otherwise
   // restore where it was last left. History steps, anchors and search hits keep their own scroll.
   beforeNavigate(({ to, type }) => {
     if ($isMobile || type !== 'link' || !to?.url || to.url.hash || to.url.searchParams.has(SETTING_PARAM)) return
     const next = sectionForPath(to.url.pathname)
-    if (next && next.id !== sectionForPath($page.url.pathname)?.id) forgetScroll(to.url)
+    if (next && next.id !== sectionForPath(page.url.pathname)?.id) forgetScroll(to.url)
   })
 
   // The sticky back-header carries the status-bar inset itself (see the header markup), so the
@@ -178,7 +178,7 @@
         <h1 class="text-lg font-black">{childTitle}</h1>
         <span class="ml-auto"><SettingsSearch compact /></span>
       </div>
-      {#key $page.url.pathname}
+      {#key page.url.pathname}
         <!-- Vertical, short, and fading: a push that reads as a platform screen change rather than
              a carousel. app.css shortens every transition under the reduced-motion gate. -->
         <div class="settings-child" data-nav-surface="settings" in:fly={{ y: 12, duration: 160, opacity: 0 }}>{@render children()}</div>
@@ -232,7 +232,7 @@
     <div class="min-w-0 flex-1" data-nav-surface="settings">
       <!-- A section switch fades the new section in and lifts it 6 px (sectionFade: instant under
            reduced motion and in Game mode). The rail link keeps keyboard focus through it
-           (data-sveltekit-keepfocus). -->
+           (data-sveltekit-reset="false"). -->
       {#key railSection}
         <div in:fly={sectionFade()}>{@render children()}</div>
       {/key}

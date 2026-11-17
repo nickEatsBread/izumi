@@ -150,7 +150,7 @@
   }
   function onopen(item: PluginEntry) {
     message = null; pushed = true
-    const url = new URL(`?${paramsFor(item.key)}`, page.url)
+    const url = new URL(`?${paramsFor(item.key)}`, page.url.href)
     // A plugin page opened from the gallery starts at its top, never at a scroll remembered for it.
     forgetScroll(url)
     void goto(url)
@@ -213,7 +213,7 @@
       const next = new Map(preparedBy)
       next.delete(key)
       preparedBy = next
-      if (key === LOOSE) { loose = null; void goto(`?${paramsFor(pluginKey(item.origin, item.manifest.id))}`, { replaceState: true, keepFocus: true, noScroll: true }) }
+      if (key === LOOSE) { loose = null; void goto(`?${paramsFor(pluginKey(item.origin, item.manifest.id))}`, { replaceState: true, reset: false }) }
       message = { text: `${item.manifest.name} ${updating ? 'updated' : 'installed'}.${$pluginsEnabled ? '' : ' Turn on plugins at the top of this page to run it.'}`, error: false }
     } catch (cause) { message = { text: failure(cause), error: true } } finally { busy = false }
   }

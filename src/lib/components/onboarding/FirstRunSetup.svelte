@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { env as publicEnv } from '$env/dynamic/public'
+  import * as publicEnv from '$app/env/public'
   import Wordmark from '$lib/components/Wordmark.svelte'
   import IntroSequence, { introAlreadyPlayed } from './IntroSequence.svelte'
   import SetupArtwork from './SetupArtwork.svelte'

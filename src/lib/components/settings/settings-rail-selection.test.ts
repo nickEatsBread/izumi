@@ -69,7 +69,7 @@ describe('desktop Settings rail selection', () => {
     expect(attr(link, 'data-group')?.raw).toBe('data-group={it.group}')
     expect(attr(link, 'aria-current')?.raw).toBe("aria-current={active(it.href) ? 'page' : undefined}")
     expect(attr(link, 'data-nav-region-default')?.raw).toBe("data-nav-region-default={active(it.href) ? '' : undefined}")
-    expect(hasAttr(link, 'data-sveltekit-keepfocus')).toBe(true)
+    expect(staticAttr(link, 'data-sveltekit-reset')).toBe('false')
     expect(attr(link, 'onclick')?.raw).toBe('onclick={releasePointerFocus}')
     // The short rail label is printed; hover and screen readers still get the full section title.
     expect(attr(link, 'title')?.raw).toBe('title={it.title}')

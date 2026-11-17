@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isMobile } from '$lib/platform'
 import { backPending, clearBackPending } from '$lib/nav/nav-state'
-import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
+import { HISTORY_METADATA, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { RAIL_RETURN_ID, focusRailItem, goUp, leaveSettings, settingsBack, settingsBackAction } from './back'
 
 const mocks = vi.hoisted(() => ({ goto: vi.fn() }))
@@ -10,7 +10,7 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }))
 
 /** Stand in for SvelteKit: the entry index in history.state, then the layout's trail record. */
 function visit(index: number, path: string, type = 'link') {
-  history.replaceState({ [HISTORY_INDEX]: index }, '', path)
+  history.replaceState({ [HISTORY_METADATA]: { historyIndex: index } }, '', path)
   recordTrail(path, type)
 }
 
@@ -149,7 +149,7 @@ describe('goUp', () => {
   })
 
   it('with no trail (a fresh start on a sub-page) goes to the parent section, replacing', () => {
-    history.replaceState({ [HISTORY_INDEX]: 5 }, '', '/app/settings/store')
+    history.replaceState({ [HISTORY_METADATA]: { historyIndex: 5 } }, '', '/app/settings/store')
     goUp()
     expect(mocks.goto).toHaveBeenCalledWith('/app/settings/sources', { replaceState: true })
   })
@@ -165,7 +165,7 @@ describe('leaveSettings', () => {
 
   it('without a usable trail goes to where Settings was entered from, else Home, replacing', () => {
     visit(1, '/app/series/9'); visit(2, '/app/settings')
-    history.replaceState({ [HISTORY_INDEX]: 9 }, '', '/app/settings/player') // an entry the trail never saw
+    history.replaceState({ [HISTORY_METADATA]: { historyIndex: 9 } }, '', '/app/settings/player') // an entry the trail never saw
     leaveSettings()
     expect(mocks.goto).toHaveBeenCalledWith('/app/series/9', { replaceState: true })
     resetHistoryTrail()

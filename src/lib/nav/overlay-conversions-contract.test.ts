@@ -236,7 +236,7 @@ describe('Store sheets are nav layers', () => {
     // a StoresDialog mounted before this replace would be closed by it at once.
     const source = read(FILES.storePage)
     const effect = source.slice(source.indexOf("const add = page.url.searchParams.get('add')"), source.indexOf('onMount(() => {'))
-    const replace = effect.indexOf('void goto(url, { replaceState: true, noScroll: true, keepFocus: true })')
+    const replace = effect.indexOf('void goto(url, { replaceState: true, reset: false })')
     expect(replace).toBeGreaterThanOrEqual(0)
     expect(effect.indexOf(".then(() => { storesDialog = { mode: 'add', url: add } })")).toBeGreaterThan(replace)
     expect(effect.match(/storesDialog = /g)).toHaveLength(1)

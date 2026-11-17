@@ -14,7 +14,7 @@ describe('desktop Settings section switch', () => {
     expect(column).toBeDefined()
     expect(faded.some((el) => el.ancestors[0] === column)).toBe(true)
     expect(layout).toContain('{#key railSection}')
-    expect(layout).toContain('const railSection = $derived(sectionForPath($page.url.pathname)?.id ?? $page.url.pathname)')
+    expect(layout).toContain('const railSection = $derived(sectionForPath(page.url.pathname)?.id ?? page.url.pathname)')
     expect(layout).toContain("import { sectionFade } from '$lib/settings/section-scroll'")
     // The phone push keeps its own transition.
     expect(layout).toContain('in:fly={{ y: 12, duration: 160, opacity: 0 }}')
@@ -24,6 +24,6 @@ describe('desktop Settings section switch', () => {
     expect(layout).toContain("import { afterNavigate, beforeNavigate } from '$app/navigation'")
     expect(layout).toContain("import { forgetScroll } from '$lib/navigation/scroll-restoration'")
     expect(layout).toContain("if ($isMobile || type !== 'link' || !to?.url || to.url.hash || to.url.searchParams.has(SETTING_PARAM)) return")
-    expect(layout).toContain('if (next && next.id !== sectionForPath($page.url.pathname)?.id) forgetScroll(to.url)')
+    expect(layout).toContain('if (next && next.id !== sectionForPath(page.url.pathname)?.id) forgetScroll(to.url)')
   })
 })

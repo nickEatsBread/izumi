@@ -6,8 +6,9 @@ import { isSettingsPath } from '$lib/settings/hierarchy'
 // (runtime/client/client.js), and the trail is kept in sessionStorage, so the reloads after a
 // profile switch or a backup restore keep it too. Written from the app layout's afterNavigate.
 
-/** SvelteKit's history-state key for the entry index (@sveltejs/kit runtime/client/constants.js). */
-export const HISTORY_INDEX = 'sveltekit:history'
+/** SvelteKit's history-state key for the entry's metadata, whose `historyIndex` is the entry index
+ *  (@sveltejs/kit runtime/client/constants.js and client.js). */
+export const HISTORY_METADATA = 'sveltekit:metadata'
 export const TRAIL_STORAGE_KEY = 'izumi:nav-trail:v1'
 export const TRAIL_CAP = 100
 
@@ -53,7 +54,8 @@ function persist(state: Trail): void {
 
 /** SvelteKit's entry index in `state` (default history.state), or null. */
 export function historyIndex(state: unknown = typeof history === 'undefined' ? null : history.state): number | null {
-  const value = state !== null && typeof state === 'object' ? (state as Record<string, unknown>)[HISTORY_INDEX] : undefined
+  const meta = state !== null && typeof state === 'object' ? (state as Record<string, unknown>)[HISTORY_METADATA] : undefined
+  const value = meta !== null && typeof meta === 'object' ? (meta as Record<string, unknown>).historyIndex : undefined
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
