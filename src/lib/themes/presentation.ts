@@ -231,7 +231,7 @@ export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
  *  choice, the kind of title and the Continue Watching empty state. API 6 adds the TV block (applied on
  *  Android TV and in Game mode), the freshness badge field, artwork on card templates and the Suggested
  *  tab name; later API 6 keys add player controls, the expanding preview, trailer backgrounds, anchored
- *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. API 8 adds the loading screens (`loading`), the schedule entry template and fields (`schedule`) and theme screens (`layout.screens`). API 9 adds the player popups' rows and close-on-select (`player.menu`). */
+ *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`) and the player's Audio and Subtitles words, rating card, framing button and end time. API 8 adds the loading screens (`loading`), the schedule entry template and fields (`schedule`) and theme screens (`layout.screens`). API 9 adds the player popups' rows and close-on-select (`player.menu`) and theme settings (`design.settings`, theme-settings.ts). */
 export const LATEST_THEME_API: ThemeApi = 9
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).

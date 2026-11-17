@@ -8,7 +8,7 @@ The shipped appearance remains the default. Community packages live in the [izum
 
 ## Theme API coverage
 
-The client renders theme API 1, 2, 3, 4, 5, 6, 7, 8 and 9 (`SUPPORTED_THEME_APIS` in `src/lib/themes/packages.ts`). API 1 is the original key set and stays valid unchanged; a package declares `themeApi: 2` to use the additions below (bottom bar, slide indicator, section headings, series tabs, docked watch layout, phone overrides), `themeApi: 3` for stylesheets, fonts, template parts, airing and slide fields and the text wordmark (see "Theme API 3"), and `themeApi: 4` for the phone root size, scroll chrome, series header buttons, fact selection, names and formats, the Information section, the synopsis control, countdown formats and placement, the actions-row lead, ten display fields, the full-resolution poster, the hero's slide count, pool and cross-fade, header shortcuts that repeat a bottom-bar tab, artwork on profile-header buttons, the tabbed grid's opening tab, the portrait series header and its cover fallback, the phone series bar's Home link, logo and solid point, per-episode download buttons, where the season row opens, the series progress row, the folding actions row, the studio button, plain status words and aired episode counts, recommendations among the relations, the kind of title, the hero's artwork choice and the Continue Watching empty state (see "Theme API 4"), and `themeApi: 5` for the ranked-list card, the star, chevron, captions, mic and list icons, the 3:4 artwork shape, 8 px template text, arrow paging, row titles and the worded air date (see "Theme API 5"), and `themeApi: 6` for the TV variant, the freshness badge, artwork on card templates, the Suggested tab name, the player's seek buttons, time readout, episode title line, paused summary and whole-window layout, the expanding card preview and the muted trailers over the hero and the series art (see "Theme API 6"), `themeApi: 7` for the drawer navigation and the player's Audio and Subtitles words, age rating card, framing button and end time (see "Theme API 7"), `themeApi: 8` for the loading screens, the schedule entry template and theme screens (see "Theme API 8"), and `themeApi: 9` for the player popups' row size and close-on-select (see "Theme API 9"). The validator gates keys by the declared API, so an API 1 package cannot carry API 2 chrome past an older client. A package newer than the client is refused with a clear message and listed in the gallery as "Needs a newer izumi". Markup hooks and state attributes are not gated: an older client simply never renders the new ones.
+The client renders theme API 1, 2, 3, 4, 5, 6, 7, 8 and 9 (`SUPPORTED_THEME_APIS` in `src/lib/themes/packages.ts`). API 1 is the original key set and stays valid unchanged; a package declares `themeApi: 2` to use the additions below (bottom bar, slide indicator, section headings, series tabs, docked watch layout, phone overrides), `themeApi: 3` for stylesheets, fonts, template parts, airing and slide fields and the text wordmark (see "Theme API 3"), and `themeApi: 4` for the phone root size, scroll chrome, series header buttons, fact selection, names and formats, the Information section, the synopsis control, countdown formats and placement, the actions-row lead, ten display fields, the full-resolution poster, the hero's slide count, pool and cross-fade, header shortcuts that repeat a bottom-bar tab, artwork on profile-header buttons, the tabbed grid's opening tab, the portrait series header and its cover fallback, the phone series bar's Home link, logo and solid point, per-episode download buttons, where the season row opens, the series progress row, the folding actions row, the studio button, plain status words and aired episode counts, recommendations among the relations, the kind of title, the hero's artwork choice and the Continue Watching empty state (see "Theme API 4"), and `themeApi: 5` for the ranked-list card, the star, chevron, captions, mic and list icons, the 3:4 artwork shape, 8 px template text, arrow paging, row titles and the worded air date (see "Theme API 5"), and `themeApi: 6` for the TV variant, the freshness badge, artwork on card templates, the Suggested tab name, the player's seek buttons, time readout, episode title line, paused summary and whole-window layout, the expanding card preview and the muted trailers over the hero and the series art (see "Theme API 6"), `themeApi: 7` for the drawer navigation and the player's Audio and Subtitles words, age rating card, framing button and end time (see "Theme API 7"), `themeApi: 8` for the loading screens, the schedule entry template and theme screens (see "Theme API 8"), and `themeApi: 9` for the player popups' row size and close-on-select and for theme settings the viewer changes (see "Theme API 9"). The validator gates keys by the declared API, so an API 1 package cannot carry API 2 chrome past an older client. A package newer than the client is refused with a clear message and listed in the gallery as "Needs a newer izumi". Markup hooks and state attributes are not gated: an older client simply never renders the new ones.
 
 Coverage chips in Theme Studio (`Home`, `Shell`, `Details`, `Player`, or `Full`) reflect the slots a draft actually uses.
 
@@ -159,7 +159,7 @@ The hooks added with them (`page-step`, `block.grid`, `hero.edge`, `nav.action`,
 
 ### Theme API 9
 
-A package declares `themeApi: 9` to use `player.menu`; the validator refuses it in an older package, and a client older than API 9 refuses the package whole with its "needs a newer izumi" message.
+A package declares `themeApi: 9` to use `player.menu` or `design.settings`; the validator refuses them in an older package, and a client older than API 9 refuses the package whole with its "needs a newer izumi" message.
 
 - **Player popups (`player.menu`).** The desktop player's popups are the options menu, the audio and subtitles menu and the right-click menu (`player.menu` with `data-variant` `options`, `tracks` and `context`). Each option in them is a `player.menu.item` (`data-state="active"` on the chosen one) and each page opens with a `player.menu.back` heading. The keys:
   - `rowHeight` (px, 28–96): the least height of every option. izumi's own is 36.
@@ -176,6 +176,34 @@ A package declares `themeApi: 9` to use `player.menu`; the validator refuses it 
   ```css
   [data-part="player.menu.item"][data-state="active"] { color: hsl(var(--primary)); font-weight: 700 }
   ```
+
+- **Theme settings (`design.settings`, up to 16).** Choices the viewer makes about the theme, which its stylesheet reads. The viewer changes them on the theme's page (Settings → Themes → the theme, under *Settings*) and in Settings → Appearance → Theme, where each row is named after the theme ("Settings demo · Card corners"). Appearance shows the settings of the theme in use and, when the player theme is another theme with settings, that theme's too. Values are kept per device and per installed theme, survive updates of the theme (a value that no longer fits its setting falls back to the default), and *Reset* returns to the theme's defaults.
+
+  ```jsonc
+  "settings": [
+    { "key": "heading", "label": "Row heading colour", "description": "The colour of each row's title", "type": "color", "default": "#e5e5e5" },
+    { "key": "corners", "label": "Card corners", "type": "choice", "default": "soft",
+      "options": [{ "value": "square", "label": "Square" }, { "value": "soft", "label": "Soft" }, { "value": "round", "label": "Round" }] },
+    { "key": "card-titles", "label": "Titles under cards", "type": "toggle", "default": true }
+  ]
+  ```
+
+  | Field | Rules |
+  | --- | --- |
+  | `key` | Lowercase letters, digits and hyphens, starting with a letter, up to 32; unique in the list. |
+  | `label` | Up to 48 characters. |
+  | `description` | Optional, up to 160 characters. |
+  | `type` | `toggle` (default `true` or `false`), `choice` (2 to 8 `options`, each `{ value, label }` with a value like a key; the default is one of them) or `color` (default `#rrggbb`). |
+
+  While the theme paints the window (as the app theme, a screen's theme or the player theme), `<html>` carries each setting:
+
+  | Type | On `<html>` | Read it with |
+  | --- | --- | --- |
+  | `toggle` | `data-theme-setting-<key>="on"` or `"off"` | `:scope[data-theme-setting-card-titles="off"] [data-part="card.title"] { display: none }` |
+  | `choice` | `data-theme-setting-<key>="<value>"` | `:scope[data-theme-setting-corners="round"] [data-part="card.art"] { border-radius: 1.25rem }` |
+  | `color` | `--theme-setting-<key>: #rrggbb` | `[data-part="row.title"] { color: var(--theme-setting-heading) }` |
+
+  They are removed when another theme takes over, and absent in safe mode. Settings only feed the stylesheet: they don't change presentation keys, tokens or the layout. Demo: `docs/theme-packages/theme-settings-demo.json`. Format: `src/lib/themes/theme-settings.ts` (no imports, so the catalog's validator can copy it).
 
 ### Theme API 8
 
@@ -962,6 +990,7 @@ The client retains the existing limit of 24 saved designs. Install writes attemp
 | Host integration | `Hero.svelte` (its `list` action opens `MediaListSheet.svelte`), `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte` (with `PreviewCard.svelte` and `expand-pos.ts`), `BackdropTrailer.svelte`, `ContinueCard.svelte`, `SearchResults.svelte`, `AnimeDetail.svelte`, `Tabs.svelte`, `EpisodeCard.svelte`, `Sidebar.svelte`, `BottomNav.svelte`, `Seekbar.svelte`, `EpisodeList.svelte`, `EpisodeToolbar.svelte`, `SeasonPicker.svelte`, `FactList.svelte`, `RichMetadata.svelte` |
 | API 8 loading screens | `src/lib/components/themes/LoadingScreen.svelte` (hosts: `AnimeDetail.svelte`, `CatalogMediaDetail.svelte`, `SourceConnecting.svelte`, `PlayerOverlay.svelte`), `src/lib/themes/loading-clock.ts`, `episodeLoadingModel` in `host-model.ts` |
 | API 8 schedule entry | `airingDisplayModel` in `host-model.ts`, `AgendaWeek.svelte`, `DayColumn.svelte` (with `ScheduleGrid.svelte`, `PersonalSchedule.svelte`, `ScheduleNextUp.svelte` and `src/routes/app/schedule/+page.svelte` for the hooks) |
+| API 9 theme settings | `src/lib/themes/theme-settings.ts` (format and `<html>` hooks), `src/lib/themes/theme-setting-values.ts` (values per installed theme), `ThemeSettingsRows.svelte` (on `ThemePane.svelte` and the Appearance page), applied in `src/lib/theme.ts` |
 | API 8 theme screens | `themeScreens`, `homeLayoutFor` and `openThemeScreen` in `src/lib/themes/layout-state.ts`, `src/routes/app/screen/[id]/+page.svelte`, `src/lib/components/shell/theme-screen-icons.ts`, `Sidebar.svelte`, `NavDrawer.svelte`, `NavPanel.svelte` |
 | API 9 player popups | `player.menu` in `parsePlayer` (`presentation.ts`), the row custom properties in `src/lib/theme.ts` and `src/app.css`, `chosen()` in `Controls.svelte`, `PlayerContextMenu.svelte` |
 | TV rows, caption template, grid keyboard and player buttons | `src/lib/nav/anchor.ts` and `revealAnchored` in `src/lib/nav/index.ts`, `card-registry.ts`, `src/lib/components/search/GridKeyboard.svelte` (with `grid-keyboard.ts` and `searchGridKeyboard` in `runtime.ts`), `AndroidPlayer.svelte` and `Controls.svelte` |

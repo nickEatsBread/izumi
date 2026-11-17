@@ -3,6 +3,8 @@
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Palette from '@lucide/svelte/icons/palette'
   import PaletteHomePreview from '$lib/components/settings/PaletteHomePreview.svelte'
+  import ThemeSettingsRows from '$lib/components/settings/ThemeSettingsRows.svelte'
+  import { studioThemes } from '$lib/settings/theme-studio'
   import { SCREEN_LABELS, platformFor, platformLabel, shotsFor, type PreparedTheme, type ThemePlatform, type ThemeScreen } from '$lib/themes/packages'
   import { DEFAULT_THEME_KEY, type ThemeEntry } from '$lib/themes/store-shelves'
   import type { ThemeTokens } from '$lib/theme-tokens'
@@ -47,6 +49,8 @@
   const phone = $derived(platform === 'phone')
   const size = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024))} KB`
   const version = $derived(pkg?.version ?? release?.version)
+  // An installed theme's own settings (API 9), changed here or in Appearance.
+  const design = $derived(entry?.installed ? $studioThemes.find((theme) => theme.id === entry.installed?.designId) : undefined)
 </script>
 
 <section class="theme-pane" class:tinted={!!tokens} data-theme-pane data-nav-back-scope aria-busy={busy} aria-labelledby="theme-pane-title" style:--tint={tokens?.theme}>
@@ -84,6 +88,12 @@
   {#if message}<p role={message.error ? 'alert' : 'status'} class="message" class:error={message.error}>{message.text}</p>{/if}
   {#if hint}<p class="hint">{hint}</p>{/if}
   {#if description}<p class="description">{description}</p>{/if}
+  {#if design?.settings?.length}
+    <section class="settings" aria-labelledby="theme-pane-settings">
+      <h4 id="theme-pane-settings">Settings</h4>
+      <div class="rows"><ThemeSettingsRows {design} /></div>
+    </section>
+  {/if}
   {#if !isDefault && (release || version)}
     <dl class="facts">
       {#if release}<div><dt>Made for</dt><dd>{platformLabel(release.platforms)}</dd></div>{/if}
@@ -128,6 +138,8 @@
   .hint, .message { font-size: .8125rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
   .message { padding: .625rem .875rem; border-radius: .625rem; background: hsl(var(--background) / .55); color: hsl(var(--foreground)); }
   .message.error { box-shadow: inset .1875rem 0 0 hsl(var(--theme)); }
+  .settings h4 { margin-bottom: .375rem; font-size: .625rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+  .settings .rows { overflow: hidden; border-radius: .75rem; background: hsl(var(--background) / .55); }
   .facts { display: flex; flex-wrap: wrap; gap: .5rem 1.75rem; }
   dt { font-size: .625rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
   dd { margin-top: .125rem; font-size: .8125rem; font-weight: 700; }

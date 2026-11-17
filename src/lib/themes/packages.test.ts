@@ -11,6 +11,7 @@ describe('installable theme packages', () => {
     expect((portablePackage(parsed).design as object)).not.toHaveProperty('id')
   })
   it('rejects unsupported API versions, styles, settings and colors', () => {
+    expect(parseThemePackage({ ...samplePackage, themeApi: 9 }).themeApi).toBe(9)
     expect(() => parseThemePackage({ ...samplePackage, themeApi: 10 })).toThrow('theme API')
     expect(() => parseThemePackage({ ...samplePackage, design: { radius: 200 } })).toThrow('appearance')
     expect(() => parseThemePackage({ ...samplePackage, design: { accountToken: 'hidden' } })).toThrow('unsupported')
