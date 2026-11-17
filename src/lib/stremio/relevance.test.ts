@@ -5,6 +5,7 @@ import {
   likelyOtherProduction,
   isEpisodeExtra,
   isStandaloneMovie,
+  namesOnlyTheTitle,
   selfDeclaredOtherProduction,
   wrongFranchiseSeason,
 } from './relevance'
@@ -563,5 +564,193 @@ describe('isEpisodeExtra (trailer labels in other scripts)', () => {
     expect(isEpisodeExtra(s('Example.2026.Trailer.Oficial.mkv'))).toBe(true)
     expect(isEpisodeExtra(s('Example 2026 Tráiler 1080p.mkv'))).toBe(true)
     expect(isEpisodeExtra(s('Пример / Example [2026, WEB-DL 1080p].mkv'))).toBe(false)
+  })
+})
+
+// Shapes found by running the filter over real rows for 2,500+ titles. Release names here are made up
+// around each show's own title; only the title wording matters to the rule under test.
+describe('release names the title test misread', () => {
+  const deathNote = ['DEATH NOTE', 'Death Note']
+  const bisque = ['Sono Bisque Doll wa Koi wo Suru', 'My Dress-Up Darling']
+  const bebop = ['Cowboy Bebop']
+  const reZero = ['Re:Zero kara Hajimeru Isekai Seikatsu', 'Re:ZERO -Starting Life in Another World-']
+
+  it('reads underscores as word breaks and a glued or dotted episode label as one', () => {
+    expect(relevant(s('[Group]_Death_Note_Ep01_(1A2B3C4D).mkv'), deathNote)).toBe(true)
+    expect(relevant(s('[Group]_Death_Note_EP01v2_[1A2B3C4D].avi'), deathNote)).toBe(true)
+    expect(relevant(s('[Group] Death Note Ep. 01 - Example Episode Title.mkv'), deathNote)).toBe(true)
+  })
+  it('accepts either spelling of a romanized particle', () => {
+    expect(relevant(s('[Group] Sono Bisque Doll wa Koi o Suru - 01 [1080p].mkv'), bisque)).toBe(true)
+  })
+  it('ends the title at a spelled-out season, a TV label or a split-episode number', () => {
+    expect(relevant(s('Cowboy Bebop Season 1 Episode 1 Example Episode Title.mkv'), bebop)).toBe(true)
+    expect(relevant(s('Cowboy Bebop TV 01 [1080p].mkv'), bebop)).toBe(true)
+    expect(relevant(s('[Group] Re Zero kara Hajimeru Isekai Seikatsu - 01A [720p].mkv'), reZero)).toBe(true)
+  })
+  it('still rejects a different title written the same ways', () => {
+    expect(relevant(s('[Group]_Death_Note_Relight_Ep01_(1A2B3C4D).mkv'), deathNote)).toBe(false)
+    expect(relevant(s('[Group] Sono Bisque Doll wa Koi o Shinai - 01 [1080p].mkv'), bisque)).toBe(false)
+    expect(relevant(s('Space Cowboy Bebop Season 1 Episode 1.mkv'), bebop)).toBe(false)
+  })
+})
+
+describe('a tracker or extension row names a whole release, not a file', () => {
+  const release = (title: string): Stream => ({
+    behaviorHints: { filename: title }, __origin: { kind: 'torrent-extension', id: 'tracker:feed.test', name: 'Feed' },
+  } as Stream)
+  it('reads a series release with no episode label as its batch unless it names a film', () => {
+    expect(isStandaloneMovie(release('[Group] Toradora! (2008) + OVA [BluRay 1080p]'))).toBe(false)
+    expect(isStandaloneMovie(release('[Group] Darling in the Franxx [BD 1080p]'))).toBe(false)
+    expect(isStandaloneMovie(release('[Group] Gekijouban Clannad [BD 1080p]'))).toBe(true)
+    expect(isStandaloneMovie(release('[Group] Example Show Movie: Example Subtitle [1080p]'))).toBe(true)
+    expect(isStandaloneMovie(s('Example Show [BD 1080p].mkv'))).toBe(true)
+  })
+})
+
+describe('wrongFranchiseSeason for an entry titled with its sequel number', () => {
+  const mob3 = ['Mob Psycho 100 III']
+  const goblin2 = ['Goblin Slayer II', 'GOBLIN SLAYER II']
+  const grace2 = ['Kamitachi ni Hirowareta Otoko 2', 'By the Grace of the Gods Season 2']
+  it('keeps the season its own number names', () => {
+    expect(wrongFranchiseSeason(s('[Group] Mob Psycho 100 III (Season 3) [1080p]'), mob3)).toBe(false)
+    expect(wrongFranchiseSeason(s('[Group] Goblin Slayer Season 2 (BD 1080p) | Goblin Slayer II'), goblin2)).toBe(false)
+    expect(wrongFranchiseSeason(s('[Group] Goblin Slayer (2023) (2nd Season) [1080p]'), goblin2)).toBe(false)
+    expect(wrongFranchiseSeason(s('[Group] By the Grace of the Gods S02E07 [1080p]'), grace2)).toBe(false)
+  })
+  it('still rejects a different season of the same franchise', () => {
+    expect(wrongFranchiseSeason(s('[Group] Mob Psycho 100 Season 2 - 01 [1080p]'), mob3)).toBe(true)
+    expect(wrongFranchiseSeason(s('[Group] Goblin Slayer Season 3 - 01 [1080p]'), goblin2)).toBe(true)
+  })
+})
+
+describe('isEpisodeExtra for an opening and ending pack', () => {
+  it('reads OP.ED / OP&ED as the pack of credits it is', () => {
+    expect(isEpisodeExtra(s('Example Show [OP.ED][BDRemux]'))).toBe(true)
+    expect(isEpisodeExtra(s('[Group] Example Show OP&ED (BD 1080p)'))).toBe(true)
+    expect(isEpisodeExtra(s('[Group] Example Show - 01 (1080p)'))).toBe(false)
+  })
+})
+
+describe('release names that are not file names', () => {
+  it('reads a series release named only by its title as that title, and a film rip as more', () => {
+    const jan = ['Tetsunabe no Jan!', 'Iron Wok Jan!']
+    expect(namesOnlyTheTitle(s('Tetsunabe no Jan!'), jan)).toBe(true)
+    expect(namesOnlyTheTitle(s('[Group] Tetsunabe no Jan! RUS'), jan)).toBe(true)
+    expect(namesOnlyTheTitle(s('Ghost in the Shell 2160p BluRay Rip'), ['The Ghost in the Shell', 'Ghost in the Shell'])).toBe(false)
+    expect(namesOnlyTheTitle(s('[Group] Ghost In The Shell 2 Innocence (UHD-BD 4k)'), ['Ghost in the Shell'])).toBe(false)
+  })
+  it('reads a language tag after the title as release detail', () => {
+    expect(relevant(s('Tetsunabe no Jan! RUS'), ['Tetsunabe no Jan!', 'Iron Wok Jan!'])).toBe(true)
+    expect(relevant(s('[Group] Tetsunabe no Jan! - 05 [ITA] [1080p]'), ['Tetsunabe no Jan!', 'Iron Wok Jan!'])).toBe(true)
+  })
+})
+
+describe('a sequel release that spells its season', () => {
+  it('belongs to the entry titled with that sequel', () => {
+    expect(relevant(s('[S02 E01] Overlord Season 2 Episode 01 Example Episode Title.mkv'), ['Overlord II'])).toBe(true)
+    expect(relevant(s('[Group] Dr. STONE (Season 2) - 01 [1080p].mkv'), ['Dr. STONE: STONE WARS'])).toBe(true)
+    expect(wrongFranchiseSeason(s('Overlord Season 2 Episode 01.mkv'), ['Overlord III'])).toBe(true)
+  })
+})
+
+describe('a sequel number written right after the title', () => {
+  const konosuba = ['Kono Subarashii Sekai ni Shukufuku wo!', "KONOSUBA -God's blessing on this wonderful world!"]
+  const konosuba2 = ['Kono Subarashii Sekai ni Shukufuku wo! 2', "KONOSUBA -God's blessing on this wonderful world! 2"]
+  it('names another entry unless the request is that entry', () => {
+    expect(relevant(s('[Group] Kono Subarashii Sekai ni Shukufuku o! 2 01 [720p].mkv'), konosuba)).toBe(false)
+    expect(relevant(s('[Group] Kono Subarashii Sekai ni Shukufuku o! 2 01 [720p].mkv'), konosuba2)).toBe(true)
+    expect(relevant(s('[Group] Kaiju No. 8 01 [1080p].mkv'), ['Kaiju No. 8'])).toBe(true)
+    expect(relevant(s('[Group] Bleach 12 [720p].mkv'), ['BLEACH', 'Bleach'])).toBe(true)
+    // A year after the number is the release year, not an episode.
+    expect(relevant(s('Oregairu 2 2015 S00E02 [1080p].mkv'), ['Oregairu Zoku OVA', 'Oregairu'])).toBe(true)
+  })
+  it('reads "TV-3" as the third season', () => {
+    expect(wrongFranchiseSeason(s('[Group] KonoSuba TV-3 - 01 [1080p].mkv'), konosuba)).toBe(true)
+    expect(wrongFranchiseSeason(s('Example Show TV-2 - 01.mkv'), ['Example Show 2'])).toBe(false)
+    expect(wrongFranchiseSeason(s('[Group] Example Show [TV24+SP5] [BD 1080p]'), ['Example Show'])).toBe(false)
+  })
+})
+
+describe('releases the remaining audit rejections were wrong about', () => {
+  it('matches a release named in the native script by the native title', () => {
+    expect(relevant(s('[Group] ガチアクタ #01 [1080p].mkv'), ['Gachiakuta', 'ガチアクタ'])).toBe(true)
+    expect(relevant(s('[Group] 影宅 - 01 [WEB-DL][1080p].mkv'), ['Shadows House', '影宅'])).toBe(true)
+    expect(relevant(s('[Group] 別の番組 - 01 [1080p].mkv'), ['Shadows House', '影宅'])).toBe(false)
+  })
+  it('reads a "Part N" cour label as release detail', () => {
+    expect(relevant(s('[Group] Mushoku Tensei - Part 1 - 01 [BDRip 1080p].mkv'), ['Mushoku Tensei: Isekai Ittara Honki Dasu', 'Mushoku Tensei: Jobless Reincarnation'])).toBe(true)
+  })
+})
+
+describe('native titles and credit packs, second pass', () => {
+  it('does not take a native title followed by a sequel marker, or a Latin title that adds a word', () => {
+    expect(relevant(s('[Group] 幼女戦記II / Youjo Senki II [01-12][WebRip 1080p]'), ['Youjo Senki', 'Saga of Tanya the Evil', '幼女戦記'])).toBe(false)
+    expect(relevant(s('[Group][魔道祖师 第二季][1080p]'), ['Modao Zushi', '魔道祖师'])).toBe(false)
+    expect(relevant(s('[Group] Example Saga BURST / 例のサーガ BURST [1080p]'), ['Example Saga', '例のサーガ'])).toBe(false)
+  })
+  it('reads OP/ED in an episode name as its subtitle styling, not a credits pack', () => {
+    expect(isEpisodeExtra(s('[Group] Example Show (2023) - 01v2 (OP-ED Karaoke) [1080p].mkv'))).toBe(false)
+    expect(isEpisodeExtra(s('[Group] Example Show 1-7+OP&ED+Special DVD'))).toBe(false)
+    expect(isEpisodeExtra(s('Example Show - S1+S2 [OP.ED][BD]'))).toBe(true)
+  })
+})
+
+describe('spellings the labelled audit sample still rejected', () => {
+  it('folds romanized long vowels', () => {
+    expect(relevant(s('[Group] Sayounara Ryuusei, Konnichiwa Jinsei - 01 [1080p].mkv'), ['Sayonara Ryuusei, Konnichiwa Jinsei'])).toBe(true)
+    expect(relevant(s('[Group] Shokugeki No Soma - S05E01.mkv'), ['Shokugeki no Souma: Gou no Sara', 'Food Wars! The Fifth Plate'])).toBe(true)
+  })
+  it('reads a scene code glued to the title and a multiplication sign as x', () => {
+    expect(relevant(s('Fire.ForceS01EP05.1080p.WEB.mkv'), ['Enen no Shouboutai', 'Fire Force'])).toBe(true)
+    expect(relevant(s('High School D×D - 03x01 - Example Episode Title.mkv'), ['High School DxD BorN', 'High School DxD'])).toBe(true)
+  })
+  it('reads a number before a language tag as the episode', () => {
+    expect(isStandaloneMovie(s('Code Geass Lelouch of the Rebellion 05 RUS.mkv'))).toBe(false)
+    expect(isStandaloneMovie(s('Angel Beats! 3 Ger-Eng 720p.mkv'))).toBe(false)
+  })
+})
+
+describe('regressions the folding pass caught in its own A/B run', () => {
+  it('keeps a short title that looks like a language tag once folded', () => {
+    expect(relevant(s('[Group] Free! (Dub) - 01 [1080p].mkv'), ['Free!', 'Free! - Iwatobi Swim Club'])).toBe(true)
+    expect(relevant(s('Free! - S02E01.mkv'), ['Free!: Eternal Summer', 'Free! - Eternal Summer'])).toBe(true)
+  })
+  it('keeps titles glued together, with or without their "x"', () => {
+    expect(relevant(s('HunterHunter.11_005.mkv'), ['HUNTER×HUNTER (2011)', 'Hunter x Hunter (2011)'])).toBe(true)
+    expect(relevant(s('[Group] Maou2099 - 01.mkv'), ['Maou 2099', 'Demon Lord 2099'])).toBe(true)
+  })
+  it('reads "Title 9 - 12" as a range of episodes, not a sequel', () => {
+    expect(relevant(s('[Group] Black Lagoon 9 - 12 [1080p]'), ['Black Lagoon'])).toBe(true)
+  })
+})
+
+describe('volume and season-revision labels after the title', () => {
+  const bisque = ['Sono Bisque Doll wa Koi wo Suru', 'My Dress-Up Darling']
+  it('ends the title at "Vol 01", a bare "E01" and "S01v2"', () => {
+    expect(relevant(s('[Group] Sono Bisque Doll wa Koi o Suru Vol 01 E01 [1080p].mkv'), bisque)).toBe(true)
+    expect(relevant(s('[Group] My Dress-Up Darling - S01v2 (BD 1080p HEVC) [Dual Audio]'), bisque)).toBe(true)
+  })
+})
+
+describe('regressions the final audit run caught', () => {
+  it('keeps short and tag-titled releases the earlier rules kept', () => {
+    expect(relevant(s('K-ON! 2009 - URA-ON! 01-03 .mkv'), ['K-ON!: Ura-On!', 'K-ON!: Ura-ON!!'])).toBe(true)
+    expect(relevant(s('[Group] X TV Series (2001) - 01v2 [1A2B3C4D].mkv'), ['X (TV)', 'X'])).toBe(true)
+    expect(relevant(s('[Group] 佐佐木與文鳥小嗶 Season 2 - 01 [1080P][WEB-DL].mp4'), ['Sasaki to Pii-chan Season 2', 'Sasaki and Peeps Season 2'])).toBe(true)
+  })
+})
+
+describe('a franchise film is not its series', () => {
+  it('rejects the series episodes a film request pulls in', () => {
+    const film = ['NARUTO: Dai Gekitotsu! Maboroshi no Chitei Iseki Dattebayo!', 'Naruto the Movie: Legend of the Stone of Gelel']
+    expect(relevant(s('Naruto -  182 1080p BluRay x265-Group.mkv'), film)).toBe(false)
+  })
+})
+
+describe('a title written with "×"', () => {
+  it('matches the release that drops the sign as well as one that spells it', () => {
+    expect(relevant(s('[Group] Kakegurui - S02 - 01 [1080p].mkv'), ['Kakegurui ××', 'Kakegurui xx'])).toBe(true)
+    expect(relevant(s('[Group] Hunter x Hunter (2011) - 05 [1080p].mkv'), ['HUNTER×HUNTER (2011)'])).toBe(true)
   })
 })

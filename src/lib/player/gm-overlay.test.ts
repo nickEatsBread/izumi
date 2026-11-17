@@ -174,7 +174,9 @@ describe('PlayerOverlay Game-mode wiring', () => {
     // is a real press on whatever the reveal put there. The window keeps its full length: the
     // compatibility click's latency after the lift is not something to guess.
     expect(body).toContain('      if (revealTouch) {\n')
-    expect(body).toContain('        suppressTouchRevealClickUntil = 0\n        revealTouch = null\n      } else {')
+    expect(body).toContain('        suppressTouchRevealClickUntil = 0\n        revealTouch = null\n        clearTouchReveal()\n      } else {')
+    // The revealing touch's own pointer events reach the controls it mounted: they ignore its press.
+    expect(body).toContain('    armTouchReveal()\n    poke()')
     expect(body).not.toContain('onOverlayTouchEnd')
     // A drag disarms it too, and a tap elsewhere inside the window is a real press.
     expect(body).toContain('Math.hypot(touch.clientX - revealTouch.x, touch.clientY - revealTouch.y) > 12')
@@ -214,7 +216,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('await new Promise((resolve) => setTimeout(resolve, GM_OSD_CLEAR_MS))')
     expect(overlay).toContain(':global(html.gm-frozen [data-gm-menu-surface])')
     expect(overlay).not.toContain('gm-docked')
-    for (const file of ['TrackMenu', 'StreamPicker', 'SourceConnecting', 'UpNextOverlay', 'SeriesRatingPrompt', 'Controls']) {
+    for (const file of ['TrackMenu', 'StreamPicker', 'SourceConnecting', 'SeriesRatingPrompt', 'Controls']) {
       const source = readFileSync(fileURLToPath(new URL(`../components/player/${file}.svelte`, import.meta.url)), 'utf8')
       expect(source, file).toContain('data-gm-menu-surface')
       expect(source, file).not.toContain('data-gm-dock-avoid')
@@ -264,7 +266,7 @@ describe('gameModeDock', () => {
 
   it('names every live menu surface', () => {
     expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false })).toBe(false)
-    expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false, upNextOpen: true })).toBe(true)
+    expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false, ratingOpen: true })).toBe(true)
   })
 })
 
@@ -351,7 +353,7 @@ describe('Game-mode Leanback motion', () => {
     // The overlay is mounted for the whole playback (Controls only while the bar shows): it leaves
     // Up to whatever owns it, reveals the bar, then hands the request to the mounted Controls.
     const handler = overlay.slice(overlay.indexOf('const onRequest = async () => {'))
-    expect(handler).toContain('if (subtitleEditorOpen || get(playerStatsOpen) || get(upNextPrompt) || get(connecting) || get(debridCaching)')
+    expect(handler).toContain('if (subtitleEditorOpen || get(playerStatsOpen) || get(connecting) || get(debridCaching)')
     expect(handler.indexOf('poke()')).toBeLessThan(handler.indexOf('await tick()'))
     expect(handler.indexOf('await tick()')).toBeLessThan(handler.indexOf("window.dispatchEvent(new Event('player-open-settings'))"))
     expect(overlay).toContain("window.addEventListener('player-settings-request', onRequest)")
@@ -383,7 +385,7 @@ describe('Game-mode Leanback motion', () => {
     expect(controls).toContain('MessageSquare')
     expect(controls).toContain('aria-label="Audio, subtitles and server"><Captions')
     expect(controls).not.toContain('aria-label="Switch server"')
-    expect(nativeHud).toContain('Lucide Settings silhouette')
+    expect(nativeHud).toContain('push(lines, gear(cx, cy, size / 24.0, color, &a));')
     expect(nativeHud).toContain('Lucide MessageSquare')
     expect(nativeHud).toContain('Lucide Captions')
     expect(nativeHud).toContain('\\\\p4')
@@ -446,9 +448,27 @@ describe('Game-mode skip chip + settings sheet', () => {
   it('uses a white pill Skip button and a dimmed right settings sheet', () => {
     const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
     expect(overlay).toContain('rounded-full bg-white')
-    expect(overlay).toContain("Skip {currentSeg.label}")
+    expect(overlay).toContain('{skipLabel}')
+    expect(overlay).toContain("`Skip ${currentSeg?.label ?? ''}`")
     expect(overlay).not.toContain('class:opacity-0={gmMode && !overlayActive}')
     const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
     expect(controls).toContain('fixed inset-0 z-40 bg-black/50')
+  })
+
+  it('leads the settings sheet with Audio and Subtitles, every row keyed by gmRootKeys', () => {
+    const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
+    const keys = [...(controls.match(/const gmRootKeys = \$derived\((.+)\)/)?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1])
+    expect(keys.slice(0, 3)).toEqual(['audio', 'subs', 'source'])
+    // The highlight and the A press read the same index, so a row needs both or the pad picks the wrong one.
+    for (const key of keys) {
+      expect(controls, key).toContain(`class:bg-white={gmSetIdx === gmRootKeys.indexOf('${key}')}`)
+      expect(controls, key).toContain(`key === '${key}'`)
+    }
+    expect(controls).toContain("if (gm) void refreshTracks()")
+    // A theme's words open those pages directly, in Game mode too, and the native HUD draws them by name.
+    expect(controls).toContain("const trackWords = $derived($themePresentation?.player?.trackButtons === 'text')")
+    expect(controls).toContain('data-control="audio" data-focusable data-gm-text="Audio"')
+    expect(controls).toContain('data-control="subtitles" data-focusable data-gm-text="Subtitles"')
+    expect(controls).toContain("onclick={() => openTrackPage('subs')}")
   })
 })

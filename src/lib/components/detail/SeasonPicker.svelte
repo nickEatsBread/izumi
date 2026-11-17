@@ -128,8 +128,10 @@
 {:else}
   <div data-slot="episodes.seasons" data-variant={variant} bind:this={track}
        class="relative -mx-4 mb-4 flex overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 {variant === 'posters' ? 'gap-4' : 'gap-2'}">
-    {#each entries as entry (entry.media.id)}
+    {#each entries as entry, index (`${entry.media.id}:${entry.label}`)}
+      <!-- A picker over one title's own seasons (`onpick`) switches in place instead of opening a page. -->
       <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)} use:detailLink={entry.media}
+         onclick={onpick ? (event) => { event.preventDefault(); onpick(index) } : undefined}
          aria-current={entry.active ? 'page' : undefined}
          class={variant === 'posters'
            ? `flex w-24 shrink-0 flex-col gap-2 text-center ${entry.active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`

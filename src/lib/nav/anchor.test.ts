@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorEase, anchorScrollLeft, anchorScrollTop, animateScroll, stopScroll } from './anchor'
+import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorEase, anchorScrollLeft, anchorScrollTop, animateScroll, chaseScroll, isChasing, stopScroll } from './anchor'
 import { initDpadNav } from './index'
 import { controllerMode } from './input'
 import { navInFlight } from './nav-state'
@@ -153,6 +153,43 @@ describe('animateScroll', () => {
     stopScroll(key)
     expect(frames.size).toBe(0)
     stopScroll({})
+  })
+})
+
+describe('chaseScroll', () => {
+  it('stays stable and never overshoots when frames come far apart, as on a busy Deck', () => {
+    let value = 0
+    const key = {}
+    chaseScroll(key, () => value, (v) => { value = v }, 660)
+    let previous = 0
+    for (let now = 0; now <= 900; now += 90) {
+      frame(now)
+      expect(value).toBeGreaterThanOrEqual(previous)
+      expect(value).toBeLessThanOrEqual(660)
+      previous = value
+    }
+    expect(value).toBe(660)
+    expect(isChasing(key)).toBe(false)
+  })
+
+  it('takes a new target while it runs, and stopScroll or an eased scroll ends it', () => {
+    let value = 0
+    const key = {}
+    chaseScroll(key, () => value, (v) => { value = v }, 300)
+    frame(0)
+    chaseScroll(key, () => value, (v) => { value = v }, 600)
+    expect(frames.size).toBe(1)
+    for (let now = 16; now <= 1000; now += 16) frame(now)
+    expect(value).toBe(600)
+    chaseScroll(key, () => value, (v) => { value = v }, 0)
+    expect(isChasing(key)).toBe(true)
+    stopScroll(key)
+    expect(isChasing(key)).toBe(false)
+    expect(frames.size).toBe(0)
+    chaseScroll(key, () => value, (v) => { value = v }, 0)
+    animateScroll(key, () => value, (v) => { value = v }, 100, 0)
+    expect(isChasing(key)).toBe(false)
+    expect(value).toBe(100)
   })
 })
 
@@ -315,13 +352,48 @@ describe('anchored rows', () => {
     expect(track('a').scrollLeft).toBe(330)
   })
 
-  it('a held repeat and reduced motion jump', () => {
+  it('a held repeat glides after its focus, keeping its speed through the next repeat', () => {
+    button('a1').focus()
+    press('ArrowRight', true)
+    expect(document.activeElement).toBe(button('a2'))
+    // A spring, not a jump: part of the way on the first frame, never past the card.
+    frame(0)
+    const steps: number[] = []
+    let previous = 0
+    const run = (from: number, to: number, limit: number) => {
+      for (let t = from; t <= to; t += 16) {
+        frame(t)
+        const left = track('a').scrollLeft
+        expect(left).toBeGreaterThanOrEqual(previous)
+        expect(left).toBeLessThanOrEqual(limit)
+        steps.push(left - previous)
+        previous = left
+      }
+    }
+    expect(track('a').scrollLeft).toBeGreaterThan(0)
+    expect(track('a').scrollLeft).toBeLessThan(660)
+    previous = track('a').scrollLeft
+    run(16, 48, 660)
+    // The next repeat moves the target on; the track does not slow down to start over.
+    layOut(-1, track('a').scrollLeft)
+    press('ArrowRight', true)
+    expect(document.activeElement).toBe(button('a3'))
+    const before = steps.at(-1)!
+    run(64, 64, 990)
+    expect(steps.at(-1)!).toBeGreaterThan(before)
+    run(80, 1000, 990)
+    expect(track('a').scrollLeft).toBe(990)
+    expect(frames.size).toBe(0)
+    expect(trackScrolls.get(track('a'))!.every((options) => options.behavior === 'instant')).toBe(true)
+  })
+
+  it('reduced motion jumps', () => {
+    document.documentElement.dataset.motion = 'reduced'
     button('a1').focus()
     press('ArrowRight', true)
     expect(track('a').scrollLeft).toBe(660)
     expect(frames.size).toBe(0)
 
-    document.documentElement.dataset.motion = 'reduced'
     press('ArrowDown')
     expect(document.activeElement).toBe(button('b2'))
     expect(pageY).toBe(900 - 72 - 16)
@@ -354,17 +426,19 @@ describe('anchored rows', () => {
     frame(0)
     frame(100)
     expect(frames.size).toBe(1)
-    // Up into the hero keeps its smooth scroll to the top, and stops the snap still running.
+    // Up into the hero eases the page to the top, the snap still running stopped: one frame loop.
     press('ArrowUp')
     expect(document.activeElement).toBe(button('Play'))
-    expect(frames.size).toBe(0)
-    expect(windowScrolls.at(-1)).toEqual({ top: 0, behavior: 'smooth' })
-    // Straight back down: that smooth scroll is stopped where it is before the snap starts.
+    expect(frames.size).toBe(1)
+    frame(200)
+    frame(1200)
+    expect(windowScrolls.at(-1)).toEqual({ top: 0, left: 0, behavior: 'instant' })
+    // Straight back down: the page is stopped where it is before the snap starts.
     windowScrolls = []
     press('ArrowDown')
     expect(windowScrolls[0]).toMatchObject({ left: window.scrollX, top: 0, behavior: 'instant' })
-    frame(1000)
-    frame(1000 + ANCHOR_SNAP_MS)
+    frame(2000)
+    frame(2000 + ANCHOR_SNAP_MS)
     expect(pageY).toBe(400 - 137)
   })
 

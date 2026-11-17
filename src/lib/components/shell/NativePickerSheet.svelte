@@ -5,6 +5,7 @@
   import Check from '@lucide/svelte/icons/check'
   import { gameMode, playing, bumpPlayerOverlay } from '$lib/player/session'
   import { pushNavLayer } from '$lib/nav/layers'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import {
     nativePicker,
     chooseNativePickerOption,
@@ -105,7 +106,7 @@
   <div class="fixed inset-0 z-[175] grid place-items-end bg-black/70 sm:place-items-center sm:p-4" role="presentation"
        onclick={(event) => { if (event.target === event.currentTarget) closeNativePicker({ restore: true }) }}>
     <div bind:this={panel} role="dialog" aria-modal="true" aria-labelledby="native-picker-title"
-         data-theme-protected data-nav-trap data-nav-escape data-native-picker onfocusin={onPanelFocusIn}
+         data-theme-protected use:protectedSurface data-nav-trap data-nav-escape data-native-picker onfocusin={onPanelFocusIn}
          class="flex max-h-[min(80dvh,36rem)] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-card text-card-foreground shadow-2xl sm:max-w-md sm:rounded-2xl">
       <h2 id="native-picker-title" class="shrink-0 truncate px-5 pb-2 pt-4 text-base font-bold">{picker.title}</h2>
       <div role="listbox" aria-labelledby="native-picker-title" data-nav-scroll-container

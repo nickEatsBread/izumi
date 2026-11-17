@@ -5,6 +5,8 @@ import type { Pos } from '$lib/player/progress'
 import { compactCountdown, longCountdown } from './countdown'
 import { episodeCodeText, episodeNameText } from './episode-fields'
 import type { DisplayModel } from './presentation'
+import { airTime, scheduleItemLabel, type Airing } from '$lib/anilist/schedule'
+import type { ScheduleBadge } from '$lib/anilist/my-shows'
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
 
@@ -105,6 +107,8 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
   const airing = secondsLeft != null && secondsLeft > 0
   const aired = media.airedEpisodes ?? (next?.episode ? next.episode - 1 : media.status === 'FINISHED' ? media.episodes ?? undefined : undefined)
   const score = extras.score ?? (media.averageScore || undefined)
+  // A source catalog's card can stand for one episode: its code, the time left and the progress.
+  const card = media.sourceFacts?.card
   return {
     title: title(media),
     description: strip(media.description) || undefined,
@@ -153,9 +157,17 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     // "New Episode", "New Season", "New Series" or "New Movie" (API 6) for a freshness ribbon.
     newBadge: newBadgeText(media, now),
     episodesAired: aired,
+    ...(card ? {
+      still: poster,
+      episodeCode: card.label,
+      timeLeft: card.remainingSec ? remainingText(card.remainingSec) : undefined,
+      progress: card.progress !== undefined ? Math.round(card.progress * 100) : undefined,
+    } : {}),
     ...extras,
   }
 }
+
+const remainingText = (seconds: number) => `${Math.max(1, Math.round(seconds / 60))}m left`
 
 /** An ISO day ("2026-09-16") in words in the viewer's locale ("16 September 2026"). */
 export function longDayText(iso?: string): string | undefined {
@@ -192,9 +204,36 @@ export function episodeDisplayModel(
   })
 }
 
+const LIST_STATUS: Record<ScheduleBadge, string> = { watched: 'Watched', watching: 'Watching', planning: 'Planning' }
+
+/** API 8 `schedule.item`: one airing, with the viewer's tracking (`badge`) and the leading delay line.
+ *  `airingIn` and `airingCountdown` count down to this airing and are absent once it has aired. */
+export function airingDisplayModel(airing: Airing, badge?: ScheduleBadge | null, delay = '', now = Date.now()): DisplayModel {
+  const secondsLeft = airing.airingAt - Math.floor(now / 1000)
+  const coming = !airing.delayPlaceholder && secondsLeft > 0
+  return mediaDisplayModel(airing.media, {
+    episodeNumber: airing.episode,
+    episodeNo: String(airing.episode),
+    airingIn: coming ? compactCountdown(secondsLeft) : undefined,
+    airingCountdown: coming ? longCountdown(secondsLeft) : undefined,
+    airingSoon: undefined,
+    airTime: airing.delayPlaceholder || airing.timeKnown === false ? undefined : airTime(airing.airingAt),
+    airingLabel: scheduleItemLabel(airing),
+    listStatus: badge ? LIST_STATUS[badge] : undefined,
+    delay: delay || undefined,
+  }, 0, now)
+}
+
+/** API 8 `loading.episode`: the title and the episode being opened. Without a record (an external or
+ *  a direct link) the screen knows the name and art the opener passed. */
+export function episodeLoadingModel(media: Media | undefined, episode: number | undefined, name = '', art = ''): DisplayModel {
+  if (media) return episode != null ? episodeDisplayModel(media, episode) : mediaDisplayModel(media)
+  return { ...(name ? { title: name } : {}), ...(art ? { backdrop: art } : {}) }
+}
+
 /** "21m left" for an episode that has been started; nothing before it starts, without a duration,
  *  or once its position was cleared. */
 export function timeLeftLabel(position?: Pos): string | undefined {
   if (!position || position.cleared || !(position.dur > 0) || !(position.pos > 0)) return undefined
-  return `${Math.max(1, Math.round((position.dur - position.pos) / 60))}m left`
+  return remainingText(position.dur - position.pos)
 }

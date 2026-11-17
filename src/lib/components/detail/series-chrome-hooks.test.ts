@@ -33,12 +33,15 @@ describe('series page chrome for themes', () => {
     expect(people).toContain('<section data-slot="detail.staff">')
   })
   it('names each series action', () => {
-    // Save and Share keep their `button` part (Save also on the desktop overlay page); Trailer and
-    // More have no part of their own, so they are `detail.action`. The list buttons say `list`.
+    // Watchlist and Share keep their `button` part (Watchlist also on the desktop overlay page);
+    // Trailer and More (phone, desktop bar, desktop overlay) have no part of their own, so they are
+    // `detail.action`. The list buttons say `list`.
     expect(detail.match(/data-part="button" data-variant="secondary" data-action="save"/g)?.length).toBe(3)
+    // The Watchlist keeps the name `save` that published themes style.
+    expect(detail).not.toContain('data-action="watchlist"')
     expect(detail.match(/data-part="button" data-variant="icon" data-action="share"/g)?.length).toBe(2)
     expect(detail.match(/data-part="detail\.action" data-action="trailer"/g)?.length).toBe(2)
-    expect(detail.match(/data-part="detail\.action" data-action="more"/g)?.length).toBe(1)
+    expect(detail.match(/data-part="detail\.action" data-action="more"/g)?.length).toBe(3)
     expect(detail.match(/data-part="detail\.list-button"[^>]*? data-action="list"/g)?.length).toBe(3)
     expect(detail.match(/data-part="detail\.list-button"/g)?.length).toBe(3)
   })

@@ -122,6 +122,40 @@ pub struct AudioTrack {
     pub lang: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
+    /// Select this track once attached (the only audio of a protected stream), instead of leaving
+    /// the choice to mpv's language preference.
+    #[serde(default)]
+    pub select: bool,
+}
+
+/// Per-file mpv options for the next `loadfile` of one URL (protected streams need their own
+/// demuxer and cache settings, which must not leak onto the next file).
+static FILE_OPTIONS: Mutex<Option<(String, Vec<(String, String)>)>> = Mutex::new(None);
+
+pub(crate) fn set_file_options(url: &str, options: Vec<(String, String)>) {
+    if let Ok(mut slot) = FILE_OPTIONS.lock() {
+        *slot = Some((url.to_string(), options));
+    }
+}
+
+fn take_file_options(url: &str) -> Option<String> {
+    let mut slot = FILE_OPTIONS.lock().ok()?;
+    if slot.as_ref().is_some_and(|(u, _)| u == url) {
+        let (_, options) = slot.take()?;
+        return Some(options.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(","));
+    }
+    None
+}
+
+/// Lets a playback core open protected `izcr://` streams. Never called for the headless
+/// thumbnail core, which therefore cannot read them.
+fn enable_protected_streams(mpv: &Mpv) {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if let Err(error) = crate::widevine::register_protocol(mpv) {
+        eprintln!("{error}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = mpv;
 }
 
 /// Sidecar tracks waiting for mpv to finish loading their parent stream.
@@ -212,7 +246,7 @@ pub struct PlayerHandle {
     current_url: Mutex<Option<String>>,
     /// Sidecar audio/subtitle tracks queued until mpv has actually loaded their stream.
     pending_external_tracks: Arc<Mutex<Option<PendingExternalTracks>>>,
-    /// Holds runtime `sub-add`s while a direct-P2P video opens without a read timeout.
+    /// Holds runtime `sub-add`s until their video has loaded.
     sidecar_gate: SidecarGate,
     /// Scrub-preview thumbnail jobs, keyed by stream cache key (infoHash or
     /// media-episode). Holds the url + geometry so tiles can be produced on demand.
@@ -298,6 +332,7 @@ impl PlayerHandle {
 
         // First launch: build a fresh mpv core with good defaults.
         let mpv = create_mpv(None).map_err(|e| e.to_string())?;
+        enable_protected_streams(&mpv);
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(
@@ -399,6 +434,7 @@ impl PlayerHandle {
         // thread, and a sync `player_command` on main that locks the same mutex would
         // deadlock.
         let mpv = create_mpv_for_embed(if wid != 0 { Some(wid) } else { None }, &app)?;
+        enable_protected_streams(&mpv);
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(
@@ -495,6 +531,7 @@ impl PlayerHandle {
         #[cfg(target_os = "macos")]
         let game_mode_wayland = false;
         let mpv = new_mpv_libmpv(game_mode_wayland).map_err(|e| e.to_string())?;
+        enable_protected_streams(&mpv);
         spawn_event_loop(
             &mpv,
             app,
@@ -605,6 +642,8 @@ impl PlayerHandle {
             let _ = mpv.command("quit", &[]);
         }
         *guard = None;
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        crate::widevine::end_all();
         #[cfg(target_os = "linux")]
         UI_LITE_HOLDERS.store(0, AtomicOrdering::SeqCst);
         // Drop the current url and tear down the headless thumbnail decoder.
@@ -624,14 +663,19 @@ impl PlayerHandle {
         Ok(())
     }
 
-    /// Stop the current file but retain the initialized core and embedded surface. The browse
-    /// webview becomes opaque before this runs, so keeping the idle surface costs no visual state
-    /// and lets the next episode/source skip libmpv initialization entirely.
+    /// Stop the current file but retain the initialized core and embedded surface, so the next
+    /// episode/source skips libmpv initialization entirely. The browse page's CSS alone must not
+    /// be what covers a surface still holding the closed file's last frame: macOS hides its view
+    /// until the next file renders (`macos_embed::idle`).
     pub fn idle(&self) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        macos_embed::idle();
         self.gif_abort()?;
         if let Some(mpv) = self.mpv.lock().map_err(|e| e.to_string())?.as_ref() {
             let _ = mpv.command("stop", &[]);
         }
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        crate::widevine::end_all();
         *self.current_url.lock().map_err(|e| e.to_string())? = None;
         *self
             .pending_external_tracks
@@ -658,6 +702,7 @@ impl PlayerHandle {
             return Ok(false);
         }
         let mpv = create_mpv_for_embed(Some(wid), &app)?;
+        enable_protected_streams(&mpv);
         spawn_event_loop(
             &mpv,
             app,
@@ -1333,9 +1378,9 @@ impl PlayerHandle {
     }
 
     /// Resolves once a subtitle URL may be added to the current video, or errors if that video is
-    /// replaced first. Await it before `add_subtitle*` with a URL: a direct-P2P video opens with
-    /// mpv's read timeout disabled until FileLoaded (see `load_file`), and a `sub-add` opened in
-    /// that window would inherit it while holding the player lock.
+    /// replaced first. Await it before `add_subtitle*` with a URL: until FileLoaded a `sub-add` can
+    /// land on the outgoing file, and a direct-P2P video opens with mpv's read timeout disabled
+    /// (see `load_file`), which a `sub-add` opened in that window would inherit.
     pub fn sidecars_ready(
         &self,
     ) -> impl std::future::Future<Output = Result<(), String>> + Send + 'static {
@@ -1714,6 +1759,8 @@ fn load_file(
     pending_external_tracks: &Arc<Mutex<Option<PendingExternalTracks>>>,
     sidecar_gate: &SidecarGate,
 ) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    macos_embed::wake();
     // Scrub tiles wait in the background until this file shows its first frame.
     thumbs::MAIN_PLAYER_LOADING.store(true, std::sync::atomic::Ordering::Relaxed);
     // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
@@ -1747,10 +1794,12 @@ fn load_file(
     let _ = mpv.set_property("http-header-fields", hdr.as_str());
     // mpv reads this when it opens a stream, so the video keeps it for its whole life, reconnects
     // and seeks included. The event loop restores the normal value at FileLoaded; until then the
-    // gate holds runtime subtitles, which would otherwise open with it too.
+    // gate holds runtime subtitles, which would otherwise open with it too. Every file holds them:
+    // a `sub-add` while mpv is still swapping files lands on the old file (and is dropped with it)
+    // or ahead of the new file's own tracks.
     let network_timeout = network_timeout_for(url);
     let _ = mpv.set_property("network-timeout", network_timeout);
-    sidecar_gate.begin_file(network_timeout != NETWORK_TIMEOUT_SECONDS);
+    sidecar_gate.begin_file(true);
 
     *pending_external_tracks.lock().map_err(|e| e.to_string())? = Some(PendingExternalTracks {
         url: url.to_string(),
@@ -1759,7 +1808,12 @@ fn load_file(
         audio_tracks: audio_tracks.to_vec(),
     });
 
-    if let Err(error) = mpv.command("loadfile", &[url]) {
+    let loaded = match take_file_options(url) {
+        // `loadfile <url> <flags> <index> <options>`; the index is ignored for `replace`.
+        Some(options) => mpv.command("loadfile", &[url, "replace", "-1", options.as_str()]),
+        None => mpv.command("loadfile", &[url]),
+    };
+    if let Err(error) = loaded {
         *pending_external_tracks.lock().map_err(|e| e.to_string())? = None;
         return Err(error.to_string());
     }
@@ -1802,8 +1856,9 @@ fn attach_external_tracks(mpv: &Mpv, tracks: PendingExternalTracks) -> usize {
             .as_deref()
             .filter(|value| !value.is_empty())
             .unwrap_or(lang);
+        let flag = if track.select { "select" } else { "auto" };
         if mpv
-            .command("audio-add", &[track.url.as_str(), "auto", title, lang])
+            .command("audio-add", &[track.url.as_str(), flag, title, lang])
             .is_err()
         {
             failures += 1;
@@ -1881,6 +1936,9 @@ fn prefer_full_dialogue_subtitle(mpv: &Mpv) {
 /// subs). Best-effort; ignored if unset.
 fn set_langs(mpv: &Mpv, alang: &Option<String>, slang: &Option<String>) {
     if let Some(a) = alang {
+        // `aid` survives `loadfile` like `sid` below: an audio track picked in the last file would
+        // otherwise outrank this file's language order.
+        let _ = mpv.set_property("aid", "auto");
         let _ = mpv.set_property("alang", a.as_str());
     }
     if let Some(s) = slang {
@@ -1943,6 +2001,9 @@ pub(crate) fn spawn_event_loop(
     // the overlay re-reads the track whenever mpv switches it — by the user, by `sid=auto` at load,
     // or by the full-dialogue preference below.
     client.observe_property("sid", Format::String, 0)?;
+    // Game mode's X11 container is mapped once mpv's output is up (linux_x11::show_container).
+    #[cfg(target_os = "linux")]
+    client.observe_property("current-vo", Format::String, 0)?;
 
     std::thread::spawn(move || {
         let mut duration = 0f64;
@@ -1953,7 +2014,17 @@ pub(crate) fn spawn_event_loop(
         // re-derive on the same box as mpv's render thread, so 80–90% of them were pure waste.
         let mut last_pos_bucket: i64 = i64::MIN;
         let mut last_buf = f64::MIN;
+        #[cfg(target_os = "linux")]
+        let started = std::time::Instant::now();
+        #[cfg(target_os = "linux")]
+        let mut container_shown = false;
         loop {
+            // An output that never reports itself must not leave the video unseen.
+            #[cfg(target_os = "linux")]
+            if !container_shown && started.elapsed() > std::time::Duration::from_millis(1500) {
+                linux_x11::show_container();
+                container_shown = true;
+            }
             // Block up to 1s waiting for the next event on this client's queue.
             match client.wait_event(1.0) {
                 Some(Ok(Event::FileLoaded)) => {
@@ -2078,6 +2149,15 @@ pub(crate) fn spawn_event_loop(
                     ("sid", PropertyData::Str(sid)) => {
                         let _ = app.emit("player-sub-track", sid.to_string());
                     }
+                    #[cfg(target_os = "linux")]
+                    ("current-vo", PropertyData::Str(vo)) if !vo.is_empty() && !container_shown => {
+                        linux_embed::elog(&format!(
+                            "x11: mpv output {vo} up {} ms after its core",
+                            started.elapsed().as_millis()
+                        ));
+                        linux_x11::show_container();
+                        container_shown = true;
+                    }
                     ("eof-reached", PropertyData::Flag(v)) => {
                         let _ = app.emit("player-eof", v);
                         // `keep-open=yes` holds the file open + PAUSED at the true end, so mpv never
@@ -2164,14 +2244,10 @@ fn create_mpv_for_embed(wid: Option<i64>, app: &AppHandle) -> Result<Mpv, String
     }
 }
 
-/// Build an mpv core for the Linux/macOS embedded player: `vo=libmpv` (required
-/// by the OpenGL render API) with no window of its own. cocoa-cb `--wid` is not
-/// used: on macOS it creates a separate NSWindow. mpv handles NO input (the HTML
-/// overlay owns the controls); streaming/quality options mirror the Windows path.
+/// mpv_create() returns NULL unless LC_NUMERIC == "C". GTK (Linux) overwrites the process locale
+/// from the environment (a KDE X11 desktop session sets LANG=en_US.UTF-8); macOS may too via AppKit.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
-    // mpv_create() returns NULL unless LC_NUMERIC == "C". GTK (Linux) overwrites
-    // the process locale from the environment; macOS may too via AppKit.
+fn force_c_numeric_locale() {
     unsafe {
         extern "C" {
             fn setlocale(
@@ -2186,6 +2262,15 @@ fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
         const LC_NUMERIC: std::os::raw::c_int = 4;
         setlocale(LC_NUMERIC, c"C".as_ptr());
     }
+}
+
+/// Build an mpv core for the Linux/macOS embedded player: `vo=libmpv` (required
+/// by the OpenGL render API) with no window of its own. cocoa-cb `--wid` is not
+/// used: on macOS it creates a separate NSWindow. mpv handles NO input (the HTML
+/// overlay owns the controls); streaming/quality options mirror the Windows path.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
+    force_c_numeric_locale();
     let mpv = Mpv::with_initializer(|init| {
         // vo=libmpv is the ONLY MANDATORY option — the render API can't work without
         // it. Every other option is BEST-EFFORT (`let _ =`): mpv option availability
@@ -2342,6 +2427,10 @@ fn b64(data: &[u8]) -> String {
 /// `force-window` (the handle already is the output surface). If `wid` is
 /// `None`, we ask mpv to create its own window via `force-window`.
 fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
+    // Game mode starts izumi with a C locale; a desktop X11 session does not, and then every
+    // embed failed with libmpv2's `Null` error.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    force_c_numeric_locale();
     let mpv = Mpv::with_initializer(|init| {
         match wid {
             // Embedded: render into the host window. `wid` is an init-time

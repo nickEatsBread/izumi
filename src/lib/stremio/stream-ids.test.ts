@@ -85,6 +85,12 @@ describe('acceptsStreamId', () => {
     expect(acceptsStreamId(m, 'series', 'tt123:1:3')).toBe(false)
   })
 
+  it('does not apply manifest-level prefixes to an object resource without its own', () => {
+    const m = { id: 'a', name: 'A', version: '1', idPrefixes: ['tt'], resources: [{ name: 'stream', types: ['series'] }] } as never
+    expect(acceptsStreamId(m, 'series', 'kitsu:42:3')).toBe(true)
+    expect(acceptsStreamId(m, 'series', 'tt0000001:1:3')).toBe(true)
+  })
+
   it('accepts anything when the addon declares no prefixes', () => {
     const m = res([{ name: 'stream', types: ['series'] }])
     expect(acceptsStreamId(m, 'series', 'kitsu:42:3')).toBe(true)

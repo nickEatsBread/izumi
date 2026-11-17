@@ -2,7 +2,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { onMount } from 'svelte'
   import ExternalLink from '@lucide/svelte/icons/external-link'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { fetchManifest, type AddonManifest } from '$lib/stremio/manifest'
   import { normalizeBase } from '$lib/stremio/sources'
   import { navLayer } from '$lib/nav/overlay'
@@ -117,7 +117,7 @@
         class="rounded-lg bg-secondary px-4 py-2 text-sm font-bold disabled:opacity-50">Cancel</button>
       <button type="button" data-focusable disabled={busy || !input.trim()} onclick={install}
         class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-50">
-        {#if busy}<RefreshCw size={14} class="animate-spin" />{/if}
+        {#if busy}<Spinner size="xs" inline />{/if}
         Verify and install
       </button>
     </div>

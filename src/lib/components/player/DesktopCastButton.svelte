@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
   import Cast from '@lucide/svelte/icons/cast'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Square from '@lucide/svelte/icons/square'
   import Play from '@lucide/svelte/icons/play'
   import Pause from '@lucide/svelte/icons/pause'
@@ -364,7 +365,7 @@
         </button>
       {:else if scanning && !devices.length}
         <div class="flex items-center gap-2 px-3 py-4 text-white/55">
-          <span class="size-3 animate-spin rounded-full border-2 border-white/20 border-t-white/70"></span>
+          <Spinner size="xs" inline />
           {m.cast_scanning()}
         </div>
       {:else if devices.length}
@@ -376,7 +377,7 @@
             onclick={() => castTo(device)}
           >
             {#if connectingId === device.id}
-              <span class="size-4 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-white/80"></span>
+              <Spinner inline class="text-white/80" />
             {:else}
               <Cast size={17} class="shrink-0 text-white/55" />
             {/if}

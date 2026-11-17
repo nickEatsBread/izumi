@@ -200,7 +200,7 @@ export function createJimaku(): SubtitleProvider {
             provider: 'jimaku',
             lang: 'ja',
             release, // the filename, or the archive warning when the row cannot promise this episode
-            download: { needsFetch: true, fileUrl: file.url },
+            download: { needsFetch: true, fileUrl: file.url, episode: q.episode },
           }))
       } catch {
         return []

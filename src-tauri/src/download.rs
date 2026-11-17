@@ -2,8 +2,9 @@
 //! GET → `.part` file → rename on completion, emitting `download-progress` /
 //! `download-done` / `download-paused` events (same `Emitter` pattern as the player).
 //! Pause is a cooperative cancel that KEEPS the `.part`; resume re-requests with a
-//! `Range` header (the RD/AllDebrid/etc. CDNs support byte ranges). Cancel deletes
-//! the `.part`. No torrent client, no `plugin-fs` — all disk I/O stays here.
+//! `Range` header (the RD/AllDebrid/etc. CDNs support byte ranges). An HLS job keeps a
+//! `.part.hls` note of the segments already in its `.part` and resumes after them.
+//! Cancel deletes both. No torrent client, no `plugin-fs` — all disk I/O stays here.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,7 +17,7 @@ use reqwest::{
     StatusCode,
 };
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use url::Url;
 
 /// In-flight download cancel flags, keyed by job id. Setting a flag aborts that
@@ -296,6 +297,23 @@ fn invalid_progressive_content_type(value: &str) -> bool {
         || mime == "application/x-mpegurl"
 }
 
+/// Where an HLS `.part` can pick up again, from its `.part.hls` note `"<segments> <bytes> <of>"`:
+/// the segments already written and the bytes they fill. None (start over) when the playlist now
+/// has a different segment count, or the note claims more bytes than the `.part` holds.
+fn hls_resume_point(note: &str, part_len: u64, segment_count: usize) -> Option<(usize, u64)> {
+    let mut values = note
+        .split_whitespace()
+        .map(|value| value.parse::<u64>().ok());
+    let (done, bytes, of) = (values.next()??, values.next()??, values.next()??);
+    (of == segment_count as u64 && done <= of && bytes <= part_len)
+        .then_some((done as usize, bytes))
+}
+
+/// The `.part.hls` note kept beside an HLS job's `.part`.
+fn hls_note_path(part: &std::path::Path) -> std::path::PathBuf {
+    part.with_extension("part.hls")
+}
+
 /// Parse `Content-Range: bytes START-END/TOTAL` (or `bytes */TOTAL` on 416).
 /// The first tuple item is absent for the unsatisfied-range form.
 fn parse_content_range(value: &str) -> Option<(Option<u64>, u64)> {
@@ -367,6 +385,57 @@ pub fn download_dir_default(app: AppHandle) -> Result<String, String> {
         .join("downloads");
     std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
     Ok(d.to_string_lossy().into_owned())
+}
+
+/// Free (to this user) and total bytes of a filesystem.
+#[derive(serde::Serialize, Debug)]
+pub struct DiskSpace {
+    free: u64,
+    total: u64,
+}
+
+/// The space left on the drive holding the downloads folder `dir`, or None where it can't be read.
+#[tauri::command]
+pub async fn download_disk_space(dir: String) -> Option<DiskSpace> {
+    disk_space_of(existing_ancestor(&dir)?)
+}
+
+/// `dir` itself or its nearest existing parent: a chosen folder is only created by its first download.
+fn existing_ancestor(dir: &str) -> Option<&std::path::Path> {
+    std::path::Path::new(dir).ancestors().find(|p| p.is_dir())
+}
+
+#[cfg(windows)]
+fn disk_space_of(path: &std::path::Path) -> Option<DiskSpace> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetDiskFreeSpaceExW(dir: *const u16, free_to_caller: *mut u64, total: *mut u64, total_free: *mut u64) -> i32;
+    }
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let (mut free, mut total) = (0u64, 0u64);
+    // SAFETY: a NUL-terminated path and live out-pointers; the last one is optional.
+    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, std::ptr::null_mut()) };
+    (ok != 0).then_some(DiskSpace { free, total })
+}
+
+#[cfg(target_os = "linux")]
+fn disk_space_of(path: &std::path::Path) -> Option<DiskSpace> {
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: statvfs is plain data, and the call gets a NUL-terminated path and a live out-struct.
+    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut s) } != 0 {
+        return None;
+    }
+    let block = s.f_frsize as u64;
+    Some(DiskSpace { free: s.f_bavail as u64 * block, total: s.f_blocks as u64 * block })
+}
+
+// shortcut: no libc dependency on macOS/Android, so the page shows no free space there; add one to support them.
+#[cfg(not(any(windows, target_os = "linux")))]
+fn disk_space_of(_: &std::path::Path) -> Option<DiskSpace> {
+    None
 }
 
 /// Stream `url` to `<dir>/<filename>`. Resolves when the file is fully written (or
@@ -572,22 +641,52 @@ async fn run_hls_download(
         .map_err(|error| error.to_string())?;
     let final_path = dir.join(sanitize(filename));
     let part = final_path.with_extension("part");
-    // Segment boundaries are not recoverable from a raw partial file. A resumed HLS job therefore
-    // restarts cleanly rather than appending a second copy of the opening segments.
+    // Segment boundaries are not recoverable from a raw partial file, so the note beside it records
+    // how many segments (and bytes) it holds. A resume drops any half-written tail past that point
+    // and continues with the next segment; without a usable note it starts over.
+    let note = hls_note_path(&part);
+    let part_len = tokio::fs::metadata(&part)
+        .await
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    let (skip, mut received) = tokio::fs::read_to_string(&note)
+        .await
+        .ok()
+        .and_then(|text| hls_resume_point(&text, part_len, resources.len()))
+        .unwrap_or((0, 0));
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
-        .truncate(true)
+        .truncate(false)
         .open(&part)
         .await
         .map_err(|error| error.to_string())?;
-    let mut received = 0_u64;
+    file.set_len(received)
+        .await
+        .map_err(|error| error.to_string())?;
+    file.seek(std::io::SeekFrom::Start(received))
+        .await
+        .map_err(|error| error.to_string())?;
     let mut last_emit = Instant::now();
-    let mut last_bytes = 0_u64;
+    let mut last_bytes = received;
 
     let resource_count = resources.len() as u64;
-    let mut completed_resources = 0_u64;
-    for resource in resources {
+    let mut completed_resources = skip as u64;
+    // HLS has no aggregate Content-Length. The running mean segment size gives the UI a useful,
+    // converging total/ETA without prefetching every segment twice via HEAD.
+    let estimate = |received: u64, completed: u64| {
+        received
+            .saturating_mul(resource_count)
+            .checked_div(completed)
+            .unwrap_or(received)
+            .max(received)
+    };
+    // The true starting point, so a resumed bar continues where it stopped and a restarted one drops.
+    let _ = app.emit(
+        "download-progress",
+        (id, received, estimate(received, completed_resources), 0_u64),
+    );
+    for resource in resources.into_iter().skip(skip) {
         if cancel.load(Ordering::Relaxed) {
             let _ = file.flush().await;
             let _ = app.emit("download-paused", (id, received));
@@ -604,16 +703,19 @@ async fn run_hls_download(
             .map_err(|error| error.to_string())?;
         received += bytes.len() as u64;
         completed_resources += 1;
+        // The segment is on disk before the note counts it, so the note never claims bytes the
+        // `.part` lacks after a kill.
+        file.flush().await.map_err(|error| error.to_string())?;
+        tokio::fs::write(
+            &note,
+            format!("{completed_resources} {received} {resource_count}"),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
         if last_emit.elapsed().as_millis() > 300 {
             let seconds = last_emit.elapsed().as_secs_f64().max(0.001);
             let speed = ((received - last_bytes) as f64 / seconds) as u64;
-            // HLS has no aggregate Content-Length. The running mean segment size gives the UI a
-            // useful, converging total/ETA without prefetching every segment twice via HEAD.
-            let estimated_total = received
-                .saturating_mul(resource_count)
-                .checked_div(completed_resources)
-                .unwrap_or(received)
-                .max(received);
+            let estimated_total = estimate(received, completed_resources);
             let _ = app.emit("download-progress", (id, received, estimated_total, speed));
             last_emit = Instant::now();
             last_bytes = received;
@@ -627,6 +729,7 @@ async fn run_hls_download(
     tokio::fs::rename(&part, &final_path)
         .await
         .map_err(|error| error.to_string())?;
+    let _ = tokio::fs::remove_file(&note).await;
     let path = final_path.to_string_lossy().into_owned();
     let _ = app.emit("download-done", (id, path.clone(), received));
     Ok(path)
@@ -731,6 +834,8 @@ async fn run_download(
                 }
             }
         }
+        // Where this request really starts: a resumed bar continues, one the server restarted drops.
+        let _ = app.emit("download-progress", (id, received, total, 0_u64));
 
         if received == 0 && invalid_progressive_content_type(&content_type) {
             file.set_len(0).await.map_err(|error| error.to_string())?;
@@ -837,6 +942,7 @@ pub fn download_cancel(
         let p = std::path::PathBuf::from(&dir)
             .join(sanitize(&filename))
             .with_extension("part");
+        let _ = std::fs::remove_file(hls_note_path(&p));
         let _ = std::fs::remove_file(p);
     }
     Ok(())
@@ -845,6 +951,15 @@ pub fn download_cancel(
 /// Delete a completed downloaded file.
 #[tauri::command]
 pub fn download_delete(path: String) -> Result<(), String> {
+    let target = std::path::Path::new(&path);
+    // A saved protected episode is a folder (widevine/save.rs). Only a folder that records itself as
+    // one is removed whole; any other folder is refused.
+    if target.is_dir() {
+        if !target.join("drm.json").is_file() && !target.extension().is_some_and(|e| e == "protected") {
+            return Err("not a download".into());
+        }
+        return std::fs::remove_dir_all(target).map_err(|e| e.to_string());
+    }
     std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
@@ -922,6 +1037,27 @@ mod tests {
     }
 
     #[test]
+    fn resumes_hls_only_from_a_note_that_matches_the_playlist_and_the_part() {
+        // 3 of 10 segments, 3 MB: resume after them, dropping any longer half-written tail.
+        assert_eq!(
+            hls_resume_point("3 3000000 10", 3_400_000, 10),
+            Some((3, 3_000_000))
+        );
+        // The playlist changed (another variant, a re-cut episode): start over.
+        assert_eq!(hls_resume_point("3 3000000 10", 3_000_000, 12), None);
+        // The note claims bytes the part does not hold (killed before the part was flushed).
+        assert_eq!(hls_resume_point("3 3000000 10", 2_000_000, 10), None);
+        // Garbage or a missing note.
+        assert_eq!(hls_resume_point("", 0, 10), None);
+        assert_eq!(hls_resume_point("x y z", 10, 10), None);
+        assert_eq!(hls_resume_point("11 10 10", 10, 10), None);
+        assert_eq!(
+            hls_note_path(std::path::Path::new("dl/Episode 1.part")),
+            std::path::PathBuf::from("dl/Episode 1.part.hls")
+        );
+    }
+
+    #[test]
     fn parses_hls_media_resources_and_relative_initialization_segments() {
         let base = Url::parse("https://cdn.example/show/720/index.m3u8?token=one").unwrap();
         let playlist = "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:6,\nseg-1.m4s\n#EXTINF:6,\n../seg-2.m4s?x=1\n#EXT-X-ENDLIST\n";
@@ -991,5 +1127,18 @@ mod tests {
         assert_eq!(sanitize("console.log"), "console.log");
         // Degenerate results collapse to a safe placeholder.
         assert_eq!(sanitize(".."), "_");
+    }
+
+    #[test]
+    fn disk_space_reads_the_nearest_existing_folder() {
+        let tmp = std::env::temp_dir();
+        let missing = tmp.join("izumi-no-such-folder").join("downloads");
+        assert_eq!(existing_ancestor(&missing.to_string_lossy()), Some(tmp.as_path()));
+        assert_eq!(existing_ancestor(""), None);
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            let space = disk_space_of(&tmp).expect("the temp folder's drive");
+            assert!(space.total > 0 && space.free <= space.total, "{space:?}");
+        }
     }
 }

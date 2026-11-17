@@ -21,6 +21,7 @@ import { BACK_PENDING_MS, backPending, clearBackPending } from './nav-state'
 import { BROWSER_GAMEPAD_EVENT } from './browser-gamepad'
 import { isPadEvent } from './pad-controls'
 import { pushNavLayer, resetNavLayersForTests, type NavLayer } from './layers'
+import { startupAnimationPlaying } from '$lib/startup/animation'
 import {
   advancedFiltersOpen, exitPrompt, listEditorOpen, onboardingNav, oskDismissedAt, oskOpen, playing, streamPicker, trackMenuOpen,
   type StreamPickerState,
@@ -119,6 +120,19 @@ describe('controller B and A with a nav layer open', () => {
     expect(padKeys).toEqual([])
     expect(events).not.toContain('hero-nav')
     expect(document.activeElement?.id).toBe('option')
+  })
+
+  it('Start closes a page side menu it opened, and nothing else', () => {
+    const layer = openLayer()
+    press('start')
+    expect(layer.close).not.toHaveBeenCalled()
+    resetNavLayersForTests()
+    document.getElementById('layer')?.remove()
+    const sheet = { ...openLayer(), kind: 'options-sheet' }
+    resetNavLayersForTests()
+    pushNavLayer(sheet)
+    press('start')
+    expect(sheet.close).toHaveBeenCalledTimes(1)
   })
 
   it('B with nothing open still walks history outside Home and outside Settings', () => {
@@ -221,5 +235,20 @@ describe('the keyboard and the pad owners above the layer', () => {
     const layer = openLayer()
     exitPrompt.set(true)
     expect(layer.close).toHaveBeenCalledWith('preempted')
+  })
+})
+
+describe('the startup video', () => {
+  afterEach(() => startupAnimationPlaying.set(false))
+  it('owns every button while it plays: B skipping it does not also offer to exit Home', () => {
+    history.replaceState(null, '', '/app/home')
+    startupAnimationPlaying.set(true)
+    press('b')
+    press('x')
+    expect(get(exitPrompt)).toBe(false)
+    expect(padKeys).toEqual([])
+    startupAnimationPlaying.set(false)
+    press('b')
+    expect(get(exitPrompt)).toBe(true)
   })
 })

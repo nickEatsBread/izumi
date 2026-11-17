@@ -460,6 +460,27 @@ pub(crate) fn preview_readable(app: &AppHandle, url: &str, fraction: f64) -> boo
     )
 }
 
+/// Where the active torrent writes the file a player stream URL serves, to read it in place. The
+/// file is sparse, so parts not downloaded yet read as zeros. None for any other URL.
+#[cfg(not(target_os = "android"))]
+pub(crate) async fn player_stream_path(app: &AppHandle, url: &str) -> Option<PathBuf> {
+    let (torrent_id, file_index) = crate::direct_torrent_stream::player_stream_ids(url)?;
+    let state = app.state::<DirectTorrentState>();
+    let active = state.active.lock().await;
+    let current = active.as_ref().filter(|current| {
+        current.torrent_id == torrent_id && current.selected_file_index == file_index
+    })?;
+    let relative = current
+        .handle
+        .with_metadata(|m| {
+            m.file_infos
+                .get(file_index)
+                .map(|f| f.relative_filename.clone())
+        })
+        .ok()??;
+    Some(current.handle.output_folder().join(relative))
+}
+
 fn managed_torrent_files(handle: &ManagedTorrent) -> Result<Vec<TorrentFile>, String> {
     handle
         .with_metadata(|metadata| {

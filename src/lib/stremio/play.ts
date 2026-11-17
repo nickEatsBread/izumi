@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { playerCommand } from '$lib/player/native'
 import { DRM_ENDED_EVENT, DRM_PROGRESS_EVENT } from '$lib/player/drm'
+import { usesNativeDrm } from '$lib/player/native-drm'
 import { downloadAudioLang, offlineManifestUrl, preferredDrmPresentation, refreshDrmSource } from '$lib/player/preferred-drm'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
@@ -45,10 +46,9 @@ const emptyStreamsError = (total: number, enabledAddons: string[], rejected = 0)
 const runtimeSecondsOf = (media: Pick<Media, 'duration'> | undefined): number | undefined =>
   media?.duration && media.duration > 0 ? media.duration * 60 : undefined
 
-const rankOpts = (anilistId?: number, runtimeSeconds?: number): RankOptions => ({
-  runtimeSeconds,
-  audioLang: get(preferredAudioLang),
-  subtitleLang: get(preferredSubLang),
+const rankOpts = (media: Media, anilistId = anilistIdOf(media)): RankOptions => ({
+  runtimeSeconds: runtimeSecondsOf(media),
+  ...rankingLanguages(languagesForMedia(media)),
   directP2p: directP2pEnabled(),
   // Synchronous by necessity — this is a settings snapshot, not an async step — so it reads what a
   // previous lookup already learned rather than starting one. A cold title simply ranks without the
@@ -80,14 +80,21 @@ import { kitsuIdFromLinks } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { episodeOffset, fetchSeasonChain, mayListSeasons } from '$lib/anilist/seasons'
 import { anilistIdOf, externalIdsOf, kitsuIdOf } from '$lib/catalog/identity'
+import { sourceProgressReporter, sourceStreams } from '$lib/catalog/source-streams'
+import { isSourceOrigin } from '$lib/catalog/source-catalogs'
+import { phttp } from '$lib/net/http'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
+import { findSource, savedSource } from '$lib/downloads/source'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
 import { resolveOnlineStreams } from './onlinestream'
 import { knownBestHashes } from './seadex'
 import { fetchExternalSubtitles } from './subtitles'
+import { attachLateSubtitle } from '$lib/player/late-subtitle'
 import type { SubtitleCandidate } from './subtitles/types'
-import { normalizeLang } from './sublang'
+import { langsEqual, normalizeLang } from './sublang'
+import { catalogOfMedia, languagesFor, languagesForMedia, mpvLanguageList, rankingLanguages, sourceAccountLanguages } from '$lib/settings/catalog-languages'
+import { refreshSourceLanguages } from '$lib/extensions/source-languages'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
 import { jvmRuntimeColdStartPending, jvmRuntimeState, JVM_RUNTIME_FAILED_MESSAGE, JVM_RUNTIME_STARTING_MESSAGE, JVM_SOURCES_PLAY_DEADLINE_MS } from '$lib/extensions/jvm-runtime-state'
 import { promoteBootWork } from '$lib/util/boot-work'
@@ -105,7 +112,7 @@ import { rememberRelease } from '$lib/release-search/recent'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { incognito } from '$lib/stores/incognito'
 import { episodeSourceOrigins, rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, upNextPrompt, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery, type StreamPickerState } from '$lib/player/session'
+import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, lateSubtitleRevision, playerSleep, playbackRecovery, type StreamPickerState } from '$lib/player/session'
 import type { Writable } from 'svelte/store'
 import {
   DIRECT_TORRENT_START_TIMEOUT_MS,
@@ -123,8 +130,8 @@ import {
 import { markAlive, markDead, markRouteDead } from './dead-sources'
 import { shareableSourceForDevice } from '$lib/watch-together/source'
 import {
-  preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
-  autoplayNext, upNextOverlay, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
+  autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
+  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   sourcePriority, sourcePriorityMode, continueSourcePreference, adaptiveSourceMode,
   audioProcessing, dolbyVisionOutputMode, rawMpvOptions, videoQualityPreset,
@@ -163,22 +170,9 @@ function continueToNextEpisode(
   nextEpisode: number,
   onState: (s: PlayState) => void,
 ): void {
-  const play = () => {
-    const active = get(nowPlaying)
-    if (active.id !== media.id || active.episode !== currentEpisode) return
-    upNextPrompt.set(null)
-    resolveAndPlayBest(media, nextEpisode, onState, true)
-  }
-  if (!get(upNextOverlay)) { play(); return }
-  upNextPrompt.set({
-    mediaId: media.id,
-    episode: nextEpisode,
-    title: title(media),
-    artwork: banner(media) || cover(media),
-    seconds: 10,
-    play,
-    stay: () => upNextPrompt.set(null),
-  })
+  const active = get(nowPlaying)
+  if (active.id !== media.id || active.episode !== currentEpisode) return
+  resolveAndPlayBest(media, nextEpisode, onState, true)
 }
 import { shouldBeginNextEpisodePreload } from '$lib/player/preload-policy'
 import type { Media } from '$lib/anilist/types'
@@ -235,6 +229,9 @@ export type PlayEpisodeOptions = {
   resolveSession?: ResolveSession
   /** An in-place episode advance from inside playback: a docked Android mini-player stays docked. */
   keepMini?: boolean
+  /** The picker chooses a source to download instead of one to play (with `forceManual` and
+   *  `remoteOnly`, so nothing starts on its own and local playback is left alone). */
+  download?: StreamPickerState['download']
 }
 
 export type PlayStreamOptions = {
@@ -364,6 +361,7 @@ async function attachDirectTorrentSubtitles(playbackId: number, subtitles: Direc
         lang: subtitle.lang,
         title: subtitle.title,
       })
+      lateSubtitleRevision.update((n) => n + 1)
       loaded++
       torrentSubtitleState.update((state) =>
         state.playbackId === playbackId
@@ -403,11 +401,7 @@ async function attachDirectOnlineSubtitles(
     if (!candidate.url) continue
     if (currentDirectTorrentPlaybackId() !== playbackId) return
     try {
-      await invoke('player_attach_subtitle_url', {
-        url: candidate.url,
-        lang: candidate.lang,
-        title: candidate.release,
-      })
+      await attachLateSubtitle(candidate.url, candidate.lang, candidate.release)
     } catch (error) {
       if (currentDirectTorrentPlaybackId() !== playbackId) return
       console.warn('direct torrent online subtitle failed', error)
@@ -439,7 +433,7 @@ async function attachDebridSidecars(provider: string, key: string, torrent: stri
   const sidecars = await resolveSidecars(provider, key, torrent, want ? { want } : undefined)
   for (const s of sidecars) {
     try {
-      await invoke('player_attach_subtitle_url', { url: s.url, lang: s.lang, title: s.title })
+      await attachLateSubtitle(s.url, s.lang, s.title)
     } catch (error) {
       console.warn('debrid sidecar subtitle failed', error)
     }
@@ -569,9 +563,13 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
   let lastPosition = 0
   let lastDuration = 0
   let sourceAlive = false
+  // A source catalog that asked for the playhead gets it back (its own Continue Watching).
+  const sourceProgress = sourceProgressReporter(stream)
+  if (sourceProgress) stop.push(() => sourceProgress.flush())
   const onProgress = (pos: number, dur: number) => {
     lastPosition = pos
     lastDuration = dur
+    sourceProgress?.progress(pos, dur)
     if (dur > 0) {
       if (!sourceAlive) { sourceAlive = true; markAlive(stream) }
       markSourceObservation(observation, 'first-frame')
@@ -656,6 +654,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     const dur = remote?.durationSeconds && remote.durationSeconds > 0
       ? remote.durationSeconds
       : local.dur
+    sourceProgress?.flush(pos)
     if (!dur || dur <= 0) return
     // If EOF already tombstoned this episode (cleared), a near-end finalize must NOT resurrect a
     // ~100% resume point — that would reopen the episode seeked to the very end AND destroy the
@@ -979,7 +978,9 @@ export function embeddedVideoStreams(
   episode: number | undefined,
 ): { declared: boolean; streams: Stream[] } {
   const video = mediaVideo(media, episode)
-  if (!video || !Array.isArray(video.streams)) return { declared: false, streams: [] }
+  // An empty list declares nothing (as in Stremio): metadata add-ons often write `streams: []` on
+  // every video, and treating that as "this video's only sources" left every episode empty.
+  if (!video || !Array.isArray(video.streams) || !video.streams.length) return { declared: false, streams: [] }
   const originId = media.catalog?.addonId ?? 'embedded-metadata'
   const originName = media.catalog?.sourceName
   const streams = video.streams.map((stream) => normalizeStreamBehavior({
@@ -993,6 +994,19 @@ export function embeddedVideoStreams(
       !!stream.url || !!stream.infoHash || !!stream.ytId || !!stream.externalUrl
     ) && !isNotice(stream))),
   }
+}
+
+/** A source catalog's own title plays from that source; any other title keeps its embedded streams
+ *  (synchronously: the picker's fan-out must not wait a tick for titles that are not a source's). */
+function catalogVideoStreams(media: Media, episode: number | undefined): { declared: boolean; streams: Stream[] } | Promise<{ declared: boolean; streams: Stream[] }> {
+  return isSourceOrigin(media.catalog?.addonId) ? sourceVideoStreams(media, episode) : embeddedVideoStreams(media, episode)
+}
+
+async function sourceVideoStreams(media: Media, episode: number | undefined): Promise<{ declared: boolean; streams: Stream[] }> {
+  const video = mediaVideo(media, episode)
+  const own = video?.id ? await sourceStreams(media, video.id, video.title) : null
+  if (!own) return embeddedVideoStreams(media, episode)
+  return embeddedVideoStreams({ ...media, videos: media.videos?.map((item) => (item === video ? { ...item, streams: own } : item)) }, episode)
 }
 
 async function mediaSeasonMap(media: Media): Promise<Record<number, { season?: number; abs?: number }>> {
@@ -1108,7 +1122,8 @@ export function prefetchSourceMetadata(
 }
 
 async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: EpisodeWant; kitsu?: number }> {
-  const embedded = embeddedVideoStreams(media, episode)
+  const pending = catalogVideoStreams(media, episode)
+  const embedded = pending instanceof Promise ? await pending : pending
   if (embedded.declared) {
     const want = episode != null ? await episodeWant(media, episode) : undefined
     let streams = refineStreams(media, embedded.streams).kept
@@ -1372,7 +1387,7 @@ function pickSameRelease(media: Media, streams: Stream[], want?: EpisodeWant): S
     c,
     want,
     get(preferredQuality),
-    rankOpts(anilistIdOf(media), runtimeSecondsOf(media)),
+    rankOpts(media),
   )
 }
 
@@ -1739,7 +1754,7 @@ async function prefetchNext(media: Media, episode: number) {
           directHint,
           want,
           get(preferredQuality),
-          rankOpts(anilistIdOf(media), runtimeSecondsOf(media)),
+          rankOpts(media),
         )
     if (!best) return // no cached source — leave it to the picker rather than force a download
     // Recover the hash from a debrid resolver URL exactly as playStream does. Without this the
@@ -1860,6 +1875,37 @@ function retainRecoveryCandidates(media: Media, episode: number | undefined, str
 // `playStream` starts it. `continuation` (set by auto-advance) carries the previous episode's
 // release identity: as sources fold in, a same-release one auto-continues without the user
 // touching the picker — a ready one instantly, an uncached one after the list settles.
+/** A protected episode saved by izumi's own Widevine module, as a stream: its folder, with the
+ *  licence a fresh resolution brought. The saved files are the presentation that plays: no track
+ *  refresh, and no subtitle that would switch to another (burned-in) presentation, which would
+ *  stream that instead. */
+export function savedProtectedStream(path: string, fresh: ResolvedShakaDownload): Stream {
+  return {
+    // Encoded: a `#`, `?` or `%` in the episode's name would otherwise end or garble the path.
+    url: `file://${path.split('/').map(encodeURIComponent).join('/')}`,
+    name: '📥 Downloaded',
+    __manifest: 'dash',
+    __drm: { ...fresh.drm, refreshUrl: undefined },
+    __audioLang: fresh.audioLang,
+    __subtitles: fresh.subtitles?.filter((track) => track.url && !track.switchUrl),
+  } as Stream
+}
+
+/** A protected episode the module already decrypted to clear files, as a plain local stream: its
+ *  `video.mp4` with `audio.mp4` as a separate audio track. No DRM, no licence, no network — it plays
+ *  exactly like any downloaded file, by its plain path. mpv reports a `file://` URL back as a path,
+ *  so the audio track and the seek-bar previews, which wait for the URL that was loaded, never
+ *  arrived. The two file names inside are fixed (see widevine/save.rs). */
+export function clearProtectedStream(folder: string): Stream {
+  const base = folder.replace(/[/\\]+$/, '')
+  const sep = base.includes('\\') ? '\\' : '/'
+  return {
+    url: `${base}${sep}video.mp4`,
+    name: '📥 Downloaded',
+    __audioTracks: [{ url: `${base}${sep}audio.mp4` }],
+  } as Stream
+}
+
 export async function playEpisode(
   media: Media,
   episode: number | undefined,
@@ -1923,6 +1969,36 @@ export async function playEpisode(
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = !options.remoteOnly && episode != null ? downloadOf(media.id, episode) : undefined
+  if (local?.status === 'done' && local.kind === 'drm-local' && local.path && local.requiresOnlineLicense === false) {
+    // A protected episode the module already decrypted to clear files: it plays like any local file,
+    // with no licence and no network. Its video and audio are separate clear tracks in the folder.
+    traceResolve(trace, 'completed clear protected download hit; playing it offline')
+    return await playStream(media, episode, clearProtectedStream(local.path), onState, { autoplay, startSeconds: options.startSeconds })
+  }
+  if (local?.status === 'done' && local.kind === 'drm-local' && local.path) {
+    // A protected episode saved still-encrypted (older downloads): its files are on this device but
+    // its licence comes from the source again, so playing it needs the source to be reachable.
+    traceResolve(trace, 'completed protected download hit; licensing it again')
+    onState({ status: 'resolving' })
+    // The fresh licence takes the source a few seconds: the connecting screen holds from the click
+    // (the page sat there as if the press was lost), and playStream takes it over.
+    connecting.set({
+      title: title(media), art: banner(media) || cover(media), media, episode,
+      cancel: () => { connecting.set(null); abort.abort(); onState({ status: 'idle' }) },
+    })
+    let fresh: Awaited<ReturnType<typeof resolveDownloadUrl>>
+    try {
+      fresh = await resolveDownloadUrl(media.id, episode!, { ...local.preferences, sourceOriginId: local.sourceOriginId })
+      if (fresh.kind !== 'shaka' || !fresh.drm?.licenseUrl) throw new Error('The source no longer provides a licence for this download.')
+      // Some sources only accept a licence request for a presentation that was asked for.
+      if (!signal.aborted) await phttp(fresh.url, { timeoutMs: 20_000 }).catch(() => undefined)
+    } catch (error) {
+      if (!signal.aborted) connecting.set(null)
+      throw error
+    }
+    if (signal.aborted) return
+    return await playStream(media, episode, savedProtectedStream(local.path, fresh), onState, { autoplay, startSeconds: options.startSeconds })
+  }
   if (local?.status === 'done' && (local.path || local.offlineUri)) {
     traceResolve(trace, 'completed download hit; skipping source discovery')
     let offlineDrm: Stream['__drm'] = local.offlineUri
@@ -1976,6 +2052,7 @@ export async function playEpisode(
     manualOnly: options.forceManual,
     forceAuto: options.forceAuto,
     companion: options.companion,
+    download: options.download,
     autoplay,
     startSeconds: options.startSeconds,
   })
@@ -2113,7 +2190,8 @@ export async function playEpisode(
       }
     }
 
-    const embedded = embeddedVideoStreams(media, episode)
+    const ownStreams = catalogVideoStreams(media, episode)
+    const embedded = ownStreams instanceof Promise ? await ownStreams : ownStreams
     const bases = get(enabledAddonUrls)
     const addonBases = embedded.declared ? [] : bases
     const extensionCheckStartedAt = performance.now()
@@ -2249,7 +2327,7 @@ export async function playEpisode(
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
       const directP2p = directP2pEnabled()
-      const options = rankOpts(anilistIdOf(media), runtimeSecondsOf(media))
+      const options = rankOpts(media)
       const ranked = seasonSettled
         ? pickCandidates(s, get(preferredQuality), want, undefined, options)
         : []
@@ -2327,6 +2405,7 @@ export async function playEpisode(
         manualOnly: options.forceManual,
         forceAuto: options.forceAuto,
         companion: options.companion,
+        download: options.download,
         autoplay,
         startSeconds: options.startSeconds,
       })
@@ -2338,7 +2417,7 @@ export async function playEpisode(
       // (an uncached manual pick keeps the picker open while it caches).
       if (cont && continuationCanStart() && !continuationAttempted && seasonSettled && !get(debridCaching)) {
         const directTorrentContinuation = directP2pEnabled() && !cont.online
-        const options = rankOpts(anilistIdOf(media), runtimeSecondsOf(media))
+        const options = rankOpts(media)
         const hit = directTorrentContinuation
           ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), options)
           : pickReadyContinuationCandidate(s, cont, want, get(preferredQuality), options)
@@ -2616,8 +2695,8 @@ export async function playEpisode(
       let s = refineStreams(media, acc).kept
       if (want) s = verifySeason(s, want)
       const hit = directP2pEnabled() && !cont.online
-        ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media), runtimeSecondsOf(media)))
-        : pickRankedContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media), runtimeSecondsOf(media)))
+        ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(media))
+        : pickRankedContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(media))
       if (hit) {
         tryContinuation(hit)
         if (continuationAttempt && await continuationAttempt) return
@@ -2932,14 +3011,13 @@ export async function playStream(
     }
     return
   }
-  upNextPrompt.set(null)
   const trace = currentResolveTrace(media.id, episode) ?? beginResolveTrace({
     mediaId: media.id,
     episode,
     title: title(media),
     entry: options.recoveryOwner ? 'watchdog source replacement' : 'source selection',
   })
-  traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(anilistIdOf(media), runtimeSecondsOf(media))))
+  traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(media)))
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
   if (!playbackOwner) {
     finishResolveTrace(trace, 'stale source selection')
@@ -3052,6 +3130,14 @@ export async function playStream(
   }
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
+  // A source catalog plays in its account's languages. Kept ones are refreshed in the background;
+  // with none kept yet, the first play waits briefly so it does not start in the defaults.
+  const languageCatalog = catalogOfMedia(media)
+  if (languageCatalog.startsWith('source:')) {
+    const packageId = languageCatalog.slice('source:'.length)
+    const refresh = refreshSourceLanguages(packageId)
+    if (!get(sourceAccountLanguages)[packageId]) await Promise.race([refresh, new Promise((resolve) => setTimeout(resolve, 1_500))])
+  }
   // Provisional room source, so a guest joining mid-resolve still sees what is starting. It is
   // re-captured from the FINAL stream below, once any debrid resolution has happened.
   nowPlayingPartySource.set(await shareableSourceForDevice(stream))
@@ -3388,9 +3474,10 @@ export async function playStream(
       return
     }
 
-    // Encrypted DASH (Widevine etc.) cannot go through mpv — it would paint CENC as rainbow
-    // scramble. Play in the webview CDM instead. This also wins over Android mpv and the
-    // external-player setting: those backends cannot decrypt either.
+    // Encrypted DASH (Widevine etc.) cannot go through plain mpv — it would paint CENC as rainbow
+    // scramble. Windows/macOS play it in the webview CDM; Linux (no EME in WebKitGTK) plays it in
+    // izumi's own player through NativeDrmSurface. This also wins over Android mpv and the
+    // external-player setting: those backends cannot decrypt.
     if (stream.__drm) {
       if (await abandonIfStale()) return
       nowPlayingStream.set({
@@ -3417,13 +3504,18 @@ export async function playStream(
           switchUrl: s.switchUrl,
         })),
         previewUrl: stream.__previewUrl,
+        skip: stream.__skip,
+        rating: stream.__rating,
       })
       spriteKey.set(stream.infoHash ?? `${media.id}-${episode ?? 0}`)
       recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
       rememberSuccess()
       playing.set(true)
       onState({ status: 'playing' })
-      void invoke('close_player').catch(() => {})
+      // The native path reuses the player: stop the old file now, the protected one loads once
+      // its licence is in. The webview path needs the native player gone.
+      if (usesNativeDrm(stream.__drm)) void invoke('player_command', { name: 'stop', args: [] }).catch(() => {})
+      else void invoke('close_player').catch(() => {})
       if (episode != null) attach(media, episode, onState, observation, recoveryOriginal)
       return
     }
@@ -3450,8 +3542,7 @@ export async function playStream(
           items: addonSubs.filter((s) => s.download?.needsFetch),
         })
         const sourceSubs = stream.__stream ? stream.__subtitles ?? [] : []
-        const preferred = get(preferredSubLang)
-        let selectedPreferred = false
+        const languages = languagesForMedia(media)
         const subs = [
           ...sourceSubs.map((s) => ({
             url: s.url,
@@ -3477,12 +3568,12 @@ export async function playStream(
             kind: undefined,
             headers: undefined,
           })),
-        ].map((subtitle) => {
-          const lang = normalizeLang(subtitle.lang) ?? subtitle.lang
-          const selected = preferred !== 'none' && !selectedPreferred && lang === preferred
-          if (selected) selectedPreferred = true
-          return { ...subtitle, lang, selected }
-        })
+        ].map((subtitle) => ({ ...subtitle, lang: normalizeLang(subtitle.lang) ?? subtitle.lang, selected: false }))
+        // The first subtitle in the first wanted language that has one.
+        const preferredSub = languages.subtitle[0] === 'none' ? undefined : languages.subtitle
+          .map((lang) => subs.find((subtitle) => langsEqual(subtitle.lang, lang)))
+          .find(Boolean)
+        if (preferredSub) preferredSub.selected = true
         // Separately served audio (an extension's other-language tracks) — the desktop embed
         // already `audio-add`s these; Android dropped them, so the choice never reached mpv.
         const sourceAudio = (stream.__stream ? stream.__audioTracks ?? [] : [])
@@ -3517,6 +3608,8 @@ export async function playStream(
             kind: subtitle.kind,
             headers: subtitle.headers,
           })),
+          skip: stream.__skip,
+          rating: stream.__rating,
         })
         await startMpvEvents()
         if (await abandonIfStale()) return
@@ -3547,8 +3640,8 @@ export async function playStream(
           startPos: startSeconds || 0,
           subtitles: subs,
           audioTracks: sourceAudio.map((track) => ({ url: track.url, title: track.title, lang: track.lang })),
-          alang: get(preferredAudioLang),
-          slang: preferred,
+          alang: mpvLanguageList(languages.audio),
+          slang: mpvLanguageList(languages.subtitle),
           headers,
           autoplay,
           // Native MediaCodec/SurfaceView playback is Android's HDR-preserving path. Keep libmpv when audio filtering is requested:
@@ -3712,7 +3805,12 @@ export async function playStream(
       ...(stream.__stream ? stream.__subtitles ?? [] : []),
       ...candidates.filter((s) => !!s.url).map((s) => ({ url: s.url!, lang: s.lang })),
     ]
-    const audioTracks = stream.__stream ? stream.__audioTracks ?? [] : []
+    // A saved file's audio track is its only audio (a protected episode is saved as video + audio
+    // files), so it is attached and selected.
+    const savedFile = !!stream.url && !stream.url.includes('://')
+    const audioTracks = stream.__stream
+      ? stream.__audioTracks ?? []
+      : savedFile ? (stream.__audioTracks ?? []).map((track) => ({ ...track, select: true })) : []
     // mpv applies `http-header-fields` GLOBALLY — there is no per-URL header option — so a
     // Referer-gated sidecar subtitle can only be fetched by folding its headers into the same set
     // the stream uses. Stream headers win on a key clash: breaking the video to fetch a subtitle
@@ -3743,6 +3841,8 @@ export async function playStream(
         kind: 'kind' in subtitle ? subtitle.kind : undefined,
         headers: 'headers' in subtitle ? subtitle.headers : undefined,
       })),
+      skip: stream.__skip,
+      rating: stream.__rating,
     })
     // alang/slang drive mpv's preferred-language track auto-selection.
     const embedStartedAt = performance.now()
@@ -3758,8 +3858,8 @@ export async function playStream(
       autoplay,
       initialBufferSeconds,
       cacheBytes,
-      alang: get(preferredAudioLang),
-      slang: get(preferredSubLang),
+      alang: mpvLanguageList(languagesForMedia(media).audio),
+      slang: mpvLanguageList(languagesForMedia(media).subtitle),
       headers: mergedHeaders && Object.keys(mergedHeaders).length ? mergedHeaders : undefined,
       subtitles: subtitles.length ? subtitles : undefined,
       audioTracks: audioTracks.length ? audioTracks : undefined,
@@ -3834,7 +3934,7 @@ export async function playStream(
         for (const s of cands) {
           if (!s.url) continue
           if (subGen !== playGen) return
-          try { await invoke('player_attach_subtitle_url', { url: s.url, lang: s.lang, title: s.release ?? s.lang ?? 'Online subtitles' }) }
+          try { await attachLateSubtitle(s.url, s.lang, s.release) }
           catch { /* a missing subtitle must never disturb playback */ }
         }
       })
@@ -4018,7 +4118,7 @@ export async function recoverPlaybackSource(
   }
 
   const directP2p = directP2pEnabled()
-  const options = { ...rankOpts(context.media.id, runtimeSecondsOf(context.media)), allowUncached: true }
+  const options = { ...rankOpts(context.media, context.media.id), allowUncached: true }
   const allowedStreams = applyPriorityFilter(streams, get(sourcePriority), get(sourcePriorityMode))
   const ranked = pickCandidates(
     allowedStreams,
@@ -4142,7 +4242,8 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     nowPlayingStream.set({ url, headers: {}, infoHash: null })
     spriteKey.set(null)   // no per-file scrub sprites for cloud items
     bingeSource.set(null) // no release-continuity chain
-    await invoke('player_embed', { url, alang: get(preferredAudioLang), slang: get(preferredSubLang) })
+    // A cloud-library file has no catalog: the anime catalog's order, as the library is anime first.
+    await invoke('player_embed', { url, alang: mpvLanguageList(languagesFor('anime').audio), slang: mpvLanguageList(languagesFor('anime').subtitle) })
     // No episode identity at all — and the watchdog is live from here, so the previous episode's
     // identity has to go with it or a stall would recover onto that episode's sources.
     recordPlaybackIdentity(null)
@@ -4180,7 +4281,12 @@ export function playNext(onState: (s: PlayState) => void = noticeState, autoplay
   resolveAndPlayBest(currentMedia, ep + 1, onState, autoplay)
 }
 
-interface ResolvedDownloadBase { filename: string; quality?: string; provider?: string; infoHash?: string }
+interface ResolvedDownloadBase {
+  filename: string; quality?: string; provider?: string; infoHash?: string
+  /** The stream being saved, so a resume fetches the same file again. Absent for protected
+   *  sources, which keep their own source identity (`sourceOriginId`). */
+  source?: Stream
+}
 /** A byte-addressable link (a plain addon url, or a debrid resolve) streamed to disk over HTTP.
  *  `headers` carries an extension source's gate (Referer/Origin) — absent for debrid links. */
 export interface ResolvedHttpDownload extends ResolvedDownloadBase {
@@ -4211,52 +4317,43 @@ export interface ResolvedShakaDownload extends ResolvedDownloadBase {
   subtitles?: Stream['__subtitles']
   audioLang?: string
   preferredHeight?: number
-  preferredSubLang?: import('$lib/settings/ui').SubLang
+  /** Subtitle languages to keep, most wanted first; `['none']` keeps none. */
+  preferredSubLang?: string[]
   sourceOriginId?: string
 }
-export type ResolvedDownload = ResolvedHttpDownload | ResolvedTorrentDownload | ResolvedShakaDownload
+/** A protected source the native downloader decrypts into ONE clear, offline-watchable file. Unlike
+ *  the Shaka path there is no stored ciphertext and no persistent licence: playback needs no CDM and
+ *  no network. The source advertises a `planUrl` (segment URLs, byte ranges, Widevine pssh/kid). */
+export interface ResolvedDrmDownload extends ResolvedDownloadBase {
+  kind: 'drm'
+  planUrl: string
+  /** The same presentation's manifest, for a save through izumi's own Widevine module, which is
+   *  preferred where it is installed (the plan path is the fallback without it). */
+  url: string
+  licenseUrl: string
+  releaseUrl: string
+  drm: NonNullable<Stream['__drm']>
+  subtitles?: Stream['__subtitles']
+  audioLang?: string
+  preferredHeight?: number
+  sourceOriginId?: string
+}
+export type ResolvedDownload =
+  | ResolvedHttpDownload
+  | ResolvedTorrentDownload
+  | ResolvedShakaDownload
+  | ResolvedDrmDownload
 
-// Resolve a single episode to something downloadable — no player, no mpv. Reuses the same
-// resolveStreams+pickBest path as playback, and honours the SAME torrent-source preference:
-// a torrent-only pick goes to the local P2P engine under Direct P2P (or with no debrid
-// credential at all), and through debrid otherwise. Uses the persisted Media snapshot first so a
-// restart or metadata outage cannot block source resolution; old queues fall back to fetch-by-id.
-export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences): Promise<ResolvedDownload> {
-  // A download is queued from a page that already owns this Media object, and enqueue() persists a
-  // source-complete snapshot before the pump starts. Prefer it: AniList being slow, rate-limited or
-  // offline has no bearing on whether the configured source can provide a file. Older queue items
-  // without a snapshot still get the network fallback.
-  const media = getDownloadedMedia(mediaId) ?? await fetchMediaById(mediaId).catch(() => {
-    throw new Error('This download is missing its saved series details. Open the series once, then retry.')
-  })
-  const { streams, want, kitsu } = await resolveStreams(media, episode)
-  let all = streams
-  // Extensions are a first-class playback source but were never consulted here, so an
-  // extension-only setup played episodes fine and then reported "no source found" the moment a
-  // download was queued. Fold both extension flavours in exactly like playback does, then put the
-  // merged list through the same refine + season gates.
-  if (await hasConfiguredExtensions()) {
-    let extra: Stream[] = []
-    // Bounded: a download is a queued background job and must survive one wedged provider —
-    // whatever folded in before the budget expires is what gets considered.
-    const EXT_BUDGET_MS = 25_000
-    await Promise.race([
-      Promise.all([
-        extToStreams(media, episode, kitsu, (batch) => { extra = [...extra, ...batch] }),
-        resolveOnlineStreams(media, episode).then((s) => { extra = [...extra, ...s] }),
-      ]),
-      new Promise<void>((resolve) => setTimeout(resolve, EXT_BUDGET_MS)),
-    ])
-    if (extra.length) {
-      let merged = refineStreams(media, [...all, ...extra]).kept
-      if (want) merged = verifySeason(merged, want)
-      all = merged
-    }
+/** The stream a download of this episode saves when izumi chooses: the Settings → Downloads rules
+ *  (cached only, audio, codec, quality) over `streams`. Also the row the source picker suggests
+ *  when the user chooses a download's source themselves. */
+export function pickDownloadStream(streams: Stream[], media: Media, want?: EpisodeWant, preferences?: DownloadPreferences): Stream | undefined {
+  let eligible = streams
+  if (preferences?.release) {
+    const release = preferences.release
+    const sameRelease = eligible.filter((stream) => matchesRelease(stream, release))
+    if (sameRelease.length) eligible = sameRelease
   }
-  // HLS is a first-class download source. It used to be filtered out and then put back when it
-  // was the provider's only option, which handed the tiny playlist to the progressive downloader
-  // and reported ~25 KB as a completed episode. The native path now resolves and joins segments.
-  let eligible = all
   if (preferences?.sourceOriginId) {
     const sameSource = eligible.filter((stream) => stream.__origin?.id === preferences.sourceOriginId)
     if (sameSource.length) eligible = sameSource
@@ -4283,7 +4380,58 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
     const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
     if (preferred.length) eligible = preferred
   }
-  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(anilistIdOf(media), runtimeSecondsOf(media))) ?? eligible[0]
+  return pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(media)) ?? eligible[0]
+}
+
+// Resolve a single episode to something downloadable — no player, no mpv. Reuses the same
+// resolveStreams+pickBest path as playback, and honours the SAME torrent-source preference:
+// a torrent-only pick goes to the local P2P engine under Direct P2P (or with no debrid
+// credential at all), and through debrid otherwise. Uses the persisted Media snapshot first so a
+// restart or metadata outage cannot block source resolution; old queues fall back to fetch-by-id.
+// `source` is the stream the download already saves (chosen by the user, or picked on its first
+// run): its fresh twin from this resolve is used, else the saved stream itself.
+export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences, forceShaka = false, source?: Stream): Promise<ResolvedDownload> {
+  // A download is queued from a page that already owns this Media object, and enqueue() persists a
+  // source-complete snapshot before the pump starts. Prefer it: AniList being slow, rate-limited or
+  // offline has no bearing on whether the configured source can provide a file. Older queue items
+  // without a snapshot still get the network fallback.
+  const media = getDownloadedMedia(mediaId) ?? await fetchMediaById(mediaId).catch(() => {
+    throw new Error('This download is missing its saved series details. Open the series once, then retry.')
+  })
+  // A saved source is fetched again even when nothing lists it today (its twin is only preferred).
+  const { streams, want, kitsu } = await resolveStreams(media, episode).catch((error) => {
+    if (source) return { streams: [] as Stream[], want: undefined, kitsu: undefined }
+    throw error
+  })
+  let all = streams
+  // Extensions are a first-class playback source but were never consulted here, so an
+  // extension-only setup played episodes fine and then reported "no source found" the moment a
+  // download was queued. Fold both extension flavours in exactly like playback does, then put the
+  // merged list through the same refine + season gates.
+  // A source catalog's own title has its streams from that source: searching every other
+  // extension by its title would only add other providers' copies.
+  if (!isSourceOrigin(media.catalog?.addonId) && await hasConfiguredExtensions()) {
+    let extra: Stream[] = []
+    // Bounded: a download is a queued background job and must survive one wedged provider —
+    // whatever folded in before the budget expires is what gets considered.
+    const EXT_BUDGET_MS = 25_000
+    await Promise.race([
+      Promise.all([
+        extToStreams(media, episode, kitsu, (batch) => { extra = [...extra, ...batch] }),
+        resolveOnlineStreams(media, episode).then((s) => { extra = [...extra, ...s] }),
+      ]),
+      new Promise<void>((resolve) => setTimeout(resolve, EXT_BUDGET_MS)),
+    ])
+    if (extra.length) {
+      let merged = refineStreams(media, [...all, ...extra]).kept
+      if (want) merged = verifySeason(merged, want)
+      all = merged
+    }
+  }
+  // HLS is a first-class download source. It used to be filtered out and then put back when it
+  // was the provider's only option, which handed the tiny playlist to the progressive downloader
+  // and reported ~25 KB as a completed episode. The native path now resolves and joins segments.
+  const best = source ? findSource(all, source) ?? source : pickDownloadStream(all, media, want, preferences)
   if (!best) throw new Error('No source found to download.')
   const info = describe(best)
   // The saved name follows the release when it has one; otherwise the title/episode. The extension
@@ -4296,10 +4444,15 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
     }
     return `${base}.${ext}`
   }
-  const common = { quality: info.quality ? `${info.quality}p` : undefined, infoHash: best.infoHash }
+  const common = {
+    quality: info.quality ? `${info.quality}p` : undefined,
+    infoHash: best.infoHash,
+    source: best.__drm ? undefined : savedSource(best),
+  }
 
   if (best.url) {
     if (best.__drm && /(?:\.mpd(?:$|\?)|\/manifest\.mpd(?:$|\?))/i.test(best.url)) {
+      const languages = languagesForMedia(media)
       const wantedHeight = preferences?.quality && preferences.quality !== 'any'
         ? Number(preferences.quality)
         : undefined
@@ -4309,17 +4462,43 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
         audioLang: refreshed.audioLang ?? best.__audioLang,
         subtitles: refreshed.subtitles ?? best.__subtitles,
         audioTracks: refreshed.audioTracks ?? best.__audioTracks,
-        preferredAudio: downloadAudioLang(preferences?.audio, get(preferredAudioLang)),
-        preferredSub: get(preferredSubLang),
+        preferredAudio: downloadAudioLang(preferences?.audio, languages.audio),
+        preferredSub: languages.subtitle,
       })
+      const height = Number.isFinite(wantedHeight) ? wantedHeight : undefined
+      // Prefer the decrypting downloader when the source advertises a plan and this is not Android:
+      // it produces one clear, offline file (no CDM, no persistent licence). The plan URL carries
+      // the same audio/height selection the manifest would, so it follows the resolved presentation.
+      // `forceShaka` is the licence-refused fallback (the device blob was rejected with a 403).
+      if (best.__drm.planUrl && !get(isAndroid) && !forceShaka) {
+        // Derive the plan URL from the resolved presentation so it inherits the same `?audio=`
+        // selection, then swap `manifest.mpd` for the plan route and add the height/offline hint.
+        const planBase = presentation.url.replace(/\/manifest\.[^/?]+/, '/offline-plan')
+        return {
+          kind: 'drm',
+          planUrl: offlineManifestUrl(planBase, height),
+          url: offlineManifestUrl(presentation.url, height),
+          licenseUrl: best.__drm.licenseUrl ?? '',
+          releaseUrl: best.__drm.releaseUrl ?? '',
+          drm: best.__drm,
+          subtitles: presentation.subtitles,
+          audioLang: presentation.audioLang,
+          preferredHeight: height,
+          sourceOriginId: best.__origin?.id,
+          filename: named(best.url, 'mp4'),
+          provider: info.provider,
+          ...common,
+        }
+      }
+      // Fallback: store the encrypted manifest through Shaka (no plan, or on Android).
       return {
         kind: 'shaka',
-        url: offlineManifestUrl(presentation.url, Number.isFinite(wantedHeight) ? wantedHeight : undefined),
+        url: offlineManifestUrl(presentation.url, height),
         drm: best.__drm,
         subtitles: presentation.subtitles,
         audioLang: presentation.audioLang,
-        preferredHeight: Number.isFinite(wantedHeight) ? wantedHeight : undefined,
-        preferredSubLang: get(preferredSubLang),
+        preferredHeight: height,
+        preferredSubLang: languages.subtitle,
         sourceOriginId: best.__origin?.id,
         filename: named(best.url),
         provider: info.provider,

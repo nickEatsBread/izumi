@@ -12,7 +12,7 @@ const page = read('./+page.svelte')
 
 /** Where each row lives (spec §3.1). `hotkeys` is rendered by HotkeyBindings inside Controls. */
 const ROWS: Record<string, string[]> = {
-  'up-next': ['auto-play-next-episode', 'show-up-next-countdown', 'binge-next-episode-preload', 'ask-for-a-rating-when-a-series-ends'],
+  'up-next': ['auto-play-next-episode', 'binge-next-episode-preload', 'ask-for-a-rating-when-a-series-ends'],
   skipping: ['auto-skip-openings-endings', 'auto-skip-next-episode-previews', 'skip-filler-episodes'],
   seeking: ['seek-duration', 'scrub-preview-thumbnails'],
   'player-window': [
@@ -27,14 +27,13 @@ const ROWS: Record<string, string[]> = {
     'audio-processing', 'home-theatre-audio', 'audio-output', 'dolby-digital', 'dolby-digital-plus', 'dolby-truehd',
     'dts', 'dts-hd-dts-x', 'exclusive-audio-device', 'mpv-audio-device', 'dolby-vision-source-handling',
     'enable-external-player', 'external-video-player', 'animate-player-progress-controls', 'subtitle-line-navigation',
-    'title-at-top-of-player-game-mode', 'adaptive-source-planner', 'mark-best-releases',
+    'title-at-top-of-player-game-mode', 'adaptive-source-planner', 'mark-best-releases', 'protected-video-module',
   ],
 }
 
 /** Search hits for Playback rows: title → [subcategory, advanced]. */
 const SEARCH: Array<[string, string, boolean]> = [
   ['Auto-play next episode', 'up-next', false],
-  ['Show Up Next countdown', 'up-next', false],
   ['Binge next episode (preload)', 'up-next', false],
   ['Ask for a rating when a series ends', 'up-next', false],
   ['Auto-skip openings & endings', 'skipping', false],
@@ -64,6 +63,7 @@ const SEARCH: Array<[string, string, boolean]> = [
   ['Title at top of player (Game mode)', 'advanced', true],
   ['Adaptive source planner', 'advanced', true],
   ['Mark best releases', 'advanced', true],
+  ['Protected video', 'advanced', true],
 ]
 
 describe('Playback section', () => {

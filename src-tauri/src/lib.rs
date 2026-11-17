@@ -14,6 +14,16 @@ mod doh;
 #[cfg(not(target_os = "android"))]
 mod doh_socks;
 mod download;
+#[cfg(not(target_os = "android"))]
+mod embedded_subtitles;
+// Decrypting DRM downloads produce a clear local file (no CDM/licence at playback). Desktop-only:
+// Android keeps the Shaka offline path.
+#[cfg(not(target_os = "android"))]
+mod drm_download;
+// Where the decrypting downloader's Widevine device comes from: override, cached pool member,
+// fresh pool member, bundled seed. Desktop-only, like `drm_download`.
+#[cfg(not(target_os = "android"))]
+mod widevine_device;
 mod extension_package;
 mod store_trust;
 #[cfg(not(target_os = "android"))]
@@ -30,6 +40,8 @@ mod jvm_extensions;
 mod net_interfaces;
 #[cfg(not(target_os = "android"))]
 mod oauth;
+#[cfg(not(target_os = "android"))]
+mod plugin_signin;
 mod reset;
 #[cfg(not(target_os = "android"))]
 mod reset_data;
@@ -65,6 +77,20 @@ mod subsync;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
 mod steam_osk;
+// Protected (Widevine) handling by hosting Google's module directly. Linux also plays protected
+// streams through izumi's own player; Windows and macOS use it only to save protected episodes as
+// clear files (their webview still streams them live).
+// `widevine_host` is set by build.rs for x86-64 Linux and Windows, and macOS (arm64 and x86-64).
+#[cfg(widevine_host)]
+mod widevine;
+// Optional native modules (packs ask for them by id), downloaded in the background.
+mod modules;
+// The short video a pack can set to play while izumi starts.
+mod startup_animation;
+// A pack the Deck installer was asked to set up, offered once at the next launch.
+mod pending_pack;
+// How long each launch step took, for measuring startup on a device.
+mod startup_trace;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -170,6 +196,14 @@ pub(crate) struct GmControlItem {
     pub(crate) label: String,
     pub(crate) focused: bool,
     pub(crate) primary: bool,
+    /// A button named in words ("Audio") is drawn as that text, in the HTML button's font size and
+    /// weight, instead of an icon.
+    #[serde(default)]
+    pub(crate) text: String,
+    #[serde(default)]
+    pub(crate) text_size: f64,
+    #[serde(default)]
+    pub(crate) text_weight: u16,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]
@@ -237,6 +271,25 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) timeline_segments: Vec<GmTimelineSegment>,
     #[serde(default)]
     pub(crate) chapter_marks: Vec<f64>,
+    // The active theme's colours as ASS BGR hex (theme-gm-osd.ts); empty keeps the OSD's white.
+    #[serde(default)]
+    pub(crate) theme_accent: String,
+    #[serde(default)]
+    pub(crate) theme_focus: String,
+    // The theme's loading ring in screen px (theme-gm-osd.ts); 0 keeps the OSD's 48 px ring and 4 px stroke.
+    #[serde(default)]
+    pub(crate) theme_spinner_size: f64,
+    #[serde(default)]
+    pub(crate) theme_spinner_stroke: f64,
+    /// The age rating card at the top right as an episode opens (theme `player.rating: "intro"`): the
+    /// rating ("14"), its content descriptors on one line, and when it was first shown (Unix ms; 0 =
+    /// none). The OSD fades it in, holds it and fades it out from that time.
+    #[serde(default)]
+    pub(crate) rating_label: String,
+    #[serde(default)]
+    pub(crate) rating_detail: String,
+    #[serde(default)]
+    pub(crate) rating_shown_at: f64,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]
@@ -318,8 +371,9 @@ async fn player_embed(
     headers: Option<std::collections::HashMap<String, String>>,
     subtitles: Option<Vec<player::Subtitle>>,
     audio_tracks: Option<Vec<player::AudioTrack>>,
+    drm: Option<serde_json::Value>,
     player: tauri::State<'_, player::PlayerHandle>,
-) -> Result<(), String> {
+) -> Result<Option<serde_json::Value>, String> {
     let autoplay = autoplay.unwrap_or(true);
     if let Some(bytes) = cache_bytes {
         player::PLAYER_CACHE_BYTES.store(
@@ -327,6 +381,43 @@ async fn player_embed(
             std::sync::atomic::Ordering::Relaxed,
         );
     }
+    // A protected stream: license it and play its decrypted-in-memory `izcr://` streams instead.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    let (url, audio_tracks, protected, start_seconds) = match drm {
+        Some(drm) => {
+            let request: widevine::Request =
+                serde_json::from_value(drm).map_err(|e| format!("bad protected-stream request: {e}"))?;
+            let prepared = widevine::prepare(&app, &url, &request, start_seconds)
+                .await
+                .map_err(|e| format!("{e:#}"))?;
+            player::set_file_options(&prepared.video_url, prepared.file_options.clone());
+            let lang = prepared.audio_lang.clone();
+            let audio = vec![player::AudioTrack {
+                url: prepared.audio_url.clone(),
+                title: lang.clone(),
+                lang,
+                select: true,
+            }];
+            let info = serde_json::to_value(&prepared).map_err(|e| e.to_string())?;
+            (prepared.video_url, Some(audio), Some(info), prepared.start)
+        }
+        None => {
+            widevine::end_all();
+            (url, audio_tracks, None, start_seconds)
+        }
+    };
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let protected: Option<serde_json::Value> = match drm {
+        Some(_) => return Err("protected streams play in the webview on this platform".into()),
+        None => None,
+    };
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    let url = if protected.is_some() {
+        url
+    } else {
+        hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?
+    };
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let url = hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?;
     let mut subtitles = subtitles;
     if let Some(tracks) = subtitles.as_mut() {
@@ -441,7 +532,131 @@ async fn player_embed(
     }
     // Never report success without a live core. The old macOS path returned Ok in ~1ms
     // and the overlay spun forever while every `player_command` failed with "no player".
-    player::require_live_core(player.has_core())
+    player::require_live_core(player.has_core())?;
+    Ok(protected)
+}
+
+/// Every module izumi knows, with whether it is wanted, installed or downloading on this device.
+#[tauri::command]
+fn module_status() -> Result<Vec<modules::Status>, String> {
+    modules::module_status()
+}
+
+/// Asks for a module on behalf of `by` (`pack:<id>` or `user`) after its licence was shown.
+#[tauri::command]
+fn module_request(id: String, by: String) -> Result<modules::Status, String> {
+    modules::module_request(id, by)
+}
+
+/// Tries a failed module download again now.
+#[tauri::command]
+fn module_retry() -> Result<(), String> {
+    modules::module_retry()
+}
+
+/// Withdraws a request; the module is deleted once nobody wants it (`by` = null: delete now).
+#[tauri::command]
+fn module_release(id: String, by: Option<String>) -> Result<(), String> {
+    modules::module_release(id, by)
+}
+
+/// Whether this build can save protected episodes through izumi's module host (`supported`), whether
+/// it also plays them through izumi's own player (`playback`, Linux only), and which module version
+/// is ready. See `widevine::Status`.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(widevine_host)]
+    return widevine::widevine_status(app).and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
+    #[cfg(not(widevine_host))]
+    {
+        let _ = app;
+        Ok(serde_json::json!({ "supported": false, "playback": false, "installed": null, "available": null }))
+    }
+}
+
+/// Downloads Google's Widevine module into staging and returns its licence text.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn widevine_download(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(widevine_host)]
+    return widevine::widevine_download(app).await.and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
+    #[cfg(not(widevine_host))]
+    {
+        let _ = app;
+        Err("unsupported".into())
+    }
+}
+
+/// Installs the staged module after the user accepted its licence.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_accept(app: AppHandle, version: String) -> Result<String, String> {
+    #[cfg(widevine_host)]
+    return widevine::widevine_accept(app, version);
+    #[cfg(not(widevine_host))]
+    {
+        let _ = (app, version);
+        Err("unsupported".into())
+    }
+}
+
+/// Deletes the downloaded module and the recorded licence acceptance.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_remove(app: AppHandle) -> Result<(), String> {
+    #[cfg(widevine_host)]
+    return widevine::widevine_remove(app);
+    #[cfg(not(widevine_host))]
+    {
+        let _ = app;
+        Err("unsupported".into())
+    }
+}
+
+/// Saves a protected episode for offline use as a clear file. `drm` carries the source's licence URL
+/// and headers so the module can obtain the content keys and decrypt each fragment before writing.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn widevine_save(
+    app: AppHandle,
+    id: String,
+    manifest_url: String,
+    dir: String,
+    name: String,
+    max_height: Option<u32>,
+    drm: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(widevine_host)]
+    return widevine::save_download(&app, id, manifest_url, dir, name, max_height, drm).await;
+    #[cfg(not(widevine_host))]
+    {
+        let _ = (app, id, manifest_url, dir, name, max_height, drm);
+        Err("unsupported".into())
+    }
+}
+
+/// The folder a protected download named `name` is saved in, so a cancel can discard it.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_save_folder(dir: String, name: String) -> String {
+    #[cfg(widevine_host)]
+    return widevine::save::folder_for(std::path::Path::new(&dir), &name).display().to_string();
+    #[cfg(not(widevine_host))]
+    {
+        let _ = name;
+        dir
+    }
+}
+
+/// Pauses a running `widevine_save`.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_save_cancel(id: String) {
+    #[cfg(widevine_host)]
+    widevine::cancel_save(&id);
+    #[cfg(not(widevine_host))]
+    let _ = id;
 }
 
 /// Serializes Linux X11 embeds against a close that is still releasing mpv's output, so an embed
@@ -768,6 +983,13 @@ fn player_sprite_start(
     width: Option<i32>,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<bool, String> {
+    // Seek-bar tiles are decoded by a second core and cached as JPEG files; protected media never
+    // goes there (that core cannot open `izcr://` either). Protected streams use the source's own
+    // preview images.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if widevine::is_protected_url(&url) {
+        return Ok(false);
+    }
     let cache_root = app
         .path()
         .app_cache_dir()
@@ -878,6 +1100,38 @@ fn native_touch_hold(held: bool) {
 fn gm_touch_unstick() {
     #[cfg(target_os = "linux")]
     player::linux_x11::unstick_pointer();
+}
+
+/// One-time move of a WebKitGTK install's data into the CEF build (Linux). This WebKitGTK release
+/// keeps the profile export (`src/lib/engine-migration.ts`) current in this file in app data; the
+/// first CEF launch restores it into its empty profile and then deletes it.
+#[cfg(target_os = "linux")]
+const ENGINE_MIGRATION_FILE: &str = "engine-migration.json";
+
+/// Replaces the migration file atomically (temp file, fsync, rename), so a crash or power loss
+/// mid-write leaves the previous export intact. Async so the write stays off the main thread.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn engine_migration_write(app: AppHandle, json: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        // Startup, timer and close writes can overlap, and they share one temp file.
+        static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one_at_a_time = WRITE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(ENGINE_MIGRATION_FILE);
+        let temp = dir.join(format!("{ENGINE_MIGRATION_FILE}.tmp"));
+        let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
+        file.write_all(json.as_bytes()).and_then(|()| file.sync_all()).map_err(|e| e.to_string())?;
+        std::fs::rename(&temp, &path).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, json);
+        Ok(())
+    }
 }
 
 /// Game-mode input diagnostics from the webview, persisted through the same file+stderr channel
@@ -1976,29 +2230,41 @@ async fn opensubtitles_login(
     parse_opensubtitles_login(&text, now_ms)
 }
 
-/// Pick the first subtitle entry from a SubDL ZIP archive and return its raw (still-encoded) bytes.
-/// Prefers the first `.srt`; falls back to the first `.ass`/`.ssa`. SubDL always returns a ZIP (a
-/// non-`unpack` response is never a bare `.srt`). Two-pass so a later `.srt` beats an earlier `.ass`.
-fn unzip_first_subtitle(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
+/// Pick the subtitle entry from a SubDL/Jimaku ZIP archive and return its raw (still-encoded) bytes.
+/// SubDL always returns a ZIP (a non-`unpack` response is never a bare `.srt`), and a season pack
+/// holds one file per episode, so the entry naming `episode` wins. Among the candidates the first
+/// `.srt` beats the first `.ass`/`.ssa`.
+fn unzip_subtitle(zip_bytes: &[u8], episode: Option<u32>) -> Result<Vec<u8>, String> {
     let mut zip =
         zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).map_err(|e| e.to_string())?;
-    let mut srt_idx: Option<usize> = None;
-    let mut ass_idx: Option<usize> = None;
+    // (entry index, is .srt, episode its filename names)
+    let mut subs = Vec::new();
     for i in 0..zip.len() {
         let name = zip
             .by_index(i)
             .map_err(|e| e.to_string())?
             .name()
             .to_ascii_lowercase();
-        if name.ends_with(".srt") {
-            if srt_idx.is_none() {
-                srt_idx = Some(i);
-            }
-        } else if (name.ends_with(".ass") || name.ends_with(".ssa")) && ass_idx.is_none() {
-            ass_idx = Some(i);
+        let srt = name.ends_with(".srt");
+        if srt || name.ends_with(".ass") || name.ends_with(".ssa") {
+            subs.push((i, srt, direct_torrent_select::file_episode(&name)));
         }
     }
-    let idx = srt_idx.or(ass_idx).ok_or("no subtitle entry in archive")?;
+    let named = |wanted: u32| subs.iter().filter(move |sub| sub.2 == Some(wanted));
+    let pool: Vec<_> = match episode {
+        Some(wanted) if named(wanted).next().is_some() => named(wanted).collect(),
+        // A season pack without this episode: any file in it belongs to another one.
+        Some(wanted) if subs.iter().filter(|sub| sub.2.is_some()).count() > 1 => {
+            return Err(format!("no subtitle for episode {wanted} in archive"))
+        }
+        _ => subs.iter().collect(),
+    };
+    let idx = pool
+        .iter()
+        .find(|sub| sub.1)
+        .or(pool.first())
+        .map(|sub| sub.0)
+        .ok_or("no subtitle entry in archive")?;
     let mut entry = zip.by_index(idx).map_err(|e| e.to_string())?;
     let mut buf = Vec::with_capacity(entry.size() as usize);
     std::io::Read::read_to_end(&mut entry, &mut buf).map_err(|e| e.to_string())?;
@@ -2047,6 +2313,7 @@ async fn fetch_normalize_subtitle(
     provider: &str,
     url: Option<&str>,
     file_id: Option<i64>,
+    episode: Option<u32>,
     api_key: Option<&str>,
     token: Option<&str>,
 ) -> Result<String, String> {
@@ -2118,7 +2385,7 @@ async fn fetch_normalize_subtitle(
                 .bytes()
                 .await
                 .map_err(|_| "zip read failed".to_string())?;
-            unzip_first_subtitle(&zip_bytes)?
+            unzip_subtitle(&zip_bytes, episode)?
         }
         "jimaku" => {
             let file_url = url.ok_or("missing file url")?;
@@ -2149,7 +2416,7 @@ async fn fetch_normalize_subtitle(
             // Plain subtitles and ZIPs sit in the same listing, so sniff the local-header magic
             // rather than trusting the extension, and reuse the SubDL unzip path when it is one.
             if bytes.starts_with(b"PK\x03\x04") {
-                unzip_first_subtitle(&bytes)?
+                unzip_subtitle(&bytes, episode)?
             } else {
                 bytes
             }
@@ -2180,6 +2447,7 @@ async fn player_add_subtitle(
     provider: String,
     url: Option<String>,
     file_id: Option<i64>,
+    episode: Option<u32>,
     lang: String,
     title: String,
     api_key: Option<String>,
@@ -2191,6 +2459,7 @@ async fn player_add_subtitle(
         &provider,
         url.as_deref(),
         file_id,
+        episode,
         api_key.as_deref(),
         token.as_deref(),
     )
@@ -2208,6 +2477,7 @@ async fn player_add_subtitle(
     provider: String,
     url: Option<String>,
     file_id: Option<i64>,
+    episode: Option<u32>,
     _lang: String,
     _title: String,
     api_key: Option<String>,
@@ -2218,6 +2488,7 @@ async fn player_add_subtitle(
         &provider,
         url.as_deref(),
         file_id,
+        episode,
         api_key.as_deref(),
         token.as_deref(),
     )
@@ -4369,6 +4640,11 @@ async fn player_capture_segment(
     if source.is_empty() {
         return Err("no-player-source".into());
     }
+    // Protected media is decrypted in memory only; it is never re-encoded into a file.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if widevine::is_protected_url(&source) {
+        return Err("protected-capture-unavailable".into());
+    }
     let headers = player
         .get_property("http-header-fields")
         .unwrap_or_default();
@@ -5703,9 +5979,62 @@ fn configure_gamescope_native_wayland_prototype() {
     ));
 }
 
+/// Synchronous commands that call into the libmpv core. Tauri runs sync commands on the UI
+/// thread, which also receives every IPC request, and a libmpv call waits for as long as the core
+/// is busy: a hardware-decoder reinit held it for seconds on a memory-starved iGPU. While one
+/// waited, every invoke in the app hung, `plugin:app|version` included.
+#[cfg(not(target_os = "android"))]
+const PLAYER_THREAD_COMMANDS: &[&str] = &[
+    "player_play",
+    "player_play_embedded",
+    "player_get_property",
+    "player_command",
+    "player_sprite_start",
+    "player_tracks",
+    "player_chapters",
+    "player_set_render_opts",
+    "player_set_enhancement_opts",
+    "player_set_dolby_opts",
+    "player_dolby_capabilities",
+    "player_screenshot",
+    "player_diag",
+    "player_gif_start",
+    "player_gif_abort",
+];
+
+/// Run [`PLAYER_THREAD_COMMANDS`] on one thread of their own instead of the UI thread. A single
+/// thread keeps the order they arrive in, as the UI thread did, so a burst of seeks still lands
+/// last-one-wins and a read after a command still sees its effect.
+#[cfg(not(target_os = "android"))]
+fn route_player_commands<R: tauri::Runtime>(
+    handler: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    let handler = std::sync::Arc::new(handler);
+    let (queue, inbox) = std::sync::mpsc::channel::<tauri::ipc::Invoke<R>>();
+    let worker = handler.clone();
+    let _ = std::thread::Builder::new()
+        .name("izumi-player-ipc".into())
+        .spawn(move || {
+            for invoke in inbox {
+                // One panicking command must not take every later player call down with it.
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker(invoke)));
+            }
+        });
+    move |invoke| {
+        if !PLAYER_THREAD_COMMANDS.contains(&invoke.message.command()) {
+            return handler(invoke);
+        }
+        // Only if the player thread is gone does the command fall back to the UI thread.
+        queue
+            .send(invoke)
+            .map_or_else(|unsent| handler(unsent.0), |()| true)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
+    startup_trace::mark("run");
     #[cfg(target_os = "linux")]
     configure_gamescope_native_wayland_prototype();
     // Linux: the embedded player composites mpv (a wl_subsurface) BELOW the webview,
@@ -5799,6 +6128,7 @@ pub fn run() {
     let builder = builder
         .manage(PipWindowState::default())
         .manage(DrmGifCapture::default())
+        .manage(drm_download::DrmDownloads::default())
         .manage(desktop_cast::DesktopCastState::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder
@@ -5815,10 +6145,12 @@ pub fn run() {
             .build(),
     );
     let builder = builder.setup(|app| {
+            startup_trace::mark("setup");
             // Reclaim what the last session left behind, before anything writes more. Detached: a
             // stat walk over an abandoned torrent payload must not sit between launch and paint.
             cache_gc::sweep_at_startup(app.handle());
             subtitle_fonts::init(app.handle());
+            modules::start(app.handle());
             // Game mode: WebKitGTK takes text hinting from GTK's settings. GNOME's slight hinting
             // rounds every glyph advance, so under the Deck's page zoom each line of text ran about
             // 2% longer than in Chromium, which lays text out unhinted on linear metrics at a
@@ -5849,16 +6181,22 @@ pub fn run() {
             // single time. The scheme comes from the config so a side-by-side build claims its own
             // and never evicts the installed release's registration.
             // `magnet:` is deliberately not touched here — see PENDING_MAGNET.
+            // Never inside a Flatpak: the sandbox ships neither tool and its data dir is private,
+            // so it failed on every launch; only the exported desktop file can claim a scheme.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
+            if !running_in_flatpak() {
                 let scheme = configured_deep_link_scheme(app.config());
-                let deep_link = app.deep_link();
-                if !deep_link.is_registered(&scheme).unwrap_or(false) {
-                    if let Err(error) = deep_link.register(&scheme) {
-                        eprintln!("[izumi] {scheme}:// handler registration skipped: {error}");
+                let handle = app.handle().clone();
+                // Off the main thread: the check alone spawns xdg-mime, which delayed the window.
+                std::thread::spawn(move || {
+                    use tauri_plugin_deep_link::DeepLinkExt;
+                    let deep_link = handle.deep_link();
+                    if !deep_link.is_registered(&scheme).unwrap_or(false) {
+                        if let Err(error) = deep_link.register(&scheme) {
+                            eprintln!("[izumi] {scheme}:// handler registration skipped: {error}");
+                        }
                     }
-                }
+                });
             }
             // Restore iroh only for devices that already opted into a sync group. Fresh
             // installs remain fully offline until the user enables Device Sync explicitly.
@@ -5866,6 +6204,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 sync::initialize_if_configured(sync_app).await
             });
+            startup_trace::mark("setup.services");
 
             // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
             // on_new_window handler. Tauri denies `window.open` by default, which silently blocks the
@@ -5936,16 +6275,25 @@ pub fn run() {
                     .visible(false)
                     // Native Deck zoom is applied by the frontend after it reads the persisted UI
                     // scale. Hide the first document paint until then to prevent a launch zoom-in.
-                    .initialization_script(if gamescope {
-                        "(function(){function hide(){if(!document.documentElement)return false;document.documentElement.classList.add('deck-launch-pending');return true}if(!hide())document.addEventListener('DOMContentLoaded',hide,{once:true})})();"
-                    } else {
-                        ""
-                    })
+                    // A pack's startup animation starts from app.html, before the app's code loads.
+                    .initialization_script(format!(
+                        "{}{}",
+                        startup_animation::launch_script(app.handle()),
+                        if gamescope {
+                            "(function(){function hide(){if(!document.documentElement)return false;document.documentElement.classList.add('deck-launch-pending');return true}if(!hide())document.addEventListener('DOMContentLoaded',hide,{once:true})})();"
+                        } else {
+                            ""
+                        }
+                    ))
                     .on_page_load(|win, payload| {
                         #[cfg(windows)]
                         install_webview_frame_scripts(&win);
                         if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                            startup_trace::mark("page.finished");
                             let _ = win.show();
+                            startup_trace::mark("window.shown");
+                        } else {
+                            startup_trace::mark("page.started");
                         }
                     })
                     .on_new_window(move |url, features| {
@@ -6206,6 +6554,7 @@ pub fn run() {
                     &app.config().identifier,
                 )
                 .build()?;
+                startup_trace::mark("window.built");
 
                 // The window above is built hidden and `on_page_load` is the ONLY thing that ever
                 // reveals it. When that first load never reaches Finished — a webview that fails to
@@ -6345,6 +6694,18 @@ pub fn run() {
                         }
                     }
                 });
+                // The page writes the CEF migration file before it lets the window close
+                // (engine-migration.ts, capped at 2 s). If the page is hung, close anyway.
+                let close_win = win.clone();
+                win.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                        let close_win = close_win.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_secs(4));
+                            let _ = close_win.destroy();
+                        });
+                    }
+                });
                 let native_touch_app = app.handle().clone();
                 let _ = win.with_webview(move |pw| {
                     use glib::object::ObjectType;
@@ -6429,6 +6790,7 @@ pub fn run() {
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;
+            startup_trace::mark("setup.done");
             Ok(())
         });
 
@@ -6440,7 +6802,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(player::PlayerHandle::new())
         .manage(desktop_presence::DesktopPresence::default())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(route_player_commands(tauri::generate_handler![
             greet,
             reset::reset_local_data,
             open_developer_tools,
@@ -6473,6 +6835,7 @@ pub fn run() {
             native_touch_hold,
             gm_touch_unstick,
             gm_log,
+            engine_migration_write,
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
@@ -6482,6 +6845,11 @@ pub fn run() {
             http_get,
             opensubtitles_moviehash,
             subtitle_fonts::subtitle_fonts_save,
+            subtitle_fonts::subtitle_fonts_fetch,
+            embedded_subtitles::embedded_subtitle_cues,
+            plugin_signin::plugin_signin_listen,
+            plugin_signin::plugin_signin_wait,
+            plugin_signin::plugin_signin_cancel,
             http_post,
             ext_fetch,
             http_cancel,
@@ -6539,6 +6907,22 @@ pub fn run() {
             player_gif_stop,
             player_gif_abort,
             player_capture_segment,
+            widevine_status,
+            widevine_download,
+            widevine_accept,
+            widevine_save,
+            widevine_save_folder,
+            widevine_save_cancel,
+            widevine_remove,
+            module_status,
+            module_request,
+            module_retry,
+            module_release,
+            startup_animation::startup_animation_set,
+            startup_animation::startup_animation_clear,
+            startup_animation::startup_animation_info,
+            startup_animation::startup_animation_url,
+            pending_pack::pack_take_pending,
             player_diag,
             mpv_version,
             player_command,
@@ -6556,7 +6940,11 @@ pub fn run() {
             download::download_cancel,
             download::download_delete,
             download::download_dir_default,
+            download::download_disk_space,
+            startup_trace::startup_marks,
             download::reveal_in_folder,
+            drm_download::drm_download_start,
+            drm_download::drm_download_cancel,
             direct_torrent::torrent_engine_warmup,
             direct_torrent::torrent_metadata_prefetch,
             direct_torrent::torrent_playback_cancel_start,
@@ -6605,7 +6993,7 @@ pub fn run() {
             watch_room::watch_room_leave,
             youtube_embed::youtube_embed_url,
             youtube_embed::youtube_embed_lan_url
-        ]);
+        ]));
 
     #[cfg(target_os = "android")]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -6614,6 +7002,15 @@ pub fn run() {
         // Always answers None on Android (no argv), but keeping it registered means the shared
         // deep-link bootstrap doesn't have to branch per platform.
         take_pending_magnet,
+        module_status,
+        module_request,
+        module_retry,
+        module_release,
+        startup_animation::startup_animation_set,
+        startup_animation::startup_animation_clear,
+        startup_animation::startup_animation_info,
+        startup_animation::startup_animation_url,
+        pending_pack::pack_take_pending,
         // Android has no scrub tiles (playback is delegated), but it does accumulate the torrent,
         // subtitle and update buckets, and the Storage screen is shared.
         cache_usage,
@@ -6621,6 +7018,7 @@ pub fn run() {
         http_get,
         opensubtitles_moviehash,
         subtitle_fonts::subtitle_fonts_save,
+        subtitle_fonts::subtitle_fonts_fetch,
         http_post,
         ext_fetch,
         http_cancel,
@@ -6645,6 +7043,8 @@ pub fn run() {
         download::download_cancel,
         download::download_delete,
         download::download_dir_default,
+        download::download_disk_space,
+        startup_trace::startup_marks,
         download::reveal_in_folder,
         direct_torrent::torrent_engine_warmup,
         direct_torrent::torrent_metadata_prefetch,
@@ -6699,9 +7099,16 @@ pub fn run() {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let builder = builder.plugin(tauri_plugin_haptics::init());
 
+    startup_trace::mark("builder");
     builder
-        .run(isolate_dev_context(tauri::generate_context!()))
-        .expect("error while running tauri application");
+        .build(isolate_dev_context(tauri::generate_context!()))
+        .expect("error while running tauri application")
+        .run(|_app, _event| {
+            #[cfg(not(target_os = "android"))]
+            if let tauri::RunEvent::Exit = _event {
+                extension_service::stop_all_on_exit(_app);
+            }
+        });
 }
 
 #[cfg(not(target_os = "android"))]
@@ -6735,6 +7142,29 @@ mod discussanime_reaction_tests {
         assert!(da_reaction_url("http://discussanime.moe", "thread-12").is_err());
         assert!(da_reaction_url("https://notdiscussanime.moe", "thread-12").is_err());
         assert!(da_reaction_url("https://discussanime.moe", "").is_err());
+    }
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod player_thread_tests {
+    use super::*;
+
+    /// A renamed command would silently drop back onto the UI thread. Each name must stay a sync
+    /// command (async ones already run off it) registered in the desktop handler.
+    #[test]
+    fn player_thread_commands_are_registered_sync_commands() {
+        let source = include_str!("lib.rs").replace("\r\n", "\n");
+        for name in PLAYER_THREAD_COMMANDS {
+            assert!(
+                source.contains(&format!("#[tauri::command]\nfn {name}(")),
+                "{name} is not a sync command"
+            );
+            assert!(
+                source.contains(&format!("\n            {name},\n")),
+                "{name} is not registered"
+            );
+        }
     }
 }
 
@@ -6862,7 +7292,7 @@ mod subtitle_zip_tests {
             ),
         ]);
         assert_eq!(
-            unzip_first_subtitle(&zip).unwrap(),
+            unzip_subtitle(&zip, None).unwrap(),
             b"1\n00:00:01,000 --> 00:00:02,000\nHello\n"
         );
     }
@@ -6870,13 +7300,35 @@ mod subtitle_zip_tests {
     #[test]
     fn falls_back_to_ass() {
         let zip = make_zip(&[("a.txt", b"x"), ("b.ass", b"[Events]")]);
-        assert_eq!(unzip_first_subtitle(&zip).unwrap(), b"[Events]");
+        assert_eq!(unzip_subtitle(&zip, None).unwrap(), b"[Events]");
     }
 
     #[test]
     fn errors_when_no_subtitle() {
         let zip = make_zip(&[("a.txt", b"x"), ("b.nfo", b"y")]);
-        assert!(unzip_first_subtitle(&zip).is_err());
+        assert!(unzip_subtitle(&zip, None).is_err());
+    }
+
+    #[test]
+    fn a_season_pack_yields_the_requested_episode() {
+        // Real pack layout: the archive does not list its episodes in order.
+        let zip = make_zip(&[
+            ("Show.S01E28.WEBRip.en.srt", b"twenty-eight"),
+            ("Show.S01E01.WEBRip.en.srt", b"one"),
+            ("Show.S01E02.WEBRip.en.srt", b"two"),
+        ]);
+        assert_eq!(unzip_subtitle(&zip, Some(2)).unwrap(), b"two");
+        assert_eq!(unzip_subtitle(&zip, Some(28)).unwrap(), b"twenty-eight");
+        // A season pack without the episode must not hand back another episode's file.
+        assert!(unzip_subtitle(&zip, Some(5)).is_err());
+    }
+
+    #[test]
+    fn an_episode_number_never_rejects_a_single_episode_archive() {
+        let zip = make_zip(&[("Show - S01E01.English[SDH].ass", b"[Events]")]);
+        assert_eq!(unzip_subtitle(&zip, Some(13)).unwrap(), b"[Events]");
+        let zip = make_zip(&[("English.srt", b"en"), ("English SDH.srt", b"sdh")]);
+        assert_eq!(unzip_subtitle(&zip, Some(4)).unwrap(), b"en");
     }
 }
 
@@ -6982,3 +7434,4 @@ mod deep_link_tests {
             .is_some_and(|s| s.iter().any(|s| s == "izumi"))));
     }
 }
+

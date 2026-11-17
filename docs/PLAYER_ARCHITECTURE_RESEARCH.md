@@ -447,7 +447,7 @@ Every new route ships behind a remote/local kill switch, reports its reason, and
 
 ## Licensing and distribution checkpoint
 
-Izumi is distributed under AGPL-3.0-or-later in the checked-out repository. That does not remove component-specific obligations or patent/trademark questions.
+Izumi is distributed under GPL-3.0-or-later in the checked-out repository. That does not remove component-specific obligations or patent/trademark questions.
 
 - mpv is GPLv2+ by default and can be built under LGPLv2.1+ only with the corresponding configuration/feature restrictions ([mpv repository](https://github.com/mpv-player/mpv)). Record the exact build configuration and provide required notices/source.
 - FFmpeg's licensing depends on build flags and linked libraries; its legal page explicitly separates license compliance from patent questions ([FFmpeg legal](https://ffmpeg.org/legal.html)).
@@ -472,3 +472,104 @@ The likely highest-return sequence is:
 5. only then, narrowly justified new formats or transform services.
 
 That sequence improves speed and support while keeping Izumi's strongest existing assets—libmpv breadth, libass subtitle fidelity, direct Windows output, and current fallback behavior—intact.
+
+## Addendum 2026-10-29: protected streams on Linux, Shaka and media_kit
+
+**Question.** On the Steam Deck a protected episode opened far slower than in a Chromium-based reference
+client, and B took a beat to leave it. Do we need mpv for everything, should some streams go through Shaka
+instead, and is a wrapper like media_kit a lighter path than what izumi does today?
+
+### What changed since the decision above
+
+The record says "keep Shaka/EME for desktop DRM". That still holds where the webview has EME (Windows
+WebView2, where `DrmSurface` plays protected streams through Shaka). It cannot hold on Linux: WebKitGTK in
+the GNOME runtime izumi ships on has no EME at all (`requestMediaKeySystemAccess` is undefined, verified on
+the Deck, not even ClearKey). Since October izumi hosts Google's Widevine module itself on Linux, the way
+Kodi does (`src-tauri/src/widevine/`), and plays the decrypted streams in its one libmpv player.
+
+### Where the time went (Deck, Game mode, 2026-10-29, before this round)
+
+Press on a Continue Watching card until the first moving picture: **2.5 s** warm, **3.2 s** on the first
+play after launch.
+
+| Step | Time | Why |
+|---|---|---|
+| Source manifest re-read | 409 ms | re-read after a minute, on the critical path |
+| Title details | 246 ms | the focus prefetch waited behind the manifest |
+| Stream + play token | 43 + 186 ms | token minted by the source, needed for the first presentation |
+| `player_embed` | 773 ms | manifest, file heads, licence and a whole first fragment, one after another |
+| mpv to first picture | ~760 ms | a second whole fragment for the resume point, then every frame from its IDR |
+
+The module always opened on fragment 0 (3.7-7.7 MB at 1080p) just to read the frame timing. A resume
+point then downloaded its own fragment and decoded up to four seconds of frames in software before the
+first picture.
+
+Leaving with B froze the page for 0.85 s while the episode kept playing. 0.71 s of it was one forced
+layout of the page coming back from `display: none`. Style recalculation for Home's 2,250 elements took
+371 ms, of which ~260 ms was the theme stylesheet's `@scope (:root) to (…)` wrapper (111 ms unwrapped,
+81 ms with no theme).
+
+### Options weighed
+
+1. **Shaka in the webview for some streams.** Impossible for protected streams on Linux (no EME). For clear
+   DASH/HLS, WebKit's MSE (GStreamer) could run Shaka, but mpv already plays those, with hardware decoding.
+   A second engine would duplicate the subtitles (libass), track menus, the Game-mode native HUD (drawn by
+   mpv), progress, thumbnails and the single-window surface for no measured gain. The library's main
+   formats (MKV, ASS typesetting, 10-bit HEVC) need mpv anyway. **No.**
+2. **media_kit.** A Flutter (Dart) package around libmpv plus Flutter's texture plumbing. izumi already
+   drives libmpv directly from Rust in its own window, so media_kit would mean a different UI toolkit
+   around the same engine, and it has no Widevine either. Not lighter, not applicable. **No.**
+3. **A Chromium-based helper for protected streams** (the reference client's route). Proven on the Deck at
+   1080p, but 123 MB, a second window to hand the screen to in Game mode, and controller routing between
+   two processes. Already rejected as too big. **No.**
+4. **GStreamer with an OpenCDM plugin.** Tried: its decryptor only handles Widevine audio, and the plugin's
+   ABI is dead upstream. **No.**
+5. **Keep libmpv everywhere on Linux and make the pipeline fast.** **Yes.**
+
+### Is our approach overkill?
+
+No. The Widevine host is the smallest thing that plays protected streams in izumi's single window on
+Linux: about two thousand lines plus a small C++ shim, under 1 MB. Its one inherent cost is that Google's
+desktop module refuses decrypt-only video. Video is therefore decoded in software inside the module:
+about 57 % of one core and roughly +1.4 W at 1080p, against hardware decoding of clear video. Chrome and
+Firefox pay the same cost on Linux, and so does the reference client.
+
+The reference client does not open faster because of Shaka itself. It overlaps the same network steps,
+and its adaptive start picks a small first segment. Our slowness came from doing every step in sequence
+and downloading one or two whole 1080p fragments before the first picture.
+
+### What this round changed
+
+- Opening overlaps:
+  - the module and its instance load while the manifest downloads;
+  - the licence goes out while the file heads download;
+  - the fragment playback opens in downloads while the licence is out (encrypted bytes need no key).
+- The module's decoder starts on that fragment. Playback opens at its first frame (an IDR), so the first
+  picture needs one decode. A resume can start up to one fragment (about 4 s) early.
+- One timing line per playback in the log: `[widevine] ready in … ms: module …, manifest …, file heads …,
+  licence …, first fragment …`.
+- The source manifest answers from the copy already read while a fresh one loads.
+- B pauses the episode at the press and keeps the controls down while the page returns.
+- Theme stylesheets are plain rules unless a protected surface (security-sensitive dialogs, Game mode's
+  HUD) is mounted. The izumi wordmark is protected with a shadow root instead.
+- Game mode's native loading ring is sized in screen pixels, so it matches the page's ring.
+
+### Measured after this round (Deck, Game mode)
+
+| | Before | After |
+|---|---|---|
+| Continue Watching press to moving picture (warm) | 2.54 s | 1.37 s |
+| mpv open to first picture | ~760 ms | ~380 ms |
+| B to the page under the player | 0.85 s, episode still playing | 0.35 s, paused at the press (10 ms) |
+| Style recalculation of Home (2,250 elements) | 371 ms | 113 ms |
+
+The first play after launch is still ~2.3 s: its licence takes ~1.4 s against ~0.5 s once warm. A TLS warm-up
+of the licence server's connection did not change that; a per-step licence timing line is logged to find out
+which step it is.
+
+### Next, if more is needed
+
+- **Decode the first samples while the fragment is still downloading.** The first IDR is ~100-300 KB of a
+  multi-megabyte fragment. This is the largest remaining startup cost on slow networks.
+- **Keep one module instance warm** after Home loads, when a protected source is installed.
+- **Do not mint play tokens on focus.** They count against the account's concurrent streams.

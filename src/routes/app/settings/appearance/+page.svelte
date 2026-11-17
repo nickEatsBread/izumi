@@ -15,7 +15,11 @@
   import { settingsControllerMode } from '$lib/settings/surface'
   import { m } from '$lib/paraglide/messages.js'
   import { catalogLabel, catalogScreen, customScreens } from '$lib/settings/catalog'
-  import { screenThemeName, setScreenTheme } from '$lib/themes/screen-theme'
+  import { effectiveStudioTheme, effectiveThemePreset, playerTheme, resolveScreenTheme, screenThemeName, screenThemeOptions, setScreenTheme, type ScreenThemeRef } from '$lib/themes/screen-theme'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import { studioThemes } from '$lib/settings/theme-studio'
+  import ThemeSettingsRows from '$lib/components/settings/ThemeSettingsRows.svelte'
+  import { playStartupAnimationNow, startupAnimationEnabled, startupAnimationInfo } from '$lib/startup/animation'
 
   const presets = [
     { value: 'izumi', label: 'Izumi', description: 'Dark, rose accent' },
@@ -25,6 +29,7 @@
     { value: 'light', label: 'Light', description: 'Light, crimson accent' },
     { value: 'system', label: 'System', description: 'Follows your device' },
   ]
+  const playerDesign = $derived(resolveScreenTheme($playerTheme, $studioThemes)?.design)
   // Installed and Theme Studio themes set the preset to 'custom': show it, but it is chosen in Themes.
   const presetOptions = $derived($themePreset === 'custom'
     ? [...presets, { value: 'custom', label: 'Custom', description: 'From Themes or Theme Studio', disabled: true }]
@@ -37,7 +42,12 @@
 {#snippet hapticsSwitch()}<SettingsSwitch value={$haptics} onToggle={() => ($haptics = !$haptics)} label={m.settings_haptics()} interactive={false} />{/snippet}
 {#snippet wheelSwitch()}<SettingsSwitch value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} label="Wheel-scroll carousels" interactive={false} />{/snippet}
 {#snippet trailersSwitch()}<SettingsSwitch value={$backdropTrailers} onToggle={() => ($backdropTrailers = !$backdropTrailers)} label="Theme trailers" interactive={false} />{/snippet}
+{#snippet startupSwitch()}<SettingsSwitch value={$startupAnimationEnabled} onToggle={() => ($startupAnimationEnabled = !$startupAnimationEnabled)} label="Startup intro" interactive={false} />{/snippet}
 {#snippet dragSwitch()}<SettingsSwitch value={$dragCarousels} onToggle={() => ($dragCarousels = !$dragCarousels)} label="Mouse-drag carousels" interactive={false} />{/snippet}
+{#snippet playerThemeMenu()}
+  <SelectMenu variant="inline" value={$playerTheme} options={screenThemeOptions($studioThemes)} ariaLabel="Player theme"
+    onChange={(value) => ($playerTheme = value as ScreenThemeRef | '')} />
+{/snippet}
 {#snippet scaleControl()}
   <span class="flex w-full items-center gap-3 sm:w-auto">
     <input type="range" min="0.5" max="2" step="0.1" data-focusable bind:value={$uiScale} aria-label={m.settings_ui_scale()} class="ui-range h-6 w-full cursor-pointer sm:h-2 sm:w-40" />
@@ -56,6 +66,15 @@
         {/snippet}
       </SettingsRow>
     {/if}
+    <!-- API 9: the settings of the theme showing here, then the player theme's when it is another design. -->
+    {#if $effectiveThemePreset === 'custom' && $effectiveStudioTheme.settings?.length}
+      <ThemeSettingsRows design={$effectiveStudioTheme} named />
+    {/if}
+    {#if playerDesign?.settings?.length && playerDesign.id !== $effectiveStudioTheme.id}
+      <ThemeSettingsRows design={playerDesign} named />
+    {/if}
+    <!-- While an episode opens or plays this theme paints the window; navigation and layout keep the app theme. -->
+    <SettingsRow settingKey="player-theme" title="Player theme" description="The look of the player and an episode's loading screen" control={playerThemeMenu} />
     <SettingsRow title="Themes" description="Install, update and manage themes" href="/app/settings/themes" chevron />
     <SetupElsewhere title="Theme Studio" status={$themePreset === 'custom' ? 'In use' : 'Not used'} where="Needs a mouse and keyboard: connect them to design here">
       <SettingsRow title="Theme Studio" description="Design your own colours, type and backdrop" href="/app/settings/theme-studio" chevron />
@@ -63,6 +82,10 @@
     <!-- Android never plays them (BackdropTrailer is desktop only). -->
     {#if !$isAndroid}
       <SettingsRow settingKey="theme-trailers" title="Theme trailers" description="Play the trailer some themes show behind the Home banner and series art" control={trailersSwitch} onActivate={() => ($backdropTrailers = !$backdropTrailers)} pressed={$backdropTrailers} />
+    {/if}
+    {#if $startupAnimationInfo}
+      <SettingsRow settingKey="startup-animation" title="Startup intro" description="The short video a pack plays when izumi starts. Off opens straight to Home" learnMore="Any key, click, tap or controller button skips it. Removing the pack removes it too." control={startupSwitch} onActivate={() => ($startupAnimationEnabled = !$startupAnimationEnabled)} pressed={$startupAnimationEnabled} />
+      <SettingsRow title="Play startup intro" description="Watch it now" onActivate={playStartupAnimationNow} />
     {/if}
   </SettingsSubcategory>
 

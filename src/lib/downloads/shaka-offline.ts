@@ -1,6 +1,5 @@
 import { assToVtt, type DrmSubtitle, type StreamDrm } from '$lib/player/drm'
 import { selectOfflineTracks } from '$lib/player/preferred-drm'
-import type { SubLang } from '$lib/settings/ui'
 
 interface ShakaResolution {
   url: string
@@ -8,7 +7,7 @@ interface ShakaResolution {
   subtitles?: DrmSubtitle[]
   audioLang?: string
   preferredHeight?: number
-  preferredSubLang?: SubLang
+  preferredSubLang?: string[]
   filename: string
   provider?: string
 }

@@ -11,7 +11,7 @@ export interface BlockTab { label: string; role: string }
 
 /** Every movable navigation destination (mirrors `NAV_META` in `$lib/settings/nav`; the app checks
  * the two stay in step). Kept here, import-free, because theme packages name destinations too. */
-export const NAV_DESTINATIONS = ['schedule', 'downloads', 'watch', 'settings', 'search', 'trakt', 'letterboxd', 'library'] as const
+export const NAV_DESTINATIONS = ['schedule', 'downloads', 'watch', 'settings', 'search', 'trakt', 'letterboxd', 'library', 'browse'] as const
 export type NavDestination = (typeof NAV_DESTINATIONS)[number]
 export type BlockDestination = NavDestination | 'home'
 /** A profile-header shortcut. `art` (Theme API 4 in packages) draws artwork under the label: the

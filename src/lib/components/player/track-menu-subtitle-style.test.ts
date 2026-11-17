@@ -20,10 +20,9 @@ describe('Steam Deck subtitle style menu', () => {
     expect(src).toContain('sessionSubtitleStyle.set(leaf.preset)')
   })
 
-  it('also exposes save/apply in the Deck touch fallback menu', () => {
-    expect(controls).toContain('async function saveDeckSubtitleStyle()')
-    expect(controls).toContain('Save current release style')
-    expect(controls).toContain('Apply {preset.name}')
+  it('leaves save/apply to that menu, which takes touch too, rather than a fallback list in the bar', () => {
+    expect(src).toContain('onclick={() => { subIdx = i; void apply(it) }}')
+    expect(controls).not.toContain('saveDeckSubtitleStyle')
   })
 })
 

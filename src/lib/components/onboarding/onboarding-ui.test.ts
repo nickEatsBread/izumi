@@ -68,7 +68,6 @@ describe('onboarding presentation contracts', () => {
     expect(artwork).toContain('img.shown:global([data-loaded])')
     expect(artwork).toContain('prefers-reduced-motion: reduce')
     expect(shell).toContain('.setup-content { animation: none; }')
-    expect(css).toContain('@media (prefers-reduced-motion: reduce) { .tile-spinner { animation: none; } }')
   })
 
   it('never asks for film metadata, an API key or a startup library during setup', () => {

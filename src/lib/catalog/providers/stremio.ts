@@ -2,12 +2,17 @@ import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
 import { CINEMETA_BASE, enabledAddonUrls, addonOriginId, normalizeBase } from '$lib/stremio/sources'
 import { fetchManifest, type AddonCatalog, type AddonManifest, type AddonResource } from '$lib/stremio/manifest'
+import { acceptsResourceId } from '$lib/stremio/manifest-capability'
+import { addonResourceUrl } from '$lib/stremio/resource-url'
 import { listProviderByAddonId } from '$lib/stremio/list-providers'
-import type { Media, MediaVideo } from '$lib/anilist/types'
-import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
+import type { Media, MediaSourceFacts, MediaVideo } from '$lib/anilist/types'
+import {
+  continueCatalogOf, heroCatalogOf, isSourceBase, isSourceOrigin, sourceAddon, sourceAddonForOrigin, sourceOriginForBase,
+} from '../source-catalogs'
+import { catalogHomeLayouts, resolveCatalogHomeRows, type CatalogHomeTarget } from '../home-layout'
 import { CONTINUE_HOME_ROW } from '../home-options'
 import { compatibilityMediaId, type CatalogContentType, type MediaRef } from '../identity'
-import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
+import { CatalogConfigurationError, SourceSignInError, type CatalogHome, type CatalogHomeRowOption, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
 import { enrichOmdbRatings } from './omdb'
 import { interleaveFeatured, rankFeaturedMedia } from '../featured-context'
 
@@ -22,6 +27,8 @@ interface StremioVideo {
   thumbnail?: string
   overview?: string
   streams?: import('$lib/stremio/parse').Stream[]
+  /** izumi extras a source catalog may add (progress). Other clients ignore them. */
+  izumi?: unknown
 }
 
 export interface StremioMeta {
@@ -47,6 +54,9 @@ export interface StremioMeta {
   genre?: string[]
   trailers?: { source?: string; type?: string }[]
   videos?: StremioVideo[]
+  /** izumi extras a source catalog may add (rating, audio, card progress, watchlist). */
+  izumi?: unknown
+  behaviorHints?: { defaultVideoId?: string }
 }
 
 const contentType = (type?: string): CatalogContentType => type === 'movie'
@@ -88,6 +98,83 @@ function year(value?: string): number | undefined {
   return match ? Number(match[0]) : undefined
 }
 
+/** A source's own base keeps its loopback http address; public add-ons are normalized to https. */
+const urlBase = (base: string): string => (isSourceBase(base) ? base.replace(/\/+$/, '') : normalizeBase(base))
+/** A resource URL: a local source's base as it is, an add-on's through `addonResourceUrl`, which keeps a query string in the base. */
+const resourceUrl = (base: string, path: string): string => (isSourceBase(base) ? urlBase(base) + path : addonResourceUrl(base, path))
+/** Title identities name a source by its package, not its port, which changes between launches. */
+const originOf = (base: string): string => sourceOriginForBase(base) ?? addonOriginId(base)
+
+const shortText = (value: unknown, max: number) =>
+  typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : undefined
+const unit = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : undefined)
+const secondsOf = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined)
+/** A URL izumi may call on a source's behalf: only on that source's own address. */
+function ownUrl(value: unknown, base: string): string | undefined {
+  if (typeof value !== 'string' || !isSourceBase(base)) return undefined
+  try {
+    const url = new URL(value)
+    return url.origin === new URL(base).origin ? url.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The `izumi` extras on a meta, checked field by field: they come from the add-on. */
+export function sourceFacts(raw: unknown, base: string): MediaSourceFacts | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const value = raw as Record<string, unknown>
+  const card = (value.continue ?? value.episode) as Record<string, unknown> | undefined
+  const upNext = value.upNext as Record<string, unknown> | undefined
+  const upNextId = upNext && typeof upNext === 'object' ? shortText(upNext.videoId, 256) : undefined
+  const watchlistUrl = ownUrl(value.watchlistUrl, base)
+  const seasons = (Array.isArray(value.seasons) ? value.seasons.slice(0, 100) : []).flatMap((season) => {
+    const entry = season as Record<string, unknown> | null
+    const number = entry?.number
+    const name = shortText(entry?.title, 80)
+    return typeof number === 'number' && Number.isInteger(number) && number >= 0 && name ? [{ number, title: name }] : []
+  })
+  const facts: MediaSourceFacts = {
+    ...(shortText(value.rating, 12) ? { rating: shortText(value.rating, 12) } : {}),
+    ...(shortText(value.audio, 32) ? { audio: shortText(value.audio, 32) } : {}),
+    ...(card && typeof card === 'object' ? {
+      card: {
+        videoId: shortText(card.videoId, 256),
+        label: shortText(card.label, 24),
+        remainingSec: secondsOf(card.remainingSec),
+        progress: unit(card.progress),
+      },
+    } : {}),
+    ...(value.isNew === true ? { isNew: true } : {}),
+    ...(upNextId ? { upNext: { videoId: upNextId, label: shortText(upNext!.label, 24), playhead: secondsOf(upNext!.playhead) } } : {}),
+    ...(typeof value.watchlist === 'boolean' ? { watchlist: value.watchlist } : {}),
+    ...(watchlistUrl ? { watchlistUrl } : {}),
+    ...(seasons.length ? { seasons } : {}),
+  }
+  return Object.keys(facts).length ? facts : undefined
+}
+
+/** `izumi.track` on a source's video: the AniList entry and episode it is. Whole positive numbers only. */
+function videoTrack(raw: unknown): Pick<MediaVideo, 'track'> {
+  const track = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).track : undefined
+  if (!track || typeof track !== 'object') return {}
+  const { anilist, mal, episode } = track as Record<string, unknown>
+  const id = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined)
+  if (!id(anilist) || !id(episode)) return {}
+  return { track: { anilist: id(anilist)!, episode: id(episode)!, ...(id(mal) ? { mal: id(mal) } : {}) } }
+}
+
+function videoProgress(raw: unknown): Pick<MediaVideo, 'progress' | 'playhead' | 'watched' | 'durationSec'> {
+  if (!raw || typeof raw !== 'object') return {}
+  const value = raw as Record<string, unknown>
+  return {
+    ...(unit(value.progress) !== undefined ? { progress: unit(value.progress) } : {}),
+    ...(secondsOf(value.playhead) !== undefined ? { playhead: secondsOf(value.playhead) } : {}),
+    ...(typeof value.watched === 'boolean' ? { watched: value.watched } : {}),
+    ...(secondsOf(value.durationSec) !== undefined ? { durationSec: secondsOf(value.durationSec) } : {}),
+  }
+}
+
 function runtimeMinutes(value?: string): number | undefined {
   if (!value) return undefined
   const hours = Number(/(\d+)\s*h/i.exec(value)?.[1] ?? 0)
@@ -120,7 +207,7 @@ export function mapStremioMeta(raw: StremioMeta, base: string, forcedType?: stri
   // Stremio catalogs can mix movies and series under a custom catalog type, so a row's explicit
   // type wins. `forcedType` is the fallback for the common compact-preview shape that omits it.
   const stremioType = raw.type ?? forcedType ?? 'series'
-  const addonId = addonOriginId(base)
+  const addonId = originOf(base)
   const releaseYear = year(raw.releaseInfo ?? raw.released)
   const opaqueId = forcedIdentity ?? encodeStremioIdentity(addonId, stremioType, raw.id)
   const ref = {
@@ -140,10 +227,15 @@ export function mapStremioMeta(raw: StremioMeta, base: string, forcedType?: stri
     thumbnail: video.thumbnail,
     released: video.released,
     streams: video.streams,
+    ...videoProgress(video.izumi),
+    ...videoTrack(video.izumi),
   }))
   if (!videos.length && stremioType === 'movie') videos.push({ id: raw.id, number: 1, title: raw.name })
   const rating = Number(raw.imdbRating)
+  const source = sourceFacts(raw.izumi, base)
   return {
+    ...(source ? { sourceFacts: source } : {}),
+    ...(source?.rating ? { contentRating: source.rating } : {}),
     id: compatibilityMediaId(ref),
     catalog: ref,
     externalIds: idsOf(raw.id),
@@ -255,21 +347,21 @@ function extraPath(extra: Record<string, string | number | undefined>): string {
 }
 
 export function stremioCatalogUrl(base: string, entry: Pick<AddonCatalog, 'type' | 'id'>, extra: Record<string, string | number | undefined> = {}): string {
-  return `${normalizeBase(base)}/catalog/${encodeURIComponent(entry.type)}/${encodeURIComponent(entry.id)}${extraPath(extra)}.json`
+  return resourceUrl(base, `/catalog/${encodeURIComponent(entry.type)}/${encodeURIComponent(entry.id)}${extraPath(extra)}.json`)
 }
 
 export function stremioMetaUrl(base: string, type: string, id: string): string {
-  return `${normalizeBase(base)}/meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`
+  return resourceUrl(base, `/meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`)
 }
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await phttp(url, { signal, timeoutMs: 15_000, maxBytes: 4 * 1024 * 1024 })
-  if (!response.ok) throw new Error(`Stremio metadata add-on returned HTTP ${response.status}`)
+  if (!response.ok) throw Object.assign(new Error(`Stremio metadata add-on returned HTTP ${response.status}`), { status: response.status })
   return response.json() as Promise<T>
 }
 
 async function catalog(base: string, entry: AddonCatalog, extra: Record<string, string | number | undefined>, signal?: AbortSignal) {
-  const normalized = normalizeBase(base)
+  const normalized = urlBase(base)
   const url = stremioCatalogUrl(normalized, entry, extra)
   const response = await getJson<{ metas?: StremioMeta[] }>(url, signal)
   return (response.metas ?? []).flatMap((meta) => {
@@ -277,6 +369,8 @@ async function catalog(base: string, entry: AddonCatalog, extra: Record<string, 
     return media ? [rememberSummary(media)] : []
   })
 }
+
+type SourceLoader = () => Promise<StremioCatalogSource[]>
 
 async function manifests(): Promise<{ base: string; manifest: AddonManifest }[]> {
   const bases = get(enabledAddonUrls)
@@ -288,7 +382,12 @@ async function manifests(): Promise<{ base: string; manifest: AddonManifest }[]>
   return capable
 }
 
-const canSearch = (entry: AddonCatalog) => (entry.extra ?? []).some((extra) => extra.name === 'search')
+// As Stremio reads a catalog: `search` declared in `extra` or the legacy `extraSupported`, and no
+// other required extra the search could not fill.
+const canSearch = (entry: AddonCatalog) =>
+  ((entry.extra ?? []).some((extra) => extra.name === 'search') || (entry.extraSupported ?? []).includes('search'))
+  && !(entry.extra ?? []).some((extra) => extra.isRequired && extra.name !== 'search')
+  && !(entry.extraRequired ?? []).some((name) => name !== 'search')
 
 export interface StremioCatalogVariant {
   key: string
@@ -321,6 +420,7 @@ const extraKey = (extra: Record<string, string>): string => Object.entries(extra
  * catalogs) become their valid concrete rows; optional filters keep the unfiltered row and add
  * opt-in variants. Required user-history inputs without declared options remain non-browsable. */
 export function stremioCatalogVariants(entry: AddonCatalog): StremioCatalogVariant[] {
+  if (entry.izumi?.home === false) return []
   const extras = entry.extra ?? []
   const required = extras.filter((extra) => extra.isRequired)
   if (required.some((extra) => !extra.options?.length)) return []
@@ -329,7 +429,7 @@ export function stremioCatalogVariants(entry: AddonCatalog): StremioCatalogVaria
   for (const extra of required) {
     bases = bases.flatMap((base) => (extra.options ?? []).map((value) => ({ ...base, [extra.name]: value })))
   }
-  const optional = extras.filter((extra) => !extra.isRequired && extra.options?.length)
+  const optional = entry.izumi?.homeFilters === false ? [] : extras.filter((extra) => !extra.isRequired && extra.options?.length)
   const values = [
     ...bases.map((extra) => ({ extra, defaultEnabled: required.length === 0 })),
     ...bases.flatMap((base) => optional.flatMap((extra) => (extra.options ?? []).map((value) => ({
@@ -378,8 +478,10 @@ function stremioHomeEntries(sources: StremioCatalogSource[]): StremioHomeEntry[]
   const multipleSources = sources.length > 1
   return sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? []).flatMap((entry) =>
     stremioCatalogVariants(entry).map((variant) => {
-      const rootId = `${addonOriginId(base)}:${entry.type}:${entry.id}`
-      const title = multipleSources ? `${variant.title} · ${manifest.name}` : variant.title
+      const rootId = `${originOf(base)}:${entry.type}:${entry.id}`
+      // A source names its own rows ("Continue Watching", "Popular"): no type suffix.
+      const own = isSourceBase(base) ? (Object.keys(variant.extra).length ? variant.title : entry.name) : variant.title
+      const title = multipleSources ? `${own} · ${manifest.name}` : own
       const trending = /^trending(?:\s+now)?$/i.test(entry.name.trim())
       const listProvider = listProviderByAddonId(manifest.id)
       return {
@@ -417,29 +519,45 @@ export function stremioHomeRowOptionsForSources(sources: StremioCatalogSource[])
   return stremioHomeOptions(stremioHomeEntries(sources))
 }
 
-async function homeRows(): Promise<CatalogHomeRowOption[]> {
-  return stremioHomeRowOptionsForSources(await manifests())
+/** A source's featured and Continue Watching catalogs have their own places on Home, not rows. */
+function sourceSpecials(sources: StremioCatalogSource[]) {
+  const source = sources.length === 1 && isSourceBase(sources[0]!.base) ? sources[0]! : undefined
+  const hero = source ? heroCatalogOf(source.manifest) : undefined
+  const resume = source ? continueCatalogOf(source.manifest) : undefined
+  const special = new Set([hero, resume].filter(Boolean).map((entry) => `${originOf(source!.base)}:${entry!.type}:${entry!.id}`))
+  return { source, hero, resume, special }
 }
 
-async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
-  const sources = await manifests()
-  const available = stremioHomeEntries(sources)
+async function homeRows(load: SourceLoader): Promise<CatalogHomeRowOption[]> {
+  const sources = await load()
+  const { special } = sourceSpecials(sources)
+  return stremioHomeRowOptionsForSources(sources).filter((row) => !special.has(row.id))
+}
+
+async function home(load: SourceLoader, layoutKey: CatalogHomeTarget, signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
+  const sources = await load()
+  const { source, hero: heroEntry, resume, special } = sourceSpecials(sources)
+  const available = stremioHomeEntries(sources).filter((entry) => !special.has(entry.id))
   const byId = new Map(available.map((entry) => [entry.id, entry]))
   // Keep the provider safety cap, but apply it after customization so a user can promote a row
   // from a large add-on manifest by hiding or moving less useful catalogs.
   const options = stremioHomeOptions(available)
   const configured = rowIds
     ? options.map((row) => ({ ...row, enabled: rowIds.includes(row.id) }))
-    : resolveCatalogHomeRows('stremio', options, get(catalogHomeLayouts))
+    : resolveCatalogHomeRows(layoutKey, options, get(catalogHomeLayouts))
   const entries = configured
-    .filter((row) => row.enabled && row.id !== 'continue').flatMap((row) => byId.get(row.id) ?? []).slice(0, 16)
-  const rows = await Promise.all(entries.map(async ({ base, entry, id, extra, title, rankLabel }) => ({
-    id,
-    title,
-    rankLabel,
-    media: await catalog(base, entry, extra, signal).catch(() => []),
-    more: canSearch(entry) ? { type: contentType(entry.type) } : undefined,
-  })))
+    .filter((row) => row.enabled && row.id !== 'continue').flatMap((row) => byId.get(row.id) ?? []).slice(0, source ? 24 : 16)
+  const [rows, heroMedia, resumeMedia] = await Promise.all([
+    Promise.all(entries.map(async ({ base, entry, id, extra, title, rankLabel }) => ({
+      id,
+      title,
+      rankLabel,
+      media: await catalog(base, entry, extra, signal).catch(() => []),
+      more: canSearch(entry) ? { type: contentType(entry.type) } : undefined,
+    }))),
+    source && heroEntry ? catalog(source.base, heroEntry, {}, signal).catch(() => []) : Promise.resolve([]),
+    source && resume ? catalog(source.base, resume, {}, signal).catch(() => []) : Promise.resolve([]),
+  ])
   const sections = rows.filter((row) => row.media.length)
   // Give every enabled catalog a turn in the banner instead of letting the first 100-item row
   // consume every slot. The provider's own rank and our type-aware label stay attached.
@@ -448,24 +566,67 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
     40,
   )
   const hero = all.filter((media) => media.bannerImage)
+  const resumeId = source && resume ? `${originOf(source.base)}:${resume.type}:${resume.id}` : undefined
+  const resumeSection = resumeId && resumeMedia.length
+    ? [{ id: resumeId, title: resume!.name, media: resumeMedia }]
+    : []
   return {
-    hero: (hero.length ? hero : all).slice(0, 10),
-    sections: sections.map(({ rankLabel: _rankLabel, ...section }) => section),
+    // A source's own featured titles lead its banner; otherwise every row gets a turn.
+    hero: heroMedia.length ? heroMedia.slice(0, 10) : (hero.length ? hero : all).slice(0, 10),
+    sections: [...resumeSection, ...sections.map(({ rankLabel: _rankLabel, ...section }) => section)],
+    ...(resumeSection.length ? { continue: resumeId } : {}),
   }
 }
 
-async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
-  const sources = await manifests()
+// One add-on must not hold every search: a dead one (a gateway answering 504 after 12 s) kept
+// Cinemeta's answer, and the search spinner, waiting for its whole timeout on every query. Once
+// any catalog answers, the rest get a short grace. A late one keeps running in the background and
+// sits out a while only if it then fails, so a merely slow catalog is never benched.
+const SEARCH_GRACE_MS = 2_000
+const SEARCH_BENCH_MS = 5 * 60_000
+const benchedSearches = new Map<string, number>()
+
+async function search(load: SourceLoader, request: CatalogSearchRequest): Promise<CatalogPage> {
+  const sources = await load()
   const entries = sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? [])
     .filter((entry) => canSearch(entry)
-      && (!request.sourceAddonId || addonOriginId(base) === request.sourceAddonId)
+      && (!request.sourceAddonId || originOf(base) === request.sourceAddonId)
       && (request.type == null || request.type === 'all' || contentType(entry.type) === request.type))
     .map((entry) => ({ base, manifest, entry })))
   if (!entries.length) throw new CatalogConfigurationError('The enabled Stremio metadata add-ons do not declare searchable catalogs.')
   const skip = (Math.max(1, request.page ?? 1) - 1) * 100
-  const pages = await Promise.all(entries.map(({ base, entry }) => catalog(base, entry, {
-    search: request.query?.trim(), genre: request.genre, skip,
-  }, request.signal).catch(() => [])))
+  const keyOf = ({ base, entry }: { base: string; entry: AddonCatalog }) => stremioCatalogUrl(base, entry)
+  const ready = entries.filter((item) => (benchedSearches.get(keyOf(item)) ?? 0) <= Date.now())
+  // With every searchable catalog benched, asking them again is how a recovered one is found.
+  const asked = ready.length ? ready : entries
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  if (request.signal?.aborted) cancel()
+  request.signal?.addEventListener('abort', cancel, { once: true })
+  const bench = (index: number) => benchedSearches.set(keyOf(asked[index]), Date.now() + SEARCH_BENCH_MS)
+  const pages: Media[][] = []
+  let graceTimer: ReturnType<typeof setTimeout> | undefined
+  let startGrace = () => {}
+  const graceOver = new Promise<void>((resolve) => {
+    startGrace = () => { graceTimer ??= setTimeout(resolve, SEARCH_GRACE_MS) }
+  })
+  const all = Promise.all(asked.map(async ({ base, entry }, index) => {
+    try {
+      pages[index] = await catalog(base, entry, {
+        // Page 1 sends no skip, as Stremio does; strict routers misread `skip=0`.
+        search: request.query?.trim(), genre: request.genre, skip: skip || undefined,
+      }, controller.signal)
+      startGrace()
+    } catch {
+      if (!controller.signal.aborted) bench(index)
+    }
+  }))
+  try {
+    await Promise.race([all, graceOver])
+  } finally {
+    clearTimeout(graceTimer)
+    request.signal?.removeEventListener('abort', cancel)
+  }
   const seen = new Set<string>()
   const media = pages.flat().filter((item) => {
     const key = item.catalog?.id ?? String(item.id)
@@ -480,8 +641,8 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   }
 }
 
-async function genres(): Promise<string[]> {
-  const sources = await manifests()
+async function genres(load: SourceLoader): Promise<string[]> {
+  const sources = await load()
   const values = sources.flatMap(({ manifest }) => (manifest.catalogs ?? []).flatMap((entry) => [
     ...(entry.genres ?? []),
     ...(entry.extra ?? []).filter((extra) => extra.name === 'genre').flatMap((extra) => extra.options ?? []),
@@ -489,10 +650,10 @@ async function genres(): Promise<string[]> {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right))
 }
 
-async function searchOptions() {
-  const sources = await manifests()
+async function searchOptions(load: SourceLoader) {
+  const sources = await load()
   return {
-    sources: sources.map(({ base, manifest }) => ({ value: addonOriginId(base), label: manifest.name })),
+    sources: sources.map(({ base, manifest }) => ({ value: originOf(base), label: manifest.name })),
   }
 }
 
@@ -500,18 +661,36 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
   if (ref.provider !== 'stremio') return null
   const decoded = decodeStremioIdentity(ref.id)
   if (!decoded) return null
-  const base = get(enabledAddonUrls).map(normalizeBase).find((url) => addonOriginId(url) === decoded.addonId)
+  // A source's own catalog: its live address comes from its running service.
+  const sourceAddonInfo = isSourceOrigin(decoded.addonId) ? await sourceAddonForOrigin(decoded.addonId) : undefined
+  if (isSourceOrigin(decoded.addonId) && !sourceAddonInfo) {
+    throw new CatalogConfigurationError('The source that supplied this title is not available.')
+  }
+  const base = sourceAddonInfo?.base ?? get(enabledAddonUrls).map(normalizeBase).find((url) => addonOriginId(url) === decoded.addonId)
   if (!base) throw new CatalogConfigurationError('The Stremio metadata add-on that supplied this item is no longer enabled.')
   const summary = summaryCache.get(ref.id)
-  const expected: StremioIdentity = summary ? {
+  // A source's ids are its own: a card it titles differently ("… S3" on its banner) still opens that
+  // title's details, so only the id is checked there.
+  const expected: StremioIdentity = summary && !sourceAddonInfo ? {
     ...decoded,
     expectedTitle: summary.title.english ?? summary.title.romaji ?? summary.title.userPreferred,
     expectedYear: summary.startDate?.year,
   } : decoded
 
-  const manifest = await fetchManifest(base).catch(() => null)
+  const manifest = sourceAddonInfo?.manifest ?? await fetchManifest(base).catch(() => null)
+  // As in Stremio, every enabled add-on whose manifest serves this meta may answer, in add-on order.
+  // A catalog-only owner, or one whose meta route fails, no longer leaves the card without episodes.
+  const others = await Promise.all(get(enabledAddonUrls).map(normalizeBase).filter((url) => url && url !== base)
+    .map(async (url) => ({ url, manifest: await fetchManifest(url).catch(() => null) })))
   const candidates = [
-    ...(manifest && hasResource(manifest, 'meta') ? [{ base, identity: expected }] : []),
+    // When Cinemeta owns the card, the deduped Cinemeta entry below never runs. Its search index can
+    // hold an older title than its meta route, so only the year guards against a stale record here.
+    ...(manifest && hasResource(manifest, 'meta')
+      ? [{ base, identity: base === CINEMETA_BASE ? { ...expected, expectedTitle: undefined } : expected }]
+      : []),
+    // Another add-on answers for the exact id it was asked about, as Stremio takes it.
+    ...others.filter((other) => !!other.manifest?.resources?.length
+      && acceptsResourceId(other.manifest, 'meta', decoded.type, decoded.id)).map((other) => ({ base: other.url, identity: decoded })),
     ...(/^tt\d+$/i.test(decoded.id) && (decoded.type === 'movie' || decoded.type === 'series')
       // Cinemeta's route is keyed by the exact IMDb id. Its localized title may legitimately
       // differ from the catalog card, so the id/type contract is the authoritative check here.
@@ -528,9 +707,19 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
       )
       if (!response.meta || !stremioMetaMatchesIdentity(response.meta, candidate.identity)) continue
       const media = mapStremioMeta(response.meta, base, decoded.type, ref.id)
+      // A meta with no videos is one video, of any type: Stremio streams it by its default video id,
+      // else by the meta id itself. Only movies got that before, so a series or a channel had no id.
+      if (media && !media.videos?.length) {
+        media.videos = [{ id: response.meta.behaviorHints?.defaultVideoId ?? response.meta.id, number: 1, title: response.meta.name }]
+        media.episodes ??= 1
+      }
       if (media) return includeExternalRatings ? enrichOmdbRatings(media, signal) : media
     } catch (error) {
       if (signal?.aborted) throw error
+      // A signed-out source says so: its page then asks for the sign-in instead of "not found".
+      if (sourceAddonInfo && candidate.base === base && (error as { status?: number }).status === 401) {
+        throw new SourceSignInError('Sign in to this source to see its titles.', sourceAddonInfo.packageId)
+      }
       // Catalog-only add-ons are expected to miss this route. A transient add-on metadata error
       // should likewise fall through to Cinemeta/the already rendered catalog record.
     }
@@ -541,18 +730,33 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
 const detail = (ref: MediaRef, signal?: AbortSignal) => loadDetail(ref, signal, true)
 const presentation = (ref: MediaRef, signal?: AbortSignal) => loadDetail(ref, signal, false)
 
-export const stremioCatalog: CatalogProvider = {
-  id: 'stremio',
-  label: 'Stremio metadata',
-  capabilities: {
-    anime: true, movies: true, series: true, search: true, genres: true,
-    schedule: true, episodes: true, cast: true, relations: false,
-  },
-  homeRows,
-  home,
-  search,
-  genres,
-  searchOptions,
-  detail,
-  presentation,
+// A source's screen is still a Stremio provider: its titles open, search and play the Stremio way.
+function stremioProvider(label: string, load: SourceLoader, layoutKey: CatalogHomeTarget): CatalogProvider {
+  return {
+    id: 'stremio',
+    label,
+    capabilities: {
+      anime: true, movies: true, series: true, search: true, genres: true,
+      schedule: true, episodes: true, cast: true, relations: false,
+    },
+    homeRows: () => homeRows(load),
+    home: (signal, rowIds) => home(load, layoutKey, signal, rowIds),
+    search: (request) => search(load, request),
+    genres: () => genres(load),
+    searchOptions: () => searchOptions(load),
+    detail,
+    presentation,
+  }
+}
+
+export const stremioCatalog: CatalogProvider = stremioProvider('Stremio metadata', manifests, 'stremio')
+
+/** A source's own catalog screen: the Stremio provider over that one source's add-on. */
+export function sourceCatalogProvider(packageId: string, label: string): CatalogProvider {
+  return stremioProvider(label, async () => {
+    const addon = await sourceAddon(packageId).catch((error) => {
+      throw new CatalogConfigurationError(error instanceof Error ? error.message : String(error))
+    })
+    return [{ base: addon.base, manifest: addon.manifest }]
+  }, `source:${packageId}`)
 }

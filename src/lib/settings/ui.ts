@@ -76,12 +76,22 @@ export const skipPreviews = persisted<boolean>('player-skip-previews', false)
  *  always *marked* in the episode list; this controls whether auto-advance skips it. */
 export const skipFiller = persisted<boolean>('player-skip-filler', false)
 
-// --- Playback language preferences (mpv alang/slang auto-selection) ---
-// ISO 639-2 codes. Default JP audio + EN subs.
-export type AudioLang = 'jpn' | 'eng'
-export type SubLang = 'eng' | 'jpn' | 'none'
-export const preferredAudioLang = persisted<AudioLang>('preferred-audio-lang', 'jpn')
-export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
+// --- Playback language preferences: the global order (see catalog-languages.ts) ---
+// Comma-separated ISO 639-2 codes, most wanted first, or `auto`: each catalog then uses its own
+// default (Japanese audio and English subtitles for anime, the system language elsewhere).
+// Subtitles may also be `none` (off).
+export type AudioLang = string
+export type SubLang = string
+if (typeof localStorage !== 'undefined' && localStorage.getItem('playback-languages-auto-r1') == null) {
+  // Setup used to store the old built-in pair (Japanese audio, English subtitles) as if chosen, which
+  // would now force Japanese audio on films too. Move those two values to Automatic once (anime's
+  // default is the same pair); any other stored choice is the user's own and stays.
+  if (localStorage.getItem('preferred-audio-lang') === '"jpn"') localStorage.setItem('preferred-audio-lang', '"auto"')
+  if (localStorage.getItem('preferred-sub-lang') === '"eng"') localStorage.setItem('preferred-sub-lang', '"auto"')
+  localStorage.setItem('playback-languages-auto-r1', 'true')
+}
+export const preferredAudioLang = persisted<AudioLang>('preferred-audio-lang', 'auto')
+export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'auto')
 
 // --- Subtitle presentation + synchronization ---
 /** Apply Izumi's subtitle appearance instead of leaving styling entirely to the subtitle file. */
@@ -172,9 +182,6 @@ export const seadexAnnotations = persisted<boolean>('seadex-annotations', true)
 export const p2pStatusVisibility = persisted<P2PStatusVisibility>('player-p2p-status-visibility', 'initial')
 /** Auto-play the next episode when one finishes. Default on. */
 export const autoplayNext = persisted<boolean>('player-autoplay-next', true)
-/** Show a cancellable countdown before autoplaying the next episode. Kept opt-in so existing
- * binge playback remains uninterrupted unless the viewer explicitly asks for the prompt. */
-export const upNextOverlay = persisted<boolean>('player-up-next-overlay', false)
 /** Ask for a 1-10 rating when the last episode of a finished series completes. Only ever shown
  * while a tracker is connected (there is nowhere else to save the answer); "Don't ask again" on
  * the prompt turns this off. Default on. */
@@ -265,10 +272,23 @@ export function playerCacheBytes(cacheMb: number, videoSize?: number, durationSe
   }
   return base
 }
-/** How video fits the player area. 'best' = keep aspect (letterbox, default); 'fill' =
- *  crop to fill the frame (mpv panscan). */
-export type VideoFit = 'best' | 'fill'
+/** How video fits the player area: 'best' keeps the aspect ratio inside the frame (letterbox, the
+ *  default), 'fill' crops to cover the frame (mpv panscan), 'stretch' fills it by dropping the aspect
+ *  ratio (mpv keepaspect=no). The same three framings as Navigator's Fit, Fill / crop and Stretch. */
+export type VideoFit = 'best' | 'fill' | 'stretch'
 export const videoFit = persisted<VideoFit>('video-fit', 'best')
+export const VIDEO_FITS: readonly { id: VideoFit; label: string }[] = [
+  { id: 'best', label: 'Best fit' },
+  { id: 'fill', label: 'Fill' },
+  { id: 'stretch', label: 'Stretch' },
+]
+/** The mpv `keepaspect` and `panscan` values for each framing. Both are always set, so switching away
+ *  from Stretch or Fill undoes it. */
+export const VIDEO_FIT_MPV: Record<VideoFit, readonly [keepaspect: string, panscan: string]> = {
+  best: ['yes', '0.0'],
+  fill: ['yes', '1.0'],
+  stretch: ['no', '0.0'],
+}
 
 /** Video-quality preset: a bundle of mpv render options (scalers, debanding, dithering, …)
  *  applied together. 'custom' hands control to the raw-options textarea below. See
@@ -515,6 +535,9 @@ export const downloadCachedOnly = persisted<boolean>('download-cached-only', tru
 export const downloadQuality = persisted<Quality>('download-quality', '1080')
 export const downloadAudio = persisted<'any' | 'sub' | 'dub'>('download-audio', 'sub')
 export const downloadCodec = persisted<'any' | 'h264' | 'h265' | 'av1'>('download-codec', 'any')
+/** Starting one episode's download opens the source picker instead of saving the source the rules
+ *  above pick. Bulk and automatic downloads still choose by the rules. */
+export const downloadChooseSource = persisted<boolean>('download-choose-source', false)
 /** Wait after the scheduled air time so release/indexing providers can catch up. */
 export const autoDownloadDelayMinutes = persisted<number>('auto-download-delay-minutes', 15)
 

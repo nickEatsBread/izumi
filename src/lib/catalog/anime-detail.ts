@@ -4,6 +4,7 @@ import type { EpMeta } from '$lib/anizip/types'
 import { airedCount, resumeEp, totalEpisodes } from '$lib/anilist/media'
 import { anilistIdOf, type MediaRef } from './identity'
 import { loadCatalogProvider } from './registry'
+import { takePrefetchedDetail } from './detail-prefetch'
 
 export interface AnimeDetailState {
   fetching: boolean
@@ -25,9 +26,8 @@ export function animeDetailSource(
     void (async () => {
       try {
         if (!usesAnimeDetail(ref) || ref.provider === 'anilist') throw new Error('Unsupported anime provider')
-        const provider = await loadProvider(ref.provider)
-        if (abort.signal.aborted) return
-        const media = await provider.detail(ref, abort.signal)
+        const prefetched = takePrefetchedDetail(ref)
+        const media = prefetched ? await prefetched : await (await loadProvider(ref.provider)).detail(ref, abort.signal)
         if (!abort.signal.aborted) set({ fetching: false, data: { Media: media ? normalizeAnimeDetail(media) : null } })
       } catch (error) {
         if (!abort.signal.aborted) set({ fetching: false, error: { message: error instanceof Error ? error.message : String(error) } })

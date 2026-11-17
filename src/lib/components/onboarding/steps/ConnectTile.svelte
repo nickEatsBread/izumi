@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import Check from '@lucide/svelte/icons/check'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { tileBusy, type ConnectState } from '$lib/onboarding/connect-state'
 
@@ -52,7 +52,7 @@
       <span class="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground"><Check size={13} />{m.onboarding_connect_connected()}</span>
     {:else}
       <button type="button" data-focusable onclick={onexpand} disabled={busy} class="setup-inline-button shrink-0 bg-secondary px-3 text-sm">
-        {#if busy}<LoaderCircle size={15} class="tile-spinner" />{/if}
+        {#if busy}<Spinner inline />{/if}
         {expanded ? m.onboarding_connect_close() : m.onboarding_connect_action()}
       </button>
     {/if}

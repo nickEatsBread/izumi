@@ -8,9 +8,13 @@
   import { trackerFeedUrls } from '$lib/extensions/tracker-feeds'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
+  import PacksSettings from '$lib/components/settings/PacksSettings.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import TorrentDebridSettings from '$lib/components/settings/TorrentDebridSettings.svelte'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import { sourceCatalogs } from '$lib/catalog/source-catalogs'
+  import { disabledPlugins } from '$lib/settings/ui'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
 
   // shortcut: counts the added URLs, not orphan packages (Manage sources loads those), count them here if the two numbers confuse people.
@@ -22,6 +26,11 @@
     { value: 'prefer', label: 'Prefer', description: 'Listed sources first, then the rest' },
     { value: 'strict', label: 'Strict', description: 'Only listed sources, even when they find nothing' },
   ]
+
+  // Each source with its own screen keeps its account and languages in its settings: listed here, beside
+  // Manage sources, the way the source's handheld app has its Settings screen.
+  const sourceScreens = $derived($sourceCatalogs.filter((source) => !$disabledPlugins.includes(source.packageId)))
+  let sourceSheet = $state<{ id: string; name: string } | null>(null)
 
   let checkingUpdates = $state(false)
   let updateCheckFeedback = $state('')
@@ -65,10 +74,20 @@
       href="/app/settings/sources/manage"
       chevron
     />
+    {#each sourceScreens as source (source.packageId)}
+      <SettingsRow
+        title={`${source.name} settings`}
+        description="Account, languages and the source's own options"
+        onActivate={() => (sourceSheet = { id: source.packageId, name: source.name })}
+        chevron
+      />
+    {/each}
   </SettingsSubcategory>
 
   <SettingsSubcategory id="store">
-    <SettingsRow title="Store" description="Find sources, packages and themes to install" href="/app/settings/store" chevron />
+    <SettingsRow title="Store" description="Find sources, themes and packs to install" href="/app/settings/store" chevron />
+    <SettingsRow title="Plugins (beta)" description="Add features, like asking the player to find a moment" href="/app/settings/plugins" chevron />
+    <PacksSettings />
   </SettingsSubcategory>
 
   <SettingsSubcategory id="debrid">
@@ -126,3 +145,7 @@
     </SettingsRow>
   </SettingsSubcategory>
 </SettingsSection>
+
+{#if sourceSheet}
+  <ExtensionServiceSettings id={sourceSheet.id} name={sourceSheet.name} onclose={() => (sourceSheet = null)} />
+{/if}

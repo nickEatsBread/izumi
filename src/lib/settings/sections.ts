@@ -76,6 +76,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     subcategories: [
       { id: 'app', title: 'App and titles' },
       { id: 'playback', title: 'Audio and subtitles' },
+      { id: 'catalogs', title: 'Per catalog' },
       { id: 'sources', title: 'Sources and sub/dub' },
       { id: 'downloads', title: 'Downloads' },
     ],
@@ -176,6 +177,7 @@ export const SETTINGS_SUB_PAGES: ReadonlyMap<string, SettingsSubPageDef> = new M
   ['sources/manage', { section: 'sources', title: 'Manage sources' }],
   ['sources/priority', { section: 'sources', title: 'Source priority' }],
   ['store', { section: 'sources', title: 'Store' }],
+  ['plugins', { section: 'sources', title: 'Plugins' }],
   ['library/home', { section: 'library', title: 'Customize Home' }],
   ['library/collections', { section: 'library', title: 'Collections and covers' }],
   ['themes', { section: 'appearance', title: 'Themes' }],

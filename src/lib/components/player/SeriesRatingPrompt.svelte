@@ -1,6 +1,6 @@
 <script lang="ts">
   // "You finished <title> — how was it?" Raised by series-rating.ts when the last episode of a
-  // finished title completes and a tracker is connected. App-level like UpNextOverlay, so it works
+  // finished title completes and a tracker is connected. App-level, so it works
   // over either player and survives the player closing: a finale reached by backing out after the
   // watch threshold shows it over the series page instead.
   //

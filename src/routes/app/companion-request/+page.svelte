@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { get } from 'svelte/store'
   import { acceptCompanionPlayRequest, pairedCompanions } from '$lib/companion/client'
   import { normalizeCloudflareEndpoint, readCloudflareCompanionRequest } from '$lib/sync/cloudflare'
@@ -44,7 +44,7 @@
       <p class="mt-4 text-sm leading-6 text-muted-foreground">{error}</p>
       <button type="button" class="mt-6 min-h-12 rounded-xl bg-secondary px-5 font-bold" onclick={() => goto('/app/home')}>Return home</button>
     {:else}
-      <LoaderCircle class="mx-auto animate-spin text-primary" size={34} />
+      <Spinner size="lg" />
       <h1 class="mt-5 text-2xl font-black">Opening your TV request</h1>
       <p class="mt-2 text-sm text-muted-foreground">Authenticating it with your private Worker…</p>
     {/if}

@@ -289,7 +289,7 @@ index 7d872877d5cc40dfc7f88b32475009bf1933815e..cc9ac4960f8bbf0e556804c6a8c2ba5e
 +    }
  }
 diff --git a/crates/librqbit/src/torrent_state/live/mod.rs b/crates/librqbit/src/torrent_state/live/mod.rs
-index 10d8f00bedfc1cd8f79266b4c236546788cb3a5e..443b51afebe40f6f38c131f3ef624566618b4315 100644
+index aaec504b7f01d933e289b92e87fcaf008ec668a3..d91ae31d3d3fb9b49ee596b460e33e8dff252d8b 100644
 --- a/crates/librqbit/src/torrent_state/live/mod.rs
 +++ b/crates/librqbit/src/torrent_state/live/mod.rs
 @@ -1,3 +1,6 @@
@@ -310,7 +310,7 @@ index 10d8f00bedfc1cd8f79266b4c236546788cb3a5e..443b51afebe40f6f38c131f3ef624566
  pub enum AddIncomingPeerResult {
      Added,
      AlreadyActive,
-@@ -1446,19 +1453,37 @@ impl PeerHandler {
+@@ -1440,19 +1447,37 @@ impl PeerHandler {
                      ..
                  } = &mut **g;
                  let pieces = pieces.as_mut().ok_or(Error::ChunkTrackerEmpty)?;
@@ -361,7 +361,7 @@ index 10d8f00bedfc1cd8f79266b4c236546788cb3a5e..443b51afebe40f6f38c131f3ef624566
  
                  match result {
                      AcquireResult::Reserved(piece) => {
-@@ -1697,7 +1722,19 @@ impl PeerHandler {
+@@ -1691,7 +1716,19 @@ impl PeerHandler {
                  }
              };
  

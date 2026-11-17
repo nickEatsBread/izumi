@@ -6,6 +6,8 @@
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
+  import Plus from '@lucide/svelte/icons/plus'
+  import Check from '@lucide/svelte/icons/check'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
@@ -14,18 +16,24 @@
   import { resolveSections } from '$lib/detail/sections'
   import CatalogSourceAttribution from './CatalogSourceAttribution.svelte'
   import { loadCatalogProvider } from '$lib/catalog/registry'
-  import { CatalogConfigurationError } from '$lib/catalog/types'
+  import { takePrefetchedDetail } from '$lib/catalog/detail-prefetch'
+  import { CatalogConfigurationError, SourceSignInError } from '$lib/catalog/types'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import { sourceCatalogName, sourceSelection } from '$lib/catalog/source-catalogs'
   import type { CatalogContentType, CatalogProviderId, MediaRef } from '$lib/catalog/identity'
-  import { providerExternalUrl } from '$lib/catalog/identity'
+  import { anilistIdOf, compatibilityMediaId, providerExternalUrl } from '$lib/catalog/identity'
   import { banner, cover, format, season, status, title } from '$lib/anilist/media'
   import type { Media, MediaVideo } from '$lib/anilist/types'
   import { detailHints } from '$lib/anilist/detail-hint'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { getPosition } from '$lib/player/progress'
+  import { playing } from '$lib/player/session'
+  import { setSourceWatchlist } from '$lib/catalog/source-streams'
   import { parseCatalogDescription } from '$lib/catalog/description'
   import MediaRatings from './MediaRatings.svelte'
   import CatalogAwards from './CatalogAwards.svelte'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
-  import { localLibrary, mediaIsSaved } from '$lib/library/local-lists'
+  import { WATCHLIST_ID, localLibrary, mediaIsInLocalList, mediaIsSaved, setMediaInLocalList } from '$lib/library/local-lists'
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { pendingCompanionPlayback, type PendingCompanionPlayback } from '$lib/companion/client'
   import { companionPlaybackTarget } from '$lib/companion/playback'
@@ -40,6 +48,26 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { episodeDisplayModel, mediaDisplayModel } from '$lib/themes/host-model'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
+  import OptionsSheet, { type SheetGroup } from '$lib/components/detail/OptionsSheet.svelte'
+  import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
+  import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
+  import Download from '@lucide/svelte/icons/download'
+  import CircleCheck from '@lucide/svelte/icons/circle-check'
+  import CircleAlert from '@lucide/svelte/icons/circle-alert'
+  import Clock from '@lucide/svelte/icons/clock'
+  import Pause from '@lucide/svelte/icons/pause'
+  import { focusOnMount } from '$lib/nav'
+  import ListPlus from '@lucide/svelte/icons/list-plus'
+  import ListChecks from '@lucide/svelte/icons/list-checks'
+  import Ellipsis from '@lucide/svelte/icons/ellipsis'
+  import { getContextClient } from '@urql/svelte'
+  import { downloads, startDownload } from '$lib/downloads/store'
+  import { keyFor } from '$lib/downloads/state'
+  import { currentDownloadPreferences } from '$lib/downloads/rules'
+  import { findAnilistMatch } from '$lib/catalog/anilist-match'
+  import { fetchMediaById } from '$lib/anilist/fetch-media'
+  import { PAGE_OPTIONS_EVENT } from '$lib/nav/gamepad'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
@@ -53,10 +81,22 @@
   let loading = $state(true)
   let error = $state('')
   let tmdbNeedsConfiguration = $state(false)
+  // A signed-out source's title: its package, for the sign-in, and whether that sheet is open.
+  let signInSource = $state<string | null>(null)
+  let signingIn = $state(false)
   let playState = $state<PlayState>({ status: 'idle' })
   let retry = $state(0)
   let failedLogo = $state('')
   let showLocalLists = $state(false)
+  // The options (☰) side menu: this title's actions, and the focused episode's when one has focus.
+  let optionsOpen = $state(false)
+  let optionsEpisode = $state<MediaVideo | null>(null)
+  let trackerMedia = $state<Media | null>(null)
+  let trackerNote = $state('')
+  const urql = getContextClient()
+  // The source's own watchlist, once this page changed it (until then, what the source said).
+  let sourceListed = $state<boolean | undefined>()
+  let sourceListBusy = $state(false)
 
   $effect(() => {
     const request = ref
@@ -66,13 +106,16 @@
     loading = true
     error = ''
     tmdbNeedsConfiguration = false
+    signInSource = null
     media = null
-    void loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal)).then((result) => {
+    sourceListed = undefined
+    void (takePrefetchedDetail(request) ?? loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal))).then((result) => {
       if (!abort.signal.aborted) media = result
     }).catch((reason) => {
       if (!abort.signal.aborted) {
         error = reason instanceof Error ? reason.message : String(reason)
         tmdbNeedsConfiguration = request.provider === 'tmdb' && reason instanceof CatalogConfigurationError
+        signInSource = reason instanceof SourceSignInError ? reason.packageId : null
       }
     }).finally(() => { if (!abort.signal.aborted) loading = false })
     return () => abort.abort()
@@ -127,11 +170,181 @@
   const currentSeason = $derived(pickedSeason?.title === id && seasonNumbers.includes(pickedSeason.season) ? pickedSeason.season : seasonNumbers[0])
   const seasonVideos = $derived(seasonNumbers.length > 1 ? videos.filter((video) => (video.season ?? 1) === currentSeason) : videos)
   const seasonEntries = $derived(media && seasonNumbers.length > 1
-    ? seasonNumbers.map((number) => ({ media: media!, label: number === 0 ? 'Specials' : `Season ${number}`, active: number === currentSeason }))
+    ? seasonNumbers.map((number) => ({
+      media: media!,
+      // The source's own season name ("Part 2", a sequel's title) where it gives one.
+      label: media!.sourceFacts?.seasons?.find((season) => season.number === number)?.title ?? (number === 0 ? 'Specials' : `Season ${number}`),
+      active: number === currentSeason,
+    }))
     : [])
   const episodeModel = (video: MediaVideo) => episodeDisplayModel(media!, video.episode ?? video.number, {
     title: video.title, overview: video.overview, image: video.thumbnail, airDate: video.released, season: video.season, seasonEpisode: video.episode,
+  }, {
+    ...(video.progress !== undefined ? { progress: Math.round(video.progress * 100) } : {}),
+    ...(video.durationSec ? { duration: Math.round(video.durationSec / 60) } : {}),
+    ...(video.watched ? { watched: 'Watched' } : {}),
   })
+  // A source catalog says where the viewer is up to (on any device) and keeps its own watchlist.
+  const upNext = $derived.by(() => {
+    const next = media?.sourceFacts?.upNext
+    const video = next && videos.find((item) => item.id === next.videoId)
+    return next && video ? { video, label: next.label, playhead: next.playhead } : undefined
+  })
+  const watchlistUrl = $derived(media?.sourceFacts?.watchlistUrl)
+  const onSourceList = $derived(sourceListed ?? media?.sourceFacts?.watchlist ?? false)
+  /** One Watchlist for the title: izumi's own, and the source's when the source keeps one. */
+  const watchlisted = $derived(!!media && (mediaIsInLocalList($localLibrary, media, WATCHLIST_ID) || (!!watchlistUrl && onSourceList)))
+
+  // A source keeps the viewer's progress itself: once the player closes, its episode progress and
+  // where to resume have changed there, so the page reads them again (quietly, keeping the page).
+  let wasPlaying = false
+  $effect(() => {
+    const now = $playing
+    if (wasPlaying && !now && media?.sourceFacts) void refreshSourceFacts(ref)
+    wasPlaying = now
+  })
+  async function refreshSourceFacts(request: MediaRef) {
+    if (request.provider === 'anilist') return
+    const fresh = await loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request)).catch(() => null)
+    if (fresh && request === ref) media = fresh
+  }
+
+  // What opened the options menu: focus goes back there when a list editor opened from it closes (the
+  // menu's own control is gone by then, so the editor alone would leave focus on nothing).
+  let optionsReturn: FocusDescriptor | null = null
+  const returnFromOptions = () => requestAnimationFrame(() => {
+    if (!document.activeElement || document.activeElement === document.body) restoreFocus(optionsReturn)
+  })
+  function openOptions() {
+    if (!media) return
+    optionsReturn = describeFocus(document.activeElement)
+    const tile = document.activeElement?.closest<HTMLElement>('[data-part="episode"][data-episode]')
+    const number = tile ? Number(tile.dataset.episode) : Number.NaN
+    optionsEpisode = videos.find((video) => video.number === number) ?? null
+    trackerNote = ''
+    optionsOpen = true
+  }
+  $effect(() => {
+    const claim = (event: Event) => {
+      if (!media) return
+      // ☰ again closes the menu, as in the player; over another layer (the drawer) ☰ is that layer's.
+      if (optionsOpen) { event.preventDefault(); optionsOpen = false; return }
+      if (trackerMedia || showLocalLists || document.querySelector('[data-nav-trap]')) return
+      event.preventDefault()
+      openOptions()
+    }
+    window.addEventListener(PAGE_OPTIONS_EVENT, claim)
+    return () => window.removeEventListener(PAGE_OPTIONS_EVENT, claim)
+  })
+
+  // What each episode of this title has on this device: saved, on its way, or nothing.
+  const downloadOfVideo = (video: MediaVideo) => (media ? $downloads[keyFor(media.id, video.number)] : undefined)
+  const downloadState = (video: MediaVideo): 'done' | 'progress' | 'paused' | 'queued' | 'error' | undefined => {
+    const item = downloadOfVideo(video)
+    if (!item) return undefined
+    return item.status === 'done' ? 'done' : item.status === 'downloading' ? 'progress' : item.status === 'paused' ? 'paused' : item.status === 'error' ? 'error' : 'queued'
+  }
+  const downloadPercent = (video: MediaVideo): number => {
+    const item = downloadOfVideo(video)
+    return item?.bytes ? Math.max(0, Math.min(100, Math.round((item.downloaded / item.bytes) * 100))) : 0
+  }
+  const saveable = (list: MediaVideo[]) => list.filter((video) => !downloadState(video) || downloadState(video) === 'error')
+  const savedCount = (list: MediaVideo[]) => list.filter((video) => downloadState(video) === 'done').length
+
+  async function trackOnLists() {
+    if (!media) return
+    // A title with an AniList identity edits it directly; a source's own title is found on AniList.
+    if (anilistIdOf(media)) { optionsOpen = false; trackerMedia = media; return }
+    // The source names each episode's AniList entry (a season, a cour): the focused episode's, else
+    // the one up next, else the first it names. Otherwise the title is looked up by name.
+    const tracked = (optionsEpisode ?? upNext?.video)?.track ?? videos.find((video) => video.track)?.track
+    trackerNote = 'Looking for this title on AniList…'
+    const match = tracked
+      ? await fetchMediaById(tracked.anilist).catch(() => null)
+      : await findAnilistMatch(urql, media).catch(() => null)
+    if (!match) { trackerNote = 'This title could not be found on AniList.'; return }
+    optionsOpen = false
+    trackerMedia = match
+  }
+
+  const optionGroups = $derived.by((): SheetGroup[] => {
+    if (!media) return []
+    const episode = optionsEpisode
+    const groups: SheetGroup[] = []
+    if (episode && !isMovie) {
+      const state = downloadState(episode)
+      groups.push({
+        // The number the episode's own card shows (the source's), not its place in the page's list.
+        title: `Episode ${episode.episode ?? episode.number}${episode.title ? ` · ${episode.title}` : ''}`,
+        options: [
+          { id: 'play-episode', label: 'Play', icon: Play, onselect: () => { optionsOpen = false; play(episode) } },
+          {
+            id: 'download-episode',
+            label: state === 'done' ? 'Downloaded' : state === 'progress' ? 'Downloading' : state === 'queued' ? 'Waiting to download' : 'Download episode',
+            icon: state === 'done' ? CircleCheck : Download,
+            disabled: !!state && state !== 'error',
+            onselect: () => { if (media) void startDownload(media, episode.number, currentDownloadPreferences()) },
+          },
+        ],
+      })
+    }
+    groups.push({
+      options: [
+        {
+          id: 'watchlist', label: watchlisted ? 'Remove from Watchlist' : 'Add to Watchlist', icon: watchlisted ? BookmarkCheck : BookmarkPlus,
+          disabled: sourceListBusy, onselect: () => void toggleWatchlist(),
+        },
+        { id: 'lists', label: savedLocally ? 'Saved to your lists' : 'Save to a list', icon: savedLocally ? ListChecks : ListPlus, onselect: () => { optionsOpen = false; showLocalLists = true } },
+        { id: 'tracker', label: 'Track on AniList / MyAnimeList', detail: trackerNote || undefined, icon: ListChecks, keepOpen: true, onselect: () => void trackOnLists() },
+      ],
+    })
+    if (seriesEpisodes || isMovie) {
+      const season = seasonNumbers.length > 1 ? seasonVideos : []
+      const all = isMovie ? videos.slice(0, 1) : videos
+      groups.push({
+        title: 'Downloads',
+        options: [
+          ...(season.length ? [{
+            id: 'download-season',
+            label: `Download ${currentSeason === 0 ? 'specials' : `season ${currentSeason}`}`,
+            detail: `${savedCount(season)} of ${season.length} saved`,
+            icon: Download,
+            disabled: !saveable(season).length,
+            onselect: () => { if (media) void startDownload(media, saveable(season).map((video) => video.number), currentDownloadPreferences()) },
+          }] : []),
+          {
+            id: 'download-all',
+            label: isMovie ? 'Download' : 'Download every episode',
+            detail: isMovie ? undefined : `${savedCount(all)} of ${all.length} saved`,
+            icon: Download,
+            disabled: !saveable(all).length,
+            onselect: () => { if (media) void startDownload(media, saveable(all).map((video) => video.number), currentDownloadPreferences()) },
+          },
+        ],
+      })
+    }
+    return groups
+  })
+
+  // Saving flips at once on both lists. izumi's list is local and cannot fail; a source that refuses
+  // puts its own list back as it was and says why.
+  async function toggleWatchlist() {
+    if (!media || sourceListBusy) return
+    const want = !watchlisted
+    setMediaInLocalList(media, WATCHLIST_ID, want)
+    if (!watchlistUrl) return
+    const before = onSourceList
+    sourceListed = want
+    sourceListBusy = true
+    try {
+      sourceListed = await setSourceWatchlist(watchlistUrl, want)
+    } catch (reason) {
+      sourceListed = before
+      playState = { status: 'error', message: reason instanceof Error ? reason.message : String(reason) }
+    } finally {
+      sourceListBusy = false
+    }
+  }
   const attributedMedia = $derived.by(() => {
     if (!media || media.catalog?.provider !== 'jvm') return media
     const remembered = $detailHints[media.id]
@@ -139,10 +352,12 @@
     return alternatives.length ? { ...media, catalogAlternatives: alternatives } : media
   })
 
-  function play(video?: MediaVideo) {
+  function play(video?: MediaVideo, startSeconds?: number) {
     if (!media) return
     const episode = isMovie ? undefined : video?.number ?? 1
-    void playEpisode(media, episode, (state) => (playState = state))
+    // The source's playhead resumes an episode this device has no resume point for.
+    const resume = startSeconds ?? (video?.playhead && !video.watched && !getPosition(media.id, episode ?? 1) ? video.playhead : undefined)
+    void playEpisode(media, episode, (state) => (playState = state), resume ? { startSeconds: resume } : {})
   }
 
   // Local and notification-delivered TV requests both arrive here after the app has loaded the
@@ -174,25 +389,62 @@
   function titleLogoFailed(event: Event) {
     failedLogo = (event.currentTarget as HTMLImageElement).src
   }
+  // API 8 `loading.title`: the theme's loading screen over the skeleton, bound to the card that opened the page.
+  const titleScreen = $derived($themePresentation?.loading?.title)
+  const titleScreenHint = $derived($detailHints[compatibilityMediaId(ref)])
 </script>
 
+{#if titleScreen}<LoadingScreen screen={titleScreen} {loading} variant="catalog" model={titleScreenHint ? mediaDisplayModel(titleScreenHint) : {}} class="fixed inset-y-0 left-[var(--theme-shell-left,0px)] right-0 z-[25] bg-background" />{/if}
+
 {#if loading}
-  <div class="min-h-screen">
-    <div class="h-[48vh] skeloader"></div>
-    <div class="space-y-4 p-5 sm:p-8"><div class="h-10 w-2/3 rounded skeloader"></div><div class="h-24 rounded skeloader"></div></div>
+  <!-- The page's shape while it loads: the artwork with the title, synopsis and Play over it, then the
+       episodes. The card that opened it (a detail hint) lends its art, blurred, and its title. -->
+  {@const hint = $detailHints[compatibilityMediaId(ref)]}
+  {@const hintArt = hint ? banner(hint) || cover(hint) : ''}
+  {@const hintSynopsis = hint ? parseCatalogDescription(hint.description).synopsis : ''}
+  <div data-slot="detail.skeleton" class="min-h-screen">
+    <div data-part="detail.skeleton.banner" class="relative h-[52vh] overflow-hidden skeloader">
+      {#if hintArt}<img src={hintArt} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />{/if}
+      <div class="absolute inset-0 bg-gradient-to-r from-background via-background/60 to-transparent"></div>
+      <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent"></div>
+      <div data-part="detail.skeleton.copy" class="absolute bottom-8 left-5 right-5 max-w-xl sm:left-8">
+        {#if hint}
+          <h1 data-part="detail.skeleton.title" data-state="known" class="mb-3 line-clamp-2 text-4xl font-black drop-shadow-lg">{title(hint)}</h1>
+        {:else}
+          <div data-part="detail.skeleton.title" class="mb-3 h-10 w-80 max-w-full rounded skeloader"></div>
+        {/if}
+        <!-- The card's synopsis shows at once, as the information arrives before the episodes. -->
+        {#if hintSynopsis}
+          <p data-part="detail.skeleton.synopsis" class="mb-2 line-clamp-3 max-w-xl whitespace-pre-line text-sm leading-relaxed text-foreground/80 sm:text-base">{hintSynopsis}</p>
+        {:else}
+          {#each ['w-[28rem]', 'w-[24rem]', 'w-[18rem]'] as width (width)}
+            <div data-part="detail.skeleton.line" class="mb-2 h-3.5 max-w-full rounded skeloader {width}"></div>
+          {/each}
+        {/if}
+        <div data-part="detail.skeleton.button" class="mt-5 h-12 w-44 rounded-lg skeloader"></div>
+      </div>
+    </div>
+    <div data-part="detail.skeleton.episodes" class="grid grid-cols-2 gap-x-5 gap-y-7 p-5 sm:px-8 md:grid-cols-3 xl:grid-cols-4">
+      {#each Array(8) as _, i (i)}<div data-part="detail.skeleton.episode" class="aspect-video rounded-lg skeloader"></div>{/each}
+    </div>
   </div>
 {:else if error || !media}
   <div class="grid min-h-[70vh] place-items-center p-6">
     <div class="max-w-lg rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center">
-      <h1 class="text-xl font-black">{error ? 'Couldn’t load this title' : 'Title not found'}</h1>
-      {#if error}<p class="mt-2 text-sm text-muted-foreground">{error}</p>{/if}
-      {#if tmdbNeedsConfiguration}
+      <h1 class="text-xl font-black">{signInSource ? 'Sign in to see this title' : error ? 'Couldn’t load this title' : 'Title not found'}</h1>
+      {#if error}<p class="mt-2 text-sm text-muted-foreground">{signInSource ? `${sourceCatalogName(sourceSelection(signInSource))} is signed out.` : error}</p>{/if}
+      {#if signInSource}
+        <button data-focusable onclick={() => (signingIn = true)} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Sign in</button>
+      {:else if tmdbNeedsConfiguration}
         <a href="/app/settings/library" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
       {:else}
         <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Retry</button>
       {/if}
     </div>
   </div>
+  {#if signingIn && signInSource}
+    <ExtensionServiceSettings id={signInSource} name={sourceCatalogName(sourceSelection(signInSource))} onclose={() => { signingIn = false; retry++ }} />
+  {/if}
 {:else if !profileAllowsMedia(media, $activeProfile)}
   <ParentalBlock />
 {:else}
@@ -228,13 +480,13 @@
             <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">Kitsu</div>
           {/if}
           {#if titleLogo}
-            <h1 data-part="detail.title" aria-label={title(media)} class="h-28 w-[min(34rem,82vw)]">
+            <h1 data-part="detail.title" aria-label={title(media)} data-length={title(media).length > 40 ? 'long' : undefined} class="h-28 w-[min(34rem,82vw)]">
               <img data-part="detail.logo" src={titleLogo} alt="" loading="eager" decoding="async"
                    onerror={titleLogoFailed}
                    class="h-full w-full object-contain object-left drop-shadow-[2px_2px_6px_rgba(0,0,0,.85)]" />
             </h1>
           {:else}
-            <h1 data-part="detail.title" class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
+            <h1 data-part="detail.title" data-length={title(media).length > 40 ? 'long' : undefined} class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
           {/if}
           {#if (themedOverlay || themedStack) && detailTheme.header}
             <div data-part="detail.header" class="mt-3">
@@ -264,11 +516,17 @@
             </div>
           {/if}
           <div data-part="detail.actions" class="mt-5 flex flex-wrap gap-2">
-            <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
-            <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={() => (showLocalLists = true)}
-                    aria-label={savedLocally ? 'Saved' : 'Save to lists'} title="Save to lists"
-                    class={themedOverlay ? 'grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
-              {#if savedLocally}<BookmarkCheck size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<BookmarkPlus size={18} />{/if}{#if !themedOverlay}{savedLocally ? 'Saved' : 'Save'}{/if}
+            {#if upNext}
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top data-nav-player-return use:focusOnMount onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> Continue{upNext.label ? ` · ${upNext.label}` : ''}</button>
+            {:else}
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top data-nav-player-return use:focusOnMount onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+            {/if}
+            <button data-part="button" data-variant="secondary" data-action="more" data-focusable data-nav-scroll-top onclick={openOptions} aria-label="More options" title="More options"
+                    class="grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent"><Ellipsis size={20} /></button>
+            <!-- One press saves to izumi's Watchlist and the source's own; other lists are in the ☰ menu. -->
+            <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} aria-busy={sourceListBusy} onclick={toggleWatchlist}
+                    class={themedOverlay ? 'flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
+              {#if watchlisted}<Check size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
             </button>
             {#if media.trailer?.id}
               <button
@@ -276,6 +534,7 @@
                 data-part="detail.action"
                 data-action="trailer"
                 data-focusable
+                data-nav-scroll-top
                 title="Watch trailer"
                 aria-label="Watch trailer"
                 onclick={watchTrailer}
@@ -351,12 +610,42 @@
     {#snippet episodeTiles(list: MediaVideo[])}
         <div data-part="episodes.grid" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {#each list as video (video.id ?? video.number)}
-            <button data-part="episode" data-variant={video.thumbnail ? 'thumb' : 'compact'} data-focusable onclick={() => play(video)} class="group flex min-h-16 items-center gap-3 rounded-lg bg-secondary/60 p-2 text-left hover:bg-secondary">
-              {#if video.thumbnail}<img data-part="episode.still" src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />{/if}
+            <button data-part="episode" data-variant={video.thumbnail ? 'thumb' : 'compact'} data-episode={video.number} data-download={downloadState(video)} data-focusable onclick={() => play(video)} class="group relative flex min-h-16 items-center gap-3 rounded-lg bg-secondary/60 p-2 text-left hover:bg-secondary">
+              {@render downloadBadge(video)}
+              {#if video.thumbnail}
+                <span class="relative shrink-0">
+                  <img data-part="episode.still" src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />
+                  {#if video.progress}<span data-part="episode.progress" class="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-md bg-white/25"><span class="block h-full bg-primary" style:width={`${Math.round(video.progress * 100)}%`}></span></span>{/if}
+                </span>
+              {/if}
               <span class="min-w-0"><span data-part="episode.number" class="block text-xs text-muted-foreground">{video.season != null && video.episode != null ? `S${video.season} E${video.episode}` : `Episode ${video.number}`}</span><span data-part="episode.title" class="line-clamp-2 text-sm font-bold">{video.title || `Episode ${video.number}`}</span></span>
             </button>
           {/each}
         </div>
+    {/snippet}
+
+    {#snippet downloadBadge(video: MediaVideo)}
+      {@const state = downloadState(video)}
+      {#if state}
+        {@const percent = downloadPercent(video)}
+        <!-- Not a control: the options (☰) menu downloads; this says what this device has. Over the
+             episode's 16:9 artwork: an icon (waiting, downloading, paused, saved, failed) and, while
+             it downloads, a progress bar along the artwork's bottom. -->
+        <span data-part="episode.saved" data-state={state} style:--download-progress={`${percent}%`}
+              class="pointer-events-none absolute inset-x-0 top-0 z-10 overflow-hidden {episodeCard ? 'aspect-video' : 'bottom-0'}">
+          <span data-part="episode.saved.icon" role="img" class="absolute left-2 top-2 grid size-7 place-items-center rounded-full bg-black/70 text-white {state === 'error' ? 'text-destructive' : ''}"
+                aria-label={state === 'done' ? 'Downloaded' : state === 'progress' ? `Downloading, ${percent}%` : state === 'paused' ? `Download paused at ${percent}%` : state === 'queued' ? 'Waiting to download' : 'Download failed'}>
+            {#if state === 'done'}<CircleCheck size={16} />
+            {:else if state === 'progress'}<Download size={15} class="animate-pulse" />
+            {:else if state === 'paused'}<Pause size={14} />
+            {:else if state === 'queued'}<Clock size={15} />
+            {:else}<CircleAlert size={15} />{/if}
+          </span>
+          {#if state === 'progress' || state === 'paused'}
+            <span data-part="episode.saved.progress" class="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span class="block h-full bg-blue-400" style:width={`${percent}%`}></span></span>
+          {/if}
+        </span>
+      {/if}
     {/snippet}
 
     {#snippet castTrack()}
@@ -374,7 +663,7 @@
       <section data-slot="detail.episodes" class="mt-8 {sidePad}">
         <div data-slot="episodes.toolbar" data-variant="header" class="relative mb-4 flex flex-wrap items-center gap-2">
           {#if seasonEntries.length}
-            <div class="mr-auto min-w-0"><SeasonPicker entries={seasonEntries} variant="dropdown" inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} /></div>
+            <div class="mr-auto min-w-0"><SeasonPicker entries={seasonEntries} variant={detailTheme.episodes?.seasons === 'chips' ? 'chips' : 'dropdown'} inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} /></div>
           {:else}
             <h2 data-part="episodes.heading" class="mr-auto flex items-baseline gap-2 text-lg font-black">
               Episodes<span data-part="episodes.count" class="text-sm font-bold text-muted-foreground">{seasonVideos.length}</span>
@@ -384,9 +673,10 @@
         {#if episodeCard}
           <div data-part="episodes.grid" class="grid select-none {episodeArrangement === 'list' ? 'grid-cols-1 gap-2' : 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
             {#each seasonVideos as video (video.id ?? video.number)}
-              <button type="button" data-part="episode" data-variant="template" data-focusable onclick={() => play(video)} title={`Play — ${video.title || `Episode ${video.number}`}`}
-                      class="theme-episode flex w-full min-w-0 select-none overflow-hidden bg-secondary text-left {episodeArrangement === 'list' ? 'rounded-sm' : 'flex-col rounded-xl sm:rounded-lg'}">
+              <button type="button" data-part="episode" data-variant="template" data-episode={video.number} data-watched={video.watched ? '' : undefined} data-download={downloadState(video)} data-focusable onclick={() => play(video)} title={`Play — ${video.title || `Episode ${video.number}`}`}
+                      class="theme-episode relative flex w-full min-w-0 select-none overflow-hidden bg-secondary text-left {episodeArrangement === 'list' ? 'rounded-sm' : 'flex-col rounded-xl sm:rounded-lg'}">
                 <ThemeNode node={episodeCard} model={episodeModel(video)} />
+                {@render downloadBadge(video)}
               </button>
             {/each}
           </div>
@@ -465,5 +755,7 @@
     {/if}
     {/if}
   </div>
-  {#if showLocalLists}<LocalListPicker {media} onclose={() => (showLocalLists = false)} />{/if}
+  {#if showLocalLists}<LocalListPicker {media} onclose={() => { showLocalLists = false; returnFromOptions() }} />{/if}
+  {#if optionsOpen}<OptionsSheet title={title(media)} groups={optionGroups} onclose={() => (optionsOpen = false)} />{/if}
+  {#if trackerMedia}<MediaListSheet media={trackerMedia} onclose={() => { trackerMedia = null; returnFromOptions() }} />{/if}
 {/if}

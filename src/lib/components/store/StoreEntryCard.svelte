@@ -1,6 +1,6 @@
 <script lang="ts">
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Star from '@lucide/svelte/icons/star'
   import { entryTypeLabel } from '$lib/store/filters'
   import type { StoreEntry } from '$lib/store/types'
@@ -25,6 +25,8 @@
 
   const action = $derived(entry.install.type === 'theme'
     ? 'Preview'
+    : entry.install.type === 'pack' ? 'Set up'
+    : entry.install.type === 'plugin' ? 'View'
     : entry.install.type === 'addon' && entry.install.configureUrl ? 'Configure' : 'Install')
 </script>
 
@@ -54,7 +56,7 @@
     {:else}
       <button type="button" data-focusable disabled={busy || locked} onclick={oninstall}
               class="flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-black text-primary-foreground disabled:opacity-40 sm:py-1.5 sm:text-xs">
-        {#if busy}<RefreshCw size={12} class="animate-spin" />{/if}{installed ? 'Update' : elsewhere ? 'Replace' : action}
+        {#if busy}<Spinner size="xs" inline />{/if}{installed ? 'Update' : elsewhere ? 'Replace' : action}
       </button>
     {/if}
   </div>

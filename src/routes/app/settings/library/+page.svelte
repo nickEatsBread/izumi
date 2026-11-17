@@ -1,6 +1,7 @@
 <script lang="ts">
   import { homeCollections } from '$lib/catalog/collections/store'
   import {
+    browseScreen,
     catalogDefaultProvider,
     catalogLabel,
     catalogLastProvider,
@@ -57,8 +58,10 @@
   import TmdbCredentialGuide from '$lib/components/catalog/TmdbCredentialGuide.svelte'
   import ScoreScale from '$lib/components/detail/ScoreScale.svelte'
   import CircleHelp from '@lucide/svelte/icons/circle-help'
+  import { sourceCatalogs, sourceSelection } from '$lib/catalog/source-catalogs'
+  import { disabledPlugins } from '$lib/settings/ui'
 
-  const platforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
+  const builtInPlatforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
     { id: 'auto', label: 'Automatic anime', description: 'AniList with automatic Kitsu and Jikan fallbacks.' },
     { id: 'anilist', label: 'AniList', description: 'Anime browsing, schedules, rich details, and search.' },
     { id: 'kitsu', label: 'Kitsu', description: 'Independent anime and manga catalogs.' },
@@ -66,6 +69,13 @@
     { id: 'stremio', label: 'Stremio metadata add-ons', description: 'Catalogs exposed by your enabled add-ons.' },
     { id: 'jvm', label: 'Aniyomi sources', description: 'Browse anime directly from installed Aniyomi sources.' },
   ]
+  // Installed sources that serve their own catalog get a screen of their own.
+  const platforms = $derived([
+    ...builtInPlatforms,
+    ...$sourceCatalogs.filter((source) => !$disabledPlugins.includes(source.packageId)).map((source) => ({
+      id: sourceSelection(source.packageId) as CatalogSelection, label: source.name, description: 'This source’s own catalog, with its titles, details and progress.',
+    })),
+  ])
 
   let jvmSources = $state<JvmCatalogSource[]>([])
   let jvmSourcesLoading = $state(false)
@@ -291,6 +301,18 @@
       options={cwActions}
       onChange={(value) => ($cwDismissAction = value as CwDismissAction)}
     />
+    <SettingsRow
+      settingKey="browse-screen"
+      title="Browse"
+      description="Sort the whole catalog and pick a category from the menu"
+      learnMore="Adds Browse, and Categories in the drawer, to the navigation. A source screen always has them."
+      onActivate={() => ($browseScreen = !$browseScreen)}
+      pressed={$browseScreen}
+    >
+      {#snippet control()}
+        <SettingsSwitch value={$browseScreen} onToggle={() => ($browseScreen = !$browseScreen)} label="Browse" interactive={false} />
+      {/snippet}
+    </SettingsRow>
     <SettingsRow
       title="Customize Home"
       description="Choose rows per Home screen, or use the pencil on Home"

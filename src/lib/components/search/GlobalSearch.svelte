@@ -6,7 +6,7 @@
   import Clock from '@lucide/svelte/icons/clock-3'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { cover, format, season, status, title } from '$lib/anilist/media'
   import { openDetail } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
@@ -207,7 +207,7 @@
         <input data-part="search.field" bind:this={input} bind:value={query} data-focusable type="search"
           placeholder="Search {providerLabel}…" aria-label="Search catalog" autocomplete="off" onkeydown={onInputKeydown}
           class="global-search-input relative z-10 min-w-0 flex-1 bg-transparent py-2.5 text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground sm:py-3.5 sm:text-xl" />
-        {#if searchState === 'loading'}<LoaderCircle size={20} class="shrink-0 animate-spin text-muted-foreground" />{/if}
+        {#if searchState === 'loading'}<Spinner size="md" />{/if}
         <span class="hidden rounded-md border border-border bg-background/70 px-2 py-1 font-mono text-[0.65rem] font-bold text-muted-foreground sm:inline">Esc</span>
         <button type="button" data-focusable onclick={() => close()} aria-label="Close search"
           class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
@@ -306,9 +306,9 @@
           <!-- Only until the first catalog answers: its results replace this while slower ones finish. -->
           <div class="space-y-3" aria-label="Searching">
             {#each Array(5) as _}
-              <div class="flex animate-pulse gap-3 rounded-xl bg-secondary/35 p-3">
-                <div class="h-20 w-14 rounded-md bg-muted"></div>
-                <div class="flex-1 space-y-3 py-2"><div class="h-4 w-1/2 rounded bg-muted"></div><div class="h-3 w-1/3 rounded bg-muted"></div></div>
+              <div class="flex gap-3 rounded-xl bg-secondary/35 p-3">
+                <div class="skeloader h-20 w-14 rounded-md"></div>
+                <div class="flex-1 space-y-3 py-2"><div class="skeloader h-4 w-1/2 rounded"></div><div class="skeloader h-3 w-1/3 rounded"></div></div>
               </div>
             {/each}
           </div>

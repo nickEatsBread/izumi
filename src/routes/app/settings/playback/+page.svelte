@@ -1,11 +1,11 @@
 <script lang="ts">
   import {
-    autoSkip, skipPreviews, skipFiller, autoplayNext, upNextOverlay, seriesRatingPrompt, bingePreload,
+    autoSkip, skipPreviews, skipFiller, autoplayNext, seriesRatingPrompt, bingePreload,
     seekDuration, enableExternalPlayer, externalPlayerPath, scrubThumbnails, playerProgressAnimations,
     playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying, videoQualityPreset, rawMpvOptions,
     gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip, audioProcessing, windowsVsr,
     systemMediaControls, discordRichPresence, subtitleLineNavigation, hideSidebarWhilePlaying, trailerOpenMode,
-    PLAYER_CONTROLS, playerHiddenControls, type PlayerControlId,
+    PLAYER_CONTROLS, playerHiddenControls, type PlayerControlId, videoFit, VIDEO_FITS,
     audioOutputMode, audioOutputDevice, audioExclusive,
     audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd,
     audioPassthroughDts, audioPassthroughDtsHd, dolbyVisionOutputMode,
@@ -23,6 +23,11 @@
   import { isAndroid, isAndroidTv, isWindows } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
   import { gameMode } from '$lib/player/session'
+  import { nativeDrmPlayback, nativeDrmSupported, type WidevineStatus } from '$lib/player/native-drm'
+  import WidevineConsentPanel from '$lib/components/player/WidevineConsentPanel.svelte'
+  import { navLayer } from '$lib/nav/overlay'
+  import { modules, moduleOnItsWay, modulePercent, moduleProgressText, refreshModules, retryModules } from '$lib/modules/modules'
+  import { invoke } from '@tauri-apps/api/core'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
@@ -44,6 +49,51 @@
   }
 
   let pendingAnime = $state(false) // shows the one-time shader consent
+  // Google's Widevine module: plays protected streams on Linux and saves protected episodes on every
+  // desktop that builds the module host. Set up here (any platform), on the first protected stream
+  // (Linux), or in the background when a pack asked for it.
+  let widevineBusy = $state(false)
+  let widevineSetup = $state(false) // the consent dialog, opened by "Set up"
+  let widevineOnDevice = $state<string | null>(null) // a browser's own copy: set up without a download
+  const widevine = $derived($modules.widevine)
+  const widevineVersion = $derived(widevine?.state === 'ready' ? widevine.version : null)
+  const widevineLabel = $derived.by(() => {
+    if (widevineVersion) return `Installed (${widevineVersion})`
+    if (widevine && moduleOnItsWay(widevine)) return `${moduleProgressText(widevine)}${widevine.state === 'downloading' ? ` (${modulePercent(widevine)}%)` : ''}`
+    if (widevineOnDevice) return 'Not set up (found on this device)'
+    return 'Not installed'
+  })
+  async function refreshWidevine() {
+    await refreshModules()
+    try {
+      widevineOnDevice = (await invoke<WidevineStatus>('widevine_status')).available ?? null
+    } catch { widevineOnDevice = null }
+  }
+  $effect(() => {
+    if ($nativeDrmSupported) void refreshWidevine()
+  })
+  // The row serves saving everywhere and, on Linux, playback too; its copy says which.
+  const widevineCopy = $derived($nativeDrmPlayback
+    ? {
+        description: "Google's Widevine module, used to play encrypted streams and to download them for offline viewing.",
+        learnMore: "Set it up here, or it is offered the first time an encrypted stream plays; a pack you set up can also ask for it. You accept Google's licence first. Video is decrypted only in izumi's memory and decoded by the module, as in Chrome and Firefox on Linux. Downloads are saved decrypted, so they play offline with no licence. Removing it asks again next time.",
+      }
+    : {
+        description: "Google's Widevine module, used to download encrypted episodes for offline viewing.",
+        learnMore: "Set it up here, or a pack you set up can ask for it. You accept Google's licence first. When your browser already has the module, izumi uses that copy and downloads nothing; otherwise it downloads it from Google. Downloads are saved decrypted, so they play offline with no licence. Streaming encrypted video still plays in izumi's web player and does not use it. Removing it asks again next time.",
+      })
+  async function finishWidevineSetup() {
+    widevineSetup = false
+    await refreshWidevine()
+  }
+  async function removeWidevine() {
+    widevineBusy = true
+    try {
+      await invoke('widevine_remove')
+    } catch { /* keep showing the installed version */ }
+    await refreshWidevine()
+    widevineBusy = false
+  }
   let qualityRow = $state<HTMLDivElement>()
 
   // Answering the Anime shader prompt removes the button that held focus. Focus goes back to the
@@ -152,9 +202,6 @@
       <SettingsRow settingKey="auto-play-next-episode" title={m.player_autoplay_next()} description={m.player_autoplay_next_hint()} onActivate={() => ($autoplayNext = !$autoplayNext)} pressed={$autoplayNext}>
         {#snippet control()}<SettingsSwitch value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} label={m.player_autoplay_next()} interactive={false} />{/snippet}
       </SettingsRow>
-      <SettingsRow settingKey="show-up-next-countdown" title={m.player_up_next_overlay()} description={m.player_up_next_overlay_hint()} onActivate={() => ($upNextOverlay = !$upNextOverlay)} pressed={$upNextOverlay}>
-        {#snippet control()}<SettingsSwitch value={$upNextOverlay} onToggle={() => ($upNextOverlay = !$upNextOverlay)} label={m.player_up_next_overlay()} interactive={false} />{/snippet}
-      </SettingsRow>
       <SettingsRow settingKey="binge-next-episode-preload" title="Binge next episode (preload)" description="Preloads the next episode; it then starts by itself, even with Auto-play off." learnMore="Keeps the same release across episodes and resolves and buffers the next one near the end, so Next and auto-play start instantly." onActivate={() => ($bingePreload = !$bingePreload)} pressed={$bingePreload}>
         {#snippet control()}<SettingsSwitch value={$bingePreload} onToggle={() => ($bingePreload = !$bingePreload)} label="Binge next episode (preload)" interactive={false} />{/snippet}
       </SettingsRow>
@@ -231,6 +278,7 @@
             {/each}
           </div>
         </SettingsRow>
+        <SettingsChoiceRow settingKey="video-framing" title="Video framing" description="How the picture fills the player. The player's settings menu changes it too." learnMore="Best fit shows the whole picture with bars where the shapes differ. Fill crops the edges to cover the player. Stretch fills it by changing the picture's proportions." value={$videoFit} onChange={(value) => ($videoFit = value as typeof $videoFit)} options={VIDEO_FITS.map((fit) => ({ value: fit.id, label: fit.label }))} />
       {/if}
       <SettingsChoiceRow settingKey="p2p-playback-status" title="P2P playback status" description="Peers and live speeds at the top of the player during Direct P2P playback." learnMore="Debrid playback never shows it." value={$p2pStatusVisibility} onChange={(value) => ($p2pStatusVisibility = value as typeof $p2pStatusVisibility)} options={[
         { value: 'hidden', label: 'Always hidden' },
@@ -446,6 +494,38 @@
       { value: 'shadow', label: 'Preview — learn without changing playback' },
       { value: 'off', label: 'Off' },
     ]} />
+    {#if $nativeDrmSupported}
+      <SettingsRow
+        settingKey="protected-video-module"
+        title="Protected video"
+        description={widevineCopy.description}
+        learnMore={widevineCopy.learnMore}
+      >
+        {#snippet control()}
+          <span class="text-xs tabular-nums text-muted-foreground">{widevineLabel}</span>
+          {#if widevine?.state === 'failed'}
+            <button type="button" data-focusable class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent" onclick={() => void retryModules()}>Try again</button>
+          {/if}
+          {#if widevineVersion || moduleOnItsWay(widevine)}
+            <button type="button" data-focusable disabled={widevineBusy} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-60" onclick={() => void removeWidevine()}>Remove</button>
+          {:else}
+            <button type="button" data-focusable class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent" onclick={() => (widevineSetup = true)}>Set up</button>
+          {/if}
+        {/snippet}
+      </SettingsRow>
+      {#if widevineSetup}
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Protected video"
+          tabindex="-1"
+          use:navLayer={{ kind: 'widevine-setup', onClose: () => void finishWidevineSetup() }}
+          class="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4"
+        >
+          <WidevineConsentPanel purpose="setup" localCopy={widevineOnDevice} onaccepted={() => void finishWidevineSetup()} ondeclined={() => void finishWidevineSetup()} />
+        </div>
+      {/if}
+    {/if}
     <SettingsRow settingKey="mark-best-releases" title="Mark best releases" description="Badges the curated best release and lists it first at its resolution." learnMore="Checks a community-curated release list for the release its curators rate best for each title. It never picks a lower resolution than you would have got without it, and adds no source: it only annotates what your sources already found." onActivate={() => ($seadexAnnotations = !$seadexAnnotations)} pressed={$seadexAnnotations}>
       {#snippet control()}<SettingsSwitch value={$seadexAnnotations} onToggle={() => ($seadexAnnotations = !$seadexAnnotations)} label="Mark best releases" interactive={false} />{/snippet}
     </SettingsRow>

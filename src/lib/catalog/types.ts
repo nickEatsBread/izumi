@@ -95,6 +95,8 @@ export interface CatalogHomeFeature {
 export interface CatalogHome {
   hero: Media[]
   sections: CatalogHomeSection[]
+  /** The section that stands in for Continue Watching (a source's own, cross-device list). */
+  continue?: string
   /** A bounded provider returned useful rows before every requested row finished. Consumers may
    * render this snapshot immediately, but should not retain it as a complete warm cache. */
   partial?: boolean
@@ -133,5 +135,13 @@ export class CatalogConfigurationError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'CatalogConfigurationError'
+  }
+}
+
+/** A source that is signed out (it answered 401): its titles need its sign-in, not a retry. */
+export class SourceSignInError extends CatalogConfigurationError {
+  constructor(message: string, readonly packageId: string) {
+    super(message)
+    this.name = 'SourceSignInError'
   }
 }

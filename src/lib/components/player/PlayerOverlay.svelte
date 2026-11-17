@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition'
   import { listen } from '@tauri-apps/api/event'
   import { listenSafe } from '$lib/util/listen'
+  import { armTouchReveal, clearTouchReveal } from '$lib/player/touch-reveal'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import Controls from './Controls.svelte'
@@ -11,13 +12,15 @@
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
+  import NativeDrmSurface from './NativeDrmSurface.svelte'
+  import { nativeDrmPlayback, usesNativeDrm } from '$lib/player/native-drm'
   import { playerCommand, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching, upNextPrompt } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -32,12 +35,12 @@
     type TorrentDeliveryState,
   } from '$lib/player/recovery-watchdog'
   import {
-    autoSkip, skipPreviews, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
+    autoSkip, skipPreviews, seekDuration, videoFit, VIDEO_FIT_MPV, uiScale, keepAwakeWhilePlaying,
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
-    preferredAudioLang, preferredSubLang, scrubThumbnails,
+    scrubThumbnails,
   } from '$lib/settings/ui'
   import { registerThumbTiles } from '$lib/player/thumb-tiles'
   import { get } from 'svelte/store'
@@ -51,7 +54,8 @@
   import { reportWatchPlayback, watchParty } from '$lib/watch-together/client'
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, reportDirectTorrentFirstFrame, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
-  import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import { pickSubtitleTrackId, selectedAudioLang } from '$lib/player/track-policy'
+  import { languagesForMedia } from '$lib/settings/catalog-languages'
   import type { Track } from '$lib/player/track-label'
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { sessionSubtitleStyle, sessionSubtitleAdjustments, effectiveSubtitleStyle, resetSubtitleSession } from '$lib/settings/subtitle-presets'
@@ -59,19 +63,24 @@
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeLiveMenuOpen, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
   import { GM_THAW_DELAY_MS, captureFrozenFrame, framePainted, gmFrozenFrame, gmPanel, gmPanelOut, gmStage } from '$lib/player/gm-freeze'
+  import { readGmOsdTheme, type GmOsdTheme } from '$lib/player/theme-gm-osd'
   import { motion } from '$lib/motion/gm-motion'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
   import PlayPauseIcon from './PlayPauseIcon.svelte'
   import { isMobile, isWindows } from '$lib/platform'
   import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
+  import LoadingScreen from '$lib/components/themes/LoadingScreen.svelte'
+  import { episodeLoadingModel } from '$lib/themes/host-model'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
-  import { oskDismissedAt, playerStage } from '$lib/player/session'
+  import { protectedSurface } from '$lib/themes/safe-mode'
+  import { oskDismissedAt, playerStage, playerChromeVisible, lateSubtitleRevision } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import DockEpisodes from './DockEpisodes.svelte'
@@ -129,7 +138,9 @@
     ? $desktopCastStatus?.state === 'paused'
     : paused)
 
-  let visible = $state(true)
+  // No chrome before the first frame (a title bar and buttons over black read as a broken player):
+  // the controls first show when the picture does, unless the viewer asks for them sooner.
+  let visible = $state(false)
   let hideT: ReturnType<typeof setTimeout>
   let quietPadSeek = $state(false)
   let quietPadSeekT: ReturnType<typeof setTimeout>
@@ -205,6 +216,7 @@
     // retain their ordinary touch/click behaviour.
     if (!gmMode || controlsVisible || get(commentsOpen) || get(playerMenuOpen) || get(trackMenuOpen) || subtitleEditorOpen) return false
     suppressTouchRevealClickUntil = performance.now() + 900
+    armTouchReveal()
     poke()
     return true
   }
@@ -223,6 +235,7 @@
         // touch's own click is a real press on whatever the reveal put there.
         suppressTouchRevealClickUntil = 0
         revealTouch = null
+        clearTouchReveal()
       } else {
         // Gamescope's native touch-begin armed the reveal a moment before this DOM start.
         revealTouch = { x: touch.clientX, y: touch.clientY }
@@ -246,6 +259,7 @@
     if (Math.hypot(touch.clientX - revealTouch.x, touch.clientY - revealTouch.y) > 12) {
       suppressTouchRevealClickUntil = 0
       revealTouch = null
+      clearTouchReveal()
     }
   }
 
@@ -254,6 +268,7 @@
     if (revealTouch && Math.hypot(e.clientX - revealTouch.x, e.clientY - revealTouch.y) > 24) return
     suppressTouchRevealClickUntil = 0
     revealTouch = null
+    clearTouchReveal()
     e.preventDefault()
     e.stopImmediatePropagation()
   }
@@ -311,7 +326,7 @@
   $effect(() => {
     const armed = playerControls.paused === 'summary' && transportPaused && !loading && !eof && !gmMode && !docked && !$isMobile && !$pictureInPicture
       && !$scrubActive && !$playerMenuOpen && !$trackMenuOpen && !$commentsOpen && !subtitleEditorOpen
-      && !sourcePickerVisible && !sourceConnectingVisible && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
+      && !sourcePickerVisible && !sourceConnectingVisible && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
       && !$playerStatsOpen && !remoteCastOwnsPlayback
     pausedIdle = false
     if (!armed) return
@@ -319,13 +334,38 @@
     const t = setTimeout(() => { pausedIdle = true }, 5000)
     return () => clearTimeout(t)
   })
-  const controlsVisible = $derived(
-    visible || (!(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
-  )
+  // Set the moment the player starts closing (close()): no chrome comes up for the pause it makes.
+  let exiting = $state(false)
+  const controlsVisible = $derived(!exiting && (
+    // A new file starts out paused and loading: neither pins the chrome before there is a picture.
+    visible || (firstFrame && !(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen
+  ))
+  $effect(() => { if (firstFrame) untrack(poke) })
   // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
   // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
   let gmVideoHidden = $state(false)
   const controlsMounted = $derived(controlsVisible || quietDpadScrub || gmVideoHidden)
+  // Navigator's chrome fade (200 ms, see `[data-player-hud]` below): once the controls hide, Controls
+  // stays mounted through the fade-out and then unmounts as before. A reveal mid-fade reverses it.
+  // Game mode keeps its own chrome motion.
+  const CHROME_FADE_MS = 200
+  let hudFadingOut = $state(false)
+  let hudWasMounted = false
+  // `.pre`: it must run before the `{#if}` below re-evaluates, or the block drops for one flush and
+  // remounts already transparent (no fade).
+  $effect.pre(() => {
+    const mounted = controlsMounted
+    const was = hudWasMounted
+    hudWasMounted = mounted
+    if (mounted || gmMode || !was) { hudFadingOut = false; return }
+    hudFadingOut = true
+    const t = setTimeout(() => (hudFadingOut = false), CHROME_FADE_MS)
+    return () => clearTimeout(t)
+  })
+  // The windowed titlebar's buttons fade with the controls; never leave them hidden after playback.
+  // A docked player sits inside the page, where the bar serves the page rather than the video.
+  $effect(() => { playerChromeVisible.set(controlsVisible || docked) })
+  $effect(() => () => playerChromeVisible.set(true))
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
   // A preview sits after the ending, so auto-skipping it runs off the end of the episode. It opts in
   // separately; every other type follows the one auto-skip toggle.
@@ -354,15 +394,71 @@
     return () => clearTimeout(skipT)
   })
   const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsVisible))
+  // Where an episode follows, the source's credits button goes on to it the way the Next button does
+  // (the same aired gate as Controls); every other segment's button seeks past the segment.
+  const skipToNext = $derived(!!currentSeg?.credits && np.episode != null && np.airedTotal != null && np.episode < np.airedTotal)
+  const skipLabel = $derived(skipToNext ? 'Next episode' : `Skip ${currentSeg?.label ?? ''}`)
+  function skipSegment() {
+    if (skipToNext) playNext(undefined, !paused)
+    else if (currentSeg) seekTo(currentSeg.end + 0.5)
+  }
 
+  // Navigator's auto-hide: 3 s after the last input the controls go, unless the pointer rests on a
+  // control or keyboard focus sits in them, which re-checks every second. Game mode keeps Crunchy
+  // Deck's 3.5 s hold.
+  const HIDE_AFTER_MS = 3000
+  const HIDE_RECHECK_MS = 1000
+  function controlsBusy() {
+    if (!overlayRoot) return false
+    // The controls layer is pointer-transparent, so it only matches :hover through an actual control.
+    if (overlayRoot.querySelector('[data-slot="player.controls"]:hover')) return true
+    const focused = document.activeElement
+    return !!focused && !!focused.closest?.('[data-slot="player.controls"]') && overlayRoot.contains(focused) && focused.matches(':focus-visible')
+  }
   function poke() {
     untrack(() => { inputTick++ })
     visible = true
     clearTimeout(hideT)
-    // Match Crunchy Deck's breathing room: the chrome itself fades for 300ms after this hold.
-    hideT = setTimeout(() => (visible = false), 3500)
+    if (gmMode) {
+      hideT = setTimeout(() => (visible = false), 3500)
+      return
+    }
+    const hideWhenIdle = () => {
+      if (controlsBusy()) hideT = setTimeout(hideWhenIdle, HIDE_RECHECK_MS)
+      else visible = false
+    }
+    hideT = setTimeout(hideWhenIdle, HIDE_AFTER_MS)
+  }
+  // Navigator: while playing, the controls go as soon as the mouse leaves the player or the window,
+  // unless a menu is open or a button is held (a seek or volume drag that strays off the player keeps
+  // going; its release re-arms the idle wait). The titlebar over the video counts as the player.
+  function onOverlayPointerLeave(e: PointerEvent) {
+    if (gmMode || e.pointerType !== 'mouse' || e.buttons) return
+    if ((e.relatedTarget as Element | null)?.closest?.('[data-player-chrome]')) return
+    if (transportPaused || get(playerMenuOpen) || get(trackMenuOpen) || subtitleEditorOpen || controlsBusy()) return
+    clearTimeout(hideT)
+    visible = false
+  }
+  // Mouse moves bring the controls back only over the player (and the titlebar above it), so leaving
+  // for the sidebar or a docked rail lets them go. Game mode keeps the window-wide reveal.
+  // WebKit also sends a mousemove when the page changes under a cursor that has not moved: the
+  // player appearing under the Deck's parked, hidden cursor brought its controls up over black.
+  // Only a pointer that really moved shows them.
+  let lastPointer = ''
+  function onWindowMouseMove(e: MouseEvent) {
+    const at = `${e.screenX},${e.screenY}`
+    const moved = !!lastPointer && at !== lastPointer
+    lastPointer = at
+    if (!moved) return
+    const target = e.target as Element | null
+    if (gmMode || (target && (overlayRoot?.contains(target) || target.closest?.('[data-player-chrome]')))) poke()
+    else untrack(() => { inputTick++ })
   }
   const drmActive = $derived(!!$nowPlayingStream.drm)
+  // Linux plays protected streams in izumi's own mpv player: the mpv-side features (subtitle
+  // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
+  const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmPlayback))
+  const drmWebview = $derived(drmActive && !drmNative)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell
   // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
@@ -701,10 +797,52 @@
     return stop
   })
 
+  // The rating card a theme can ask for (`player.rating: "intro"`): the episode's age rating at the top
+  // right from when mpv has the file (its first frame may still be loading), held 3.6 s, as TV apps
+  // show theirs. Game mode draws it natively (gm_osd.rs rating card); elsewhere the page does.
+  const RATING_CARD_MS = 4_300
+  const ratingIntro = $derived($themePresentation?.player?.rating === 'intro')
+  // API 8 `loading.episode`: the theme's screen over the black cover until the first frame (the opening
+  // screen hands over to it). Not over Game mode's frozen frame, where a source switch keeps the picture.
+  const episodeScreen = $derived($themePresentation?.loading?.episode)
+  // While it is drawn it is the black cover, so the loading layer over it stops painting its own.
+  const episodeCover = $derived(!!episodeScreen && !!$nowPlayingMedia && !(gmBitmapMode && $gmFrozenFrame != null))
+  const ratingLabel = $derived(ratingIntro ? ($nowPlayingStream.rating?.label ?? $nowPlayingMedia?.media?.sourceFacts?.rating ?? '') : '')
+  const ratingDetail = $derived(ratingIntro ? ($nowPlayingStream.rating?.descriptors ?? []).join(' · ') : '')
+  let ratingShownAt = $state(0)
+  let ratingOn = $state(false)
+  let ratingFor = ''
+  function showRatingCard() {
+    if (!ratingLabel || ratingFor === loadedKey) return
+    ratingFor = loadedKey
+    ratingShownAt = Date.now()
+    scheduleGmDynamicOverlay()
+  }
+  onMount(() => {
+    const off = listen<string>('player-file-loaded', showRatingCard)
+    return () => { void off.then((unlisten) => unlisten()) }
+  })
+  // The webview's protected player loads no mpv file, and the player opening for the first time can
+  // still be registering the listener above when mpv's event comes: the first frame of each load
+  // brings the card too (once per load).
+  $effect(() => { if (firstFrame && ratingLabel) untrack(showRatingCard) })
+  $effect(() => {
+    if (!ratingShownAt) return
+    const frame = requestAnimationFrame(() => (ratingOn = true))
+    const hide = setTimeout(() => (ratingOn = false), 3_600)
+    // One more state once the card is over, so the native layer can let it go.
+    const done = setTimeout(() => scheduleGmDynamicOverlay(), RATING_CARD_MS + 50)
+    return () => { cancelAnimationFrame(frame); clearTimeout(hide); clearTimeout(done); ratingOn = false }
+  })
+
   let closing = false
   async function close() {
     if (closing) return
     closing = true
+    // Answer the press at once. Putting the page back under the video takes a moment on the Deck,
+    // and a picture still playing meanwhile (with the controls up) read as B being ignored.
+    exiting = true
+    void invoke('player_command', { name: 'set', args: ['pause', 'yes'] }).catch(() => {})
     await exitFullscreen()
     await exitPictureInPicture()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
@@ -797,7 +935,10 @@
     // probe for a still-buffering torrent left the skip button missing even when AniSkip
     // already had the opening.
     const media = $nowPlayingMedia?.media
-    const segs = await getMediaSkipSegments(media, episode, length)
+    // The stream's own markers need no lookup, so they show while AniSkip and IntroDB are asked.
+    const own = $nowPlayingStream.skip ?? []
+    if (own.length) segments = own
+    const segs = await getMediaSkipSegments(media, episode, length, own)
     if (key !== loadedKey) return
     segments = mergeSkipSegments(segs, [])
     void invoke<string>('player_chapters')
@@ -834,6 +975,7 @@
     const key = `${$playerLoadId}|${np.title}|${np.episode}|${$spriteKey ?? ''}`
     if (key === loadedKey) return
     loadedKey = key
+    ratingShownAt = 0
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
     dpadVisualPos = null; clearTimeout(dpadVisualT)
     chapterStore.set([])
@@ -869,27 +1011,38 @@
     return () => clearTimeout(t)
   })
 
-  // Apply the saved video fit once the first frame is up (and re-apply per episode).
-  // 'fill' = mpv panscan 1 (crop to fill, aspect preserved — never stretched);
-  // 'best' = panscan 0 (letterbox). keepaspect stays yes so quality is never distorted.
+  // Apply the saved video fit once the first frame is up (and re-apply per episode): Best fit
+  // letterboxes, Fill crops (panscan 1), Stretch drops the aspect ratio (keepaspect no).
   $effect(() => {
-    if (firstFrame) cmd('set', ['panscan', $videoFit === 'fill' ? '1.0' : '0.0'])
+    if (!firstFrame) return
+    const [keepaspect, panscan] = VIDEO_FIT_MPV[$videoFit] ?? VIDEO_FIT_MPV.best
+    cmd('set', ['keepaspect', keepaspect])
+    cmd('set', ['panscan', panscan])
   })
 
   // Re-select once the file is actually loaded. A per-series semantic preference (language,
-  // title, codec) wins; global language policy remains the fallback for unseen shows.
+  // title, codec) wins; global language policy remains the fallback for unseen shows. A subtitle
+  // that arrives later runs the choice again, but may only switch subtitles on: never away from a
+  // track already showing, which may be the viewer's own pick.
   let subtitlePolicyKey = ''
+  let subtitlePolicyRevision = 0
   $effect(() => {
     const key = loadedKey
-    if (drmActive || !firstFrame || !key || subtitlePolicyKey === key) return
+    const revision = $lateSubtitleRevision
+    if (drmWebview || !firstFrame || !key || (subtitlePolicyKey === key && subtitlePolicyRevision === revision)) return
+    const late = subtitlePolicyKey === key
     subtitlePolicyKey = key
+    subtitlePolicyRevision = revision
     void playerTracks()
       .then((raw) => {
         if (key !== loadedKey) return
         const tracks = JSON.parse(raw) as Track[]
-        const audioPref = rememberedSeriesTrack(np.id, 'audio')
-        const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
-        if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        if (late && tracks.some((track) => (track.type === 'sub' || track.type === 'caption') && track.selected)) return
+        if (!late) {
+          const audioPref = rememberedSeriesTrack(np.id, 'audio')
+          const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
+          if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+        }
 
         const subPref = rememberedSeriesTrack(np.id, 'subtitle')
         const rememberedSub = matchRememberedTrack(
@@ -898,7 +1051,8 @@
         )
         if (rememberedSub === null) { cmd('set', ['sid', 'no']); return }
         if (rememberedSub) { cmd('set', [rememberedSub.type === 'caption' ? 'ccid' : 'sid', String(rememberedSub.id)]); return }
-        const id = pickSubtitleTrackId(tracks, get(preferredAudioLang), get(preferredSubLang))
+        const languages = languagesForMedia(get(nowPlayingMedia)?.media)
+        const id = pickSubtitleTrackId(tracks, selectedAudioLang(tracks) ?? languages.audio[0], languages.subtitle)
         if (id !== undefined) cmd('set', ['sid', String(id)])
       })
       .catch(() => {})
@@ -931,14 +1085,13 @@
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
   // A menu, the source picker, the switching card or a prompt is up: the video pauses and those
   // surfaces render live over its frozen frame (gm-freeze.ts). Comments still unmap the video.
-  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmActive && !$commentsOpen && gameModeLiveMenuOpen({
+  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmWebview && !$commentsOpen && gameModeLiveMenuOpen({
     playerMenuOpen: $playerMenuOpen,
     trackMenuOpen: $trackMenuOpen,
     sourcePickerOpen: sourcePickerVisible,
     connecting: sourceConnectingVisible,
     cachingOpen: !!$debridCaching,
     ratingOpen: !!$seriesRatingPrompt,
-    upNextOpen: !!$upNextPrompt,
   }))
   let gmFrameImg = $state<HTMLImageElement | null>(null)
   let gmSpinnerTurn = $state(0)
@@ -1198,6 +1351,20 @@
   let gmScrubBasePos = $state(0)
   let gmScrubBaseBuffer = $state(0)
   let gmScrubWasActive = false
+  // The native OSD draws in the theme's colours. Read once the player opens, then whenever theme.ts
+  // rewrites <html>'s palette or theme mark, so a theme switch reaches an open player too.
+  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '', themeSpinnerSize: 0, themeSpinnerStroke: 0 })
+  $effect(() => {
+    if (!gmBitmapMode) return
+    const read = () => {
+      const next = readGmOsdTheme()
+      if ((Object.keys(next) as (keyof GmOsdTheme)[]).some((key) => next[key] !== gmTheme[key])) gmTheme = next
+    }
+    untrack(read)
+    const observer = new MutationObserver(read)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-surface'] })
+    return () => observer.disconnect()
+  })
 
   $effect(() => {
     const active = gmBitmapMode && $scrub.active
@@ -1270,11 +1437,31 @@
     controlItems: [],
     timelineSegments: [],
     chapterMarks: [],
+    // The controls' native fade-out finishes after this, still in the theme's colours.
+    ...gmTheme,
   })
 
   function measureSeekBar() {
     const rect = document.querySelector('[aria-label="Seek"]')?.getBoundingClientRect()
     if (rect && rect.width > 0) lastBar = { x: rect.left, y: rect.top + rect.height / 2, w: rect.width }
+  }
+
+  /** A button named in words (`data-gm-text`, a theme's `player.trackButtons: "text"`) is drawn as that
+   *  word: its size is its own line box, as the title's is, since libass's size metric runs small. */
+  function gmTextOf(button: HTMLElement): { text?: string; textSize?: number; textWeight?: number } {
+    const text = button.dataset.gmText?.trim()
+    if (!text) return {}
+    const style = getComputedStyle(button)
+    const range = document.createRange()
+    range.selectNodeContents(button)
+    const line = range.getBoundingClientRect().height
+    const cssSize = Number.parseFloat(style.fontSize)
+    const weight = Number.parseInt(style.fontWeight, 10)
+    return {
+      text,
+      textSize: Math.max(Number.isFinite(cssSize) ? cssSize : 0, Number.isFinite(line) ? line : 0),
+      textWeight: Number.isFinite(weight) ? weight : 600,
+    }
   }
 
   function measureNativeChrome() {
@@ -1321,6 +1508,7 @@
               label: button.getAttribute('aria-label') ?? '',
               focused: document.activeElement === button,
               primary: button.classList.contains('gm-play'),
+              ...gmTextOf(button),
             }
           })
       : []
@@ -1344,10 +1532,11 @@
     const s = get(scrub)
     // The exact HTML pill is snapshotted in Game mode. Native text is fallback-only so we never
     // stack the simplified ASS chip over the polished button.
-    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
+    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? skipLabel : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
     const nativeControls = liveControls && gmNativeControls
-    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
+    const ratingShowing = ratingShownAt > 0 && Date.now() - ratingShownAt < RATING_CARD_MS
+    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText || ratingShowing)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -1363,7 +1552,9 @@
       measureSeekBar()
       if (lastBar.w > 0) lastBarLayoutKey = barLayoutKey
     }
-    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}`
+    // The words on the bar's text buttons come and go with the tracks, so they are part of the key.
+    const gmTexts = [...document.querySelectorAll<HTMLElement>('[data-gm-control-root] [data-gm-text]')].map((button) => button.dataset.gmText).join(',')
+    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}:${gmTexts}`
     const chrome = nativeControls
       ? (lastChrome.controlItems.length > 0 && lastChromeLayoutKey === chromeLayoutKey
           ? lastChrome
@@ -1404,7 +1595,11 @@
         kind: segment.type,
       })),
       chapterMarks: chapters.map((chapter) => chapter.time),
+      ratingLabel: ratingShowing ? ratingLabel : '',
+      ratingDetail: ratingShowing ? ratingDetail : '',
+      ratingShownAt: ratingShowing ? ratingShownAt : 0,
       ...chrome,
+      ...gmTheme,
     }
   }
 
@@ -1432,7 +1627,7 @@
   }
 
   $effect(() => {
-    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
+    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters; gmTheme; $playerOverlayRev
     scheduleGmDynamicOverlay()
   })
 
@@ -1600,7 +1795,7 @@
       }
       switch (e.payload.name) {
         case 'a':
-          if (showSkip && currentSeg) seekTo(currentSeg.end + 0.5)
+          if (showSkip && currentSeg) skipSegment()
           else togglePlayback()
           break
         case 'b':
@@ -1625,7 +1820,7 @@
   // with whatever surface already owns it (the subtitle mover, stats, a prompt, the switching card).
   $effect(() => {
     const onRequest = async () => {
-      if (subtitleEditorOpen || get(playerStatsOpen) || get(upNextPrompt) || get(connecting) || get(debridCaching)
+      if (subtitleEditorOpen || get(playerStatsOpen) || get(connecting) || get(debridCaching)
         || get(seriesRatingPrompt) || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen)
         || get(oskOpen) || topNavLayer()) return
       const picker = get(streamPicker)
@@ -1742,6 +1937,13 @@
         else if (e.payload.action === 'setPosition') cmd('seek', [String(value), 'absolute+exact'])
       }),
     ]
+    // A saved file can finish loading before these listeners are live (the overlay mounts as playback
+    // starts), and its missed file-loaded event left it without scrub previews. Ask mpv instead.
+    void Promise.all(uns).then(async () => {
+      if (loadedUrl) return
+      const path = await playerGetProperty('path').catch(() => '')
+      if (!loadedUrl && path && path === get(nowPlayingStream).url) loadedUrl = path
+    })
     // Safety net: end any active scrub on a window-level pointer release. If a seekbar drag
     // runs off the element/screen edge, its own pointerup can be missed — leaving the scrub
     // "active" forever, which pins the controls at opacity-0 (they vanish). Ending it here
@@ -1806,7 +2008,7 @@
         const t = nextChapterTarget(chapters, transportPos)
         if (t !== null) seekTo(t)
       }
-      else if (action === 'playerSkipSegment' && currentSeg) seekTo(currentSeg.end + 0.5)
+      else if (action === 'playerSkipSegment' && currentSeg) skipSegment()
       else if (action === 'playerVolumeUp') cmd('add', ['volume', '5'])
       else if (action === 'playerVolumeDown') cmd('add', ['volume', '-5'])
       else if (action === 'playerMute') cmd('cycle', ['mute'])
@@ -1892,7 +2094,6 @@
         })
         .finally(() => { recoveryBusy = false })
     }, 1_000)
-    poke()
     return () => {
       uns.forEach((u) => u.then((f) => f()))
       window.removeEventListener('pointerup', endStuckScrub)
@@ -1910,7 +2111,7 @@
      advances instead of looping a keyframe). Keys are handled by the CAPTURE-phase listener in
      onMount (above) — NOT here — so they never leak to the spatial nav and move focus. -->
 <!-- Keys and presses that poke() never sees (an unbound key, a click on the scrim) still count as input for the paused summary. -->
-<svelte:window onmousemove={poke} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
+<svelte:window onmousemove={onWindowMouseMove} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
@@ -1986,6 +2187,7 @@
   ontouchstart={onOverlayTouchStart}
   ontouchmove={onOverlayTouchMove}
   onpointerdown={onOverlayPointerDown}
+  onpointerleave={onOverlayPointerLeave}
   onpointermove={pipDragMove}
   onpointerup={endPipDrag}
   onpointercancel={endPipDrag}
@@ -2014,7 +2216,18 @@
     </div>
   {/if}
 
-  {#if drmActive && $nowPlayingStream.drm}
+  {#if drmNative && $nowPlayingStream.drm}
+    <NativeDrmSurface
+      url={$nowPlayingStream.url}
+      drm={$nowPlayingStream.drm}
+      startSeconds={$nowPlayingStream.startSeconds ?? 0}
+      subtitles={$nowPlayingStream.subtitles}
+      audioLang={$nowPlayingStream.audioLang ?? ''}
+      audioChoices={$nowPlayingStream.audioTracks}
+      previewUrl={$nowPlayingStream.previewUrl ?? ''}
+      onclose={() => void close()}
+    />
+  {:else if drmActive && $nowPlayingStream.drm}
     <DrmSurface
       url={$nowPlayingStream.url}
       drm={$nowPlayingStream.drm}
@@ -2042,6 +2255,11 @@
     </button>
   {/if}
 
+  {#if episodeScreen && episodeCover && $nowPlayingMedia}
+    <LoadingScreen screen={episodeScreen} episode loading={!firstFrame} variant="player" class="izumi-hud pointer-events-none absolute inset-0 bg-black"
+      model={episodeLoadingModel($nowPlayingMedia.media, $nowPlayingMedia.episode)} />
+  {/if}
+
   <!-- Loading/buffering. Black backdrop ONLY before the first frame (covers the
        white webview + the transparent hole). Mid-playback stalls show just the
        spinner over the frozen frame. Stall-show is debounced in DrmSurface
@@ -2051,15 +2269,28 @@
          which suspends transition frames and can leave an outro spinner mounted forever. -->
     <div
       class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
-      class:bg-black={!firstFrame}
+      class:bg-black={!firstFrame && !episodeCover}
     >
-      <!-- Game mode: stepped spin (8 frames/s) — a continuously-animating spinner makes every
-           overlay snapshot differ, so the unchanged-frame skip never fires exactly when the
-           device is busiest (buffering). Desktop keeps the smooth spin. -->
-      <div
-        class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"
-        style={gmMode ? 'animation-timing-function: steps(8)' : ''}
-      ></div>
+      <!-- One ring for every playback wait, the same as the connecting screen's and in the same
+           place, so starting playback shows one loader from the press to the picture. -->
+      <Spinner size="player" />
+    </div>
+  {:else if loading && !firstFrame && $gmFrozenFrame == null}
+    <!-- Game mode before mpv's window is up (a protected stream fetches its licence first): mpv's
+         own spinner cannot draw yet, so the page draws the same ring in the same place, colour and
+         turn (Spinner `player`) and the handover to it does not show. -->
+    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center" class:bg-black={!episodeCover}>
+      <Spinner size="player" />
+    </div>
+  {/if}
+
+  {#if ratingShownAt && ratingLabel && !gmBitmapMode}
+    <div data-part="player.rating" class="izumi-hud pointer-events-none absolute right-10 top-8 flex items-center gap-3 transition-opacity duration-700 ease-out" style:opacity={ratingOn ? 1 : 0}>
+      <div class="text-right text-sm text-white/70">
+        <div class="font-semibold uppercase tracking-wide text-white/90">Rating</div>
+        {#if ratingDetail}<div>{ratingDetail}</div>{/if}
+      </div>
+      <div class="grid h-12 min-w-12 place-items-center rounded-md border-2 border-white/80 px-2 text-2xl font-black text-white">{ratingLabel}</div>
     </div>
   {/if}
 
@@ -2084,15 +2315,15 @@
   {#if showSkip && currentSeg}
     <button
       data-part="player.skip" data-kind={currentSeg.type}
-      data-focusable data-theme-unthemed={gmMode || undefined}
+      data-focusable data-theme-unthemed={gmMode || undefined} use:protectedSurface={gmMode}
       transition:fade={{ duration: gmMode ? 0 : 150 }}
       class="izumi-hud absolute z-10 font-bold
         {gmMode
           ? 'bottom-36 right-10 rounded-full bg-white px-8 py-3.5 text-2xl tracking-wide text-black shadow-[0_10px_32px_rgba(0,0,0,.45)]'
           : 'bottom-28 right-8 rounded-lg border border-white/20 bg-black/70 px-5 py-2.5 text-sm text-white transition hover:bg-black/90'}"
-      onclick={(e) => { e.stopPropagation(); seekTo(currentSeg.end + 0.5) }}
+      onclick={(e) => { e.stopPropagation(); skipSegment() }}
     >
-      Skip {currentSeg.label}
+      {skipLabel}
     </button>
   {/if}
 
@@ -2127,9 +2358,10 @@
         <span class="text-[0.65rem] tabular-nums text-white/70">{Math.floor(transportPos / 60)}:{String(Math.floor(transportPos % 60)).padStart(2, '0')}</span>
       </div>
     </div>
-  {:else if controlsMounted}
+  {:else if controlsMounted || hudFadingOut}
     <!-- XWayland measures this bar for Rust's native 60Hz OSD. Native Wayland paints it live. -->
-    <div class="izumi-hud" class:opacity-0={(gmBitmapMode && gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
+    <div class="izumi-hud" data-player-hud={gmMode ? undefined : ''} data-visible={controlsMounted || undefined} inert={!controlsMounted}
+         class:opacity-0={(gmBitmapMode && gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
       <Controls pos={controlsPos} dur={transportDur} buffer={controlsBuffer} paused={transportPaused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} onscrubinput={scheduleGmDynamicOverlay} hideBack={hides('back')} hideTitle={hides('title')} />
     </div>
   {/if}
@@ -2211,5 +2443,23 @@
   }
   :global(html.gm-frozen [data-gm-bar]) {
     visibility: hidden;
+  }
+  /* Navigator's controls fade: opacity over 200 ms on its ease-out curve (`--ease-out`,
+     cubic-bezier(.23,1,.32,1)), 100 ms under reduced motion. The bar fades in from its first frame. */
+  :global([data-player-hud]) {
+    transition: opacity 200ms cubic-bezier(.23, 1, .32, 1);
+  }
+  :global([data-player-hud]:not([data-visible])) {
+    opacity: 0;
+  }
+  @starting-style {
+    :global([data-player-hud]) {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global([data-player-hud]) {
+      transition-duration: 100ms;
+    }
   }
 </style>

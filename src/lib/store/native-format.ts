@@ -1,7 +1,10 @@
 import type { IzumiCatalogPackage } from '$lib/extensions/catalog'
+import { MAX_PACK_BYTES } from '$lib/packs/format'
+import { MAX_MANIFEST_BYTES } from '$lib/plugins/manifest'
 import { parseRelease, type ThemeRelease } from '$lib/themes/packages'
 import { SUPPORTED_STORE_KINDS, type ContentType, type SourceType, type StoreEntry, type StoreKind } from './types'
 import { canonicalStoreUrl } from './url'
+import { storePlatformKey } from './platform-key'
 
 // Parser for the native store index (spec §6.3). Pure: the caller fetches.
 
@@ -73,6 +76,7 @@ export function parseNativeStore(
   raw: unknown,
   storeUrl: string,
   storeId: string,
+  platform = storePlatformKey(),
 ): { meta: NativeStoreMeta; entries: StoreEntry[]; skipped: number } {
   if (!isNativeStore(raw)) throw new Error('That is not an izumi store index.')
   if (typeof raw.schemaVersion !== 'number' || !Number.isInteger(raw.schemaVersion) || raw.schemaVersion < 1) {
@@ -99,7 +103,7 @@ export function parseNativeStore(
   const seen = new Set<string>()
   let skipped = 0
   for (const item of raw.entries) {
-    const entry = parseEntry(item, storeUrl, storeId)
+    const entry = parseEntry(item, storeUrl, storeId, platform)
     if (entry === 'ignored') continue
     if (!entry || seen.has(entry.key)) {
       skipped += 1
@@ -111,12 +115,11 @@ export function parseNativeStore(
   return { meta, entries, skipped }
 }
 
-function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntry | null | 'ignored' {
+function parseEntry(item: unknown, storeUrl: string, storeId: string, platform: string): StoreEntry | null | 'ignored' {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return null
   const e = item as Record<string, unknown>
   if (typeof e.kind !== 'string' || !KINDS.includes(e.kind as StoreKind)) return 'ignored'
   const kind = e.kind as StoreKind
-  // Kinds later phases install (plugins, packs) are part of the format but not listed yet.
   if (!SUPPORTED_STORE_KINDS.includes(kind)) return 'ignored'
   const id = validId(e.id) ? e.id : undefined
   const name = text(e.name, 64)
@@ -170,15 +173,44 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntr
       install: { type: 'theme', release },
     }
   }
+  if (kind === 'pack') {
+    // The pack review screen downloads the pack itself; the listing pins which file that is.
+    const url = httpsUrl(e.url, storeUrl)
+    const sha256 = sha(e.sha256)
+    const bytes = positive(e.bytes)
+    if (!url || !sha256 || !bytes || bytes > MAX_PACK_BYTES || !common.version) return null
+    return { ...common, key: `${storeId}:pack:${id}`, kind, install: { type: 'pack', url, sha256, bytes } }
+  }
+  if (kind === 'plugin') {
+    // The listing pins plugin.json; the Plugins page checks it and the code it pins before install.
+    // A plugin for another plugin API stays listed, so the page can say it needs a different izumi.
+    const url = httpsUrl(e.url, storeUrl)
+    const sha256 = sha(e.sha256)
+    const bytes = positive(e.bytes)
+    const pluginApi = positive(e.pluginApi)
+    if (!url || !sha256 || !bytes || bytes > MAX_MANIFEST_BYTES || !pluginApi || !common.version) return null
+    return { ...common, key: `${storeId}:plugin:${id}`, kind, install: { type: 'plugin', url, sha256, bytes, pluginApi } }
+  }
   const sourceType = typeof e.sourceType === 'string' && SOURCE_TYPES.includes(e.sourceType as SourceType)
     ? e.sourceType as SourceType
     : undefined
   if (!sourceType) return 'ignored'
   const key = `${storeId}:source:${id}`
   if (sourceType === 'package') {
-    const url = httpsUrl(e.url, storeUrl)
-    const sha256 = sha(e.sha256)
-    const bytes = positive(e.bytes)
+    // A native package (a local service) is one build per platform: `builds` maps `<os>-<arch>` to
+    // the file, and an entry with no build for this device is not listed here at all.
+    let file: Record<string, unknown> = e
+    if (e.builds !== undefined) {
+      if (!e.builds || typeof e.builds !== 'object' || Array.isArray(e.builds)) return null
+      const builds = e.builds as Record<string, unknown>
+      const build = Object.hasOwn(builds, platform) ? builds[platform] : undefined
+      if (!build) return 'ignored'
+      if (typeof build !== 'object' || Array.isArray(build)) return null
+      file = build as Record<string, unknown>
+    }
+    const url = httpsUrl(file.url, storeUrl)
+    const sha256 = sha(file.sha256)
+    const bytes = positive(file.bytes)
     if (!url || !sha256 || !bytes || !common.version) return null
     const backend: IzumiCatalogPackage['backend'] = e.backend === 'aniyomi-jvm'
       ? 'aniyomi-jvm'

@@ -12,7 +12,9 @@
     serviceSubmitPresentation,
     visibleServiceSettingFields,
   } from '$lib/extensions/service-settings-form'
+  import { languageSectionFields, saveSourceLanguageSection } from '$lib/extensions/source-languages'
   import { copyToClipboard } from '$lib/util/clipboard'
+  import QrCode from '$lib/components/QrCode.svelte'
   import { navLayer } from '$lib/nav/overlay'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import X from '@lucide/svelte/icons/x'
@@ -20,7 +22,21 @@
   import Copy from '@lucide/svelte/icons/copy'
   import ExternalLink from '@lucide/svelte/icons/external-link'
 
-  let { id, name, onclose }: { id: string; name: string; onclose: () => void } = $props()
+  let {
+    id,
+    name,
+    onclose = () => {},
+    inline = false,
+    oncomplete,
+  }: {
+    id: string
+    name: string
+    onclose?: () => void
+    /** Render in the page (a pack's setup step) instead of as a dialog. */
+    inline?: boolean
+    /** Follows the service's `complete` flag. */
+    oncomplete?: (complete: boolean) => void
+  } = $props()
   let document = $state<ServiceSettingsDocument | null>(null)
   let values = $state<Record<string, ServiceSettingValue>>({})
   let loading = $state(true)
@@ -29,17 +45,28 @@
   let message = $state('')
   let codeCopied = $state(false)
   let dialog = $state<HTMLElement>()
+  let root = $state<HTMLElement>()
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let destroyed = false
   const dirtyKeys = new Set<string>()
 
-  const visibleFields = $derived(document ? visibleServiceSettingFields(document, values) : [])
+  // The source's Language section sits above the form and saves each change on its own, as the
+  // source's handheld app's Preferences do; the form below keeps the rest.
+  const languageFields = $derived(document ? languageSectionFields(document) : [])
+  let languageSaving = $state('')
+  const visibleFields = $derived(document
+    ? visibleServiceSettingFields(document, values).filter((field) => field.section !== 'languages')
+    : [])
   const submit = $derived(document ? serviceSubmitPresentation(document, values) : null)
   const notice = $derived(
     document?.notice && matchesServiceSettingCondition(document.notice.visibleWhen, values)
       ? document.notice
       : null,
   )
+
+  $effect(() => {
+    oncomplete?.(document?.complete === true)
+  })
 
   function errorText(value: unknown) {
     return value instanceof Error ? value.message : String(value)
@@ -110,7 +137,8 @@
       const result = await saveExtensionServiceSettings(id, { ...values })
       if (result.ok === false) throw new Error(result.message || 'The local service rejected these settings.')
       if (result.version === 1 && result.fields && result.values) {
-        applyDocument({ ...document, ...result, version: 1, fields: result.fields, values: result.values })
+        // A full result's picture is its own: a signed-out one has none to inherit.
+        applyDocument({ ...document, image: undefined, ...result, version: 1, fields: result.fields, values: result.values })
         dirtyKeys.clear()
         schedulePoll()
       }
@@ -119,6 +147,18 @@
         : 'Settings saved.')
     } catch (cause) { error = errorText(cause) }
     finally { saving = false }
+  }
+
+  async function saveLanguage(key: string, value: ServiceSettingValue) {
+    if (languageSaving || saving) return
+    languageSaving = key
+    error = ''
+    message = ''
+    try {
+      applyDocument(await saveSourceLanguageSection(id, key, value), true)
+      message = 'Saved to your account.'
+    } catch (cause) { error = errorText(cause) }
+    finally { languageSaving = '' }
   }
 
   function copyCode(code: string) {
@@ -144,7 +184,7 @@
 
   onMount(() => {
     const previousFocus = globalThis.document.activeElement instanceof HTMLElement ? globalThis.document.activeElement : null
-    void load().then(() => requestAnimationFrame(() => dialog?.querySelector<HTMLElement>('[data-focusable]')?.focus()))
+    void load().then(() => requestAnimationFrame(() => (inline ? root : dialog)?.querySelector<HTMLElement>('[data-focusable]')?.focus()))
     return () => {
       destroyed = true
       if (pollTimer) clearTimeout(pollTimer)
@@ -153,6 +193,211 @@
   })
 </script>
 
+{#snippet formBody()}
+  {#if loading}
+    <div class="space-y-3" aria-label="Loading settings">
+      <div class="skeloader h-4 w-2/3 rounded"></div>
+      <div class="skeloader h-10 rounded-lg"></div>
+      <div class="skeloader h-10 rounded-lg"></div>
+    </div>
+  {:else if document}
+    {#if document.description}
+      <p class="mb-4 flex items-center gap-3 text-sm text-muted-foreground">
+        {#if document.image}<img src={document.image} alt="" class="size-12 shrink-0 rounded-lg object-cover" />{/if}
+        {document.description}
+      </p>
+    {/if}
+    {#if notice}
+      <section class="mb-4 rounded-xl border p-4 {noticeClass(notice.tone)}" aria-live="polite">
+        {#if notice.title}<h4 class="font-black">{notice.title}</h4>{/if}
+        <p class:mt-1={!!notice.title} class="text-sm opacity-90">{notice.message}</p>
+        {#if notice.code}
+          <div class="mt-3 flex items-center gap-2">
+            <code class="min-w-0 flex-1 select-all rounded-lg bg-black/25 px-3 py-2 text-center text-xl font-black tracking-[0.2em] text-foreground">{notice.code}</code>
+            <button
+              data-focusable
+              type="button"
+              aria-label="Copy code"
+              onclick={() => copyCode(notice.code!)}
+              class="flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold text-secondary-foreground"
+            ><Copy size={16} /> {codeCopied ? 'Copied' : 'Copy'}</button>
+          </div>
+          <!-- A code with its sign-in page: a phone can scan the page instead of typing an address on a
+               Steam Deck or TV, as the source's own handheld app offers. -->
+          {#if notice.action && /^https:\/\//.test(notice.action.url)}
+            <figure data-part="settings.signin.qr" class="mt-3 flex items-center gap-4">
+              <div class="w-36 shrink-0"><QrCode value={notice.action.url} label="Sign-in page" /></div>
+              <figcaption class="text-sm opacity-90">Scan with your phone to open the sign-in page, then enter the code.</figcaption>
+            </figure>
+          {/if}
+        {/if}
+        {#if notice.action}
+          <button
+            data-focusable
+            type="button"
+            onclick={() => openNoticeAction(notice.action!.url)}
+            class="mt-3 flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold text-secondary-foreground"
+          ><ExternalLink size={16} /> {notice.action.label}</button>
+        {/if}
+      </section>
+    {/if}
+    {#if languageFields.length}
+      <section aria-label="Languages" class="mb-5">
+        <h4 class="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Languages</h4>
+        <div class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-input/40">
+          {#each languageFields as field (field.key)}
+            <label class="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+              <span class="min-w-0">
+                <span class="block font-bold">{field.label}</span>
+                {#if languageSaving === field.key}<span class="block text-xs text-muted-foreground">Saving…</span>
+                {:else if field.description}<span class="block text-xs text-muted-foreground">{field.description}</span>{/if}
+              </span>
+              {#if field.type === 'boolean'}
+                <button
+                  type="button"
+                  data-focusable
+                  data-switch
+                  role="switch"
+                  aria-label={field.label}
+                  aria-checked={document.values[field.key] === true}
+                  disabled={!!languageSaving}
+                  onclick={() => saveLanguage(field.key, document?.values[field.key] !== true)}
+                  class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {document.values[field.key] === true ? 'bg-theme' : 'bg-white/20 ring-1 ring-inset ring-white/20'}"
+                ><span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {document.values[field.key] === true ? 'translate-x-4' : 'translate-x-0.5'}"></span></button>
+              {:else if field.type === 'select'}
+                <select
+                  data-focusable
+                  value={String(document.values[field.key] ?? '')}
+                  disabled={!!languageSaving}
+                  onchange={(event) => saveLanguage(field.key, event.currentTarget.value)}
+                  class="w-44 shrink-0 rounded-lg bg-input px-3 py-2 text-sm"
+                >
+                  {#each field.options ?? [] as option (option.value)}
+                    <option value={option.value}>{option.label}</option>
+                  {/each}
+                </select>
+              {/if}
+            </label>
+          {/each}
+        </div>
+        <p class="mt-2 text-xs text-muted-foreground">Saved to your {name} account as you change them. izumi plays {name} in these languages.</p>
+      </section>
+    {/if}
+    <div class="space-y-4">
+      {#each visibleFields as field (field.key)}
+        <label class="block">
+          <span class="mb-1 flex items-center gap-1 text-sm font-bold">
+            {field.label}{#if field.required}<span class="text-destructive" aria-hidden="true">*</span>{/if}
+          </span>
+          {#if field.type === 'boolean'}
+            <button
+              type="button"
+              data-focusable
+              data-switch
+              role="switch"
+              aria-checked={!!values[field.key]}
+              onclick={() => setValue(field.key, !values[field.key])}
+              class="flex w-full items-center justify-between rounded-lg bg-input px-3 py-2.5 text-left text-sm"
+            >
+              <span>{values[field.key] ? 'On' : 'Off'}</span>
+              <span class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {!!values[field.key] ? 'bg-theme' : 'bg-white/20 ring-1 ring-inset ring-white/20'}">
+                <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {!!values[field.key] ? 'translate-x-4' : 'translate-x-0.5'}"></span>
+              </span>
+            </button>
+          {:else if field.type === 'select' && (field.role === 'action' || (field.options?.length ?? 0) <= 6 || field.options?.some((option) => option.image || option.backdrop))}
+            <!-- Short lists (and pictured ones) are buttons, not a native select: select popups are unreliable with a controller. -->
+            <span role="radiogroup" aria-label={field.label} class="flex flex-col gap-2">
+              {#each field.options ?? [] as option (option.value)}
+                <button
+                  type="button"
+                  data-focusable
+                  role="radio"
+                  aria-checked={values[field.key] === option.value}
+                  onclick={() => setValue(field.key, option.value)}
+                  class="relative flex items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left text-sm {values[field.key] === option.value ? 'border-theme bg-theme/15' : 'border-border bg-input'}"
+                >
+                  {#if option.backdrop}<img src={option.backdrop} alt="" class="pointer-events-none absolute inset-0 size-full object-cover opacity-30" />{/if}
+                  {#if option.image}<img src={option.image} alt="" class="relative size-10 shrink-0 rounded-md object-cover" />{/if}
+                  <span class="relative min-w-0 flex-1">
+                    <span class="block font-bold">{option.label}</span>
+                    {#if option.description}<span class="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>{/if}
+                  </span>
+                </button>
+              {/each}
+            </span>
+          {:else if field.type === 'select'}
+            <select
+              data-focusable
+              value={String(values[field.key] ?? '')}
+              onchange={(event) => setValue(field.key, event.currentTarget.value)}
+              class="w-full rounded-lg bg-input px-3 py-2.5 text-sm"
+            >
+              {#each field.options ?? [] as option (option.value)}
+                <option value={option.value}>{option.label}</option>
+              {/each}
+            </select>
+          {:else if field.type === 'number'}
+            <input
+              data-focusable
+              type="number"
+              value={values[field.key] == null ? '' : Number(values[field.key])}
+              min={field.min}
+              max={field.max}
+              step={field.step}
+              placeholder={field.placeholder}
+              required={field.required}
+              oninput={(event) => setValue(field.key, event.currentTarget.value === '' ? null : event.currentTarget.valueAsNumber)}
+              class="w-full rounded-lg bg-input px-3 py-2.5 text-sm"
+            />
+          {:else}
+            <input
+              data-focusable
+              type={field.type === 'password' ? 'password' : 'text'}
+              value={String(values[field.key] ?? '')}
+              placeholder={field.placeholder}
+              required={field.required}
+              autocomplete={field.type === 'password' ? 'off' : undefined}
+              oninput={(event) => setValue(field.key, event.currentTarget.value)}
+              class="w-full rounded-lg bg-input px-3 py-2.5 text-sm"
+            />
+          {/if}
+          {#if field.description}<span class="mt-1 block text-xs text-muted-foreground">{field.description}</span>{/if}
+          {#if field.role === 'action' && field.type !== 'select' && submit?.description}
+            <span class="mt-1 block text-xs text-muted-foreground">{submit.description}</span>
+          {/if}
+        </label>
+      {/each}
+    </div>
+  {/if}
+
+  {#if error}
+    <div role="alert" class="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      {error}
+      {#if !document}<button data-focusable onclick={load} class="ml-2 font-bold underline">Retry</button>{/if}
+    </div>
+  {/if}
+  {#if message}<p role="status" class="mt-4 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">{message}</p>{/if}
+{/snippet}
+
+{#snippet submitButton()}
+  {#if document && submit && !submit.hidden}
+    <button
+      data-focusable
+      onclick={save}
+      disabled={saving}
+      class="flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-bold disabled:opacity-50 {submit.intent === 'danger' ? 'bg-destructive text-white' : 'bg-primary text-primary-foreground'}"
+    >
+      <Check size={16} /> {saving ? submit.submittingLabel : submit.label}
+    </button>
+  {/if}
+{/snippet}
+
+{#if inline}
+  <div bind:this={root} class="space-y-4" data-service-settings-inline>
+    {@render formBody()}
+    <div class="flex justify-end">{@render submitButton()}</div>
+  </div>
+{:else}
 <!-- A nav layer: Escape (the shared capture), B and remote Back close it, except while a save is in
      flight. It moves focus in once the settings load and restores it on close itself (onMount).
      The backdrop click is a pointer shortcut; keys close it through the layer. -->
@@ -179,127 +424,13 @@
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4" data-nav-scroll-container>
-      {#if loading}
-        <div class="space-y-3" aria-label="Loading settings">
-          <div class="skeloader h-4 w-2/3 rounded"></div>
-          <div class="skeloader h-10 rounded-lg"></div>
-          <div class="skeloader h-10 rounded-lg"></div>
-        </div>
-      {:else if document}
-        {#if document.description}<p class="mb-4 text-sm text-muted-foreground">{document.description}</p>{/if}
-        {#if notice}
-          <section class="mb-4 rounded-xl border p-4 {noticeClass(notice.tone)}" aria-live="polite">
-            {#if notice.title}<h4 class="font-black">{notice.title}</h4>{/if}
-            <p class:mt-1={!!notice.title} class="text-sm opacity-90">{notice.message}</p>
-            {#if notice.code}
-              <div class="mt-3 flex items-center gap-2">
-                <code class="min-w-0 flex-1 select-all rounded-lg bg-black/25 px-3 py-2 text-center text-xl font-black tracking-[0.2em] text-foreground">{notice.code}</code>
-                <button
-                  data-focusable
-                  type="button"
-                  aria-label="Copy code"
-                  onclick={() => copyCode(notice.code!)}
-                  class="flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold text-secondary-foreground"
-                ><Copy size={16} /> {codeCopied ? 'Copied' : 'Copy'}</button>
-              </div>
-            {/if}
-            {#if notice.action}
-              <button
-                data-focusable
-                type="button"
-                onclick={() => openNoticeAction(notice.action!.url)}
-                class="mt-3 flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold text-secondary-foreground"
-              ><ExternalLink size={16} /> {notice.action.label}</button>
-            {/if}
-          </section>
-        {/if}
-        <div class="space-y-4">
-          {#each visibleFields as field (field.key)}
-            <label class="block">
-              <span class="mb-1 flex items-center gap-1 text-sm font-bold">
-                {field.label}{#if field.required}<span class="text-destructive" aria-hidden="true">*</span>{/if}
-              </span>
-              {#if field.type === 'boolean'}
-                <button
-                  type="button"
-                  data-focusable
-                  data-switch
-                  role="switch"
-                  aria-checked={!!values[field.key]}
-                  onclick={() => setValue(field.key, !values[field.key])}
-                  class="flex w-full items-center justify-between rounded-lg bg-input px-3 py-2.5 text-left text-sm"
-                >
-                  <span>{values[field.key] ? 'On' : 'Off'}</span>
-                  <span class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors {!!values[field.key] ? 'bg-theme' : 'bg-white/20 ring-1 ring-inset ring-white/20'}">
-                    <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {!!values[field.key] ? 'translate-x-4' : 'translate-x-0.5'}"></span>
-                  </span>
-                </button>
-              {:else if field.type === 'select'}
-                <select
-                  data-focusable
-                  value={String(values[field.key] ?? '')}
-                  onchange={(event) => setValue(field.key, event.currentTarget.value)}
-                  class="w-full rounded-lg bg-input px-3 py-2.5 text-sm"
-                >
-                  {#each field.options ?? [] as option (option.value)}
-                    <option value={option.value}>{option.label}</option>
-                  {/each}
-                </select>
-              {:else if field.type === 'number'}
-                <input
-                  data-focusable
-                  type="number"
-                  value={values[field.key] == null ? '' : Number(values[field.key])}
-                  min={field.min}
-                  max={field.max}
-                  step={field.step}
-                  placeholder={field.placeholder}
-                  required={field.required}
-                  oninput={(event) => setValue(field.key, event.currentTarget.value === '' ? null : event.currentTarget.valueAsNumber)}
-                  class="w-full rounded-lg bg-input px-3 py-2.5 text-sm"
-                />
-              {:else}
-                <input
-                  data-focusable
-                  type={field.type === 'password' ? 'password' : 'text'}
-                  value={String(values[field.key] ?? '')}
-                  placeholder={field.placeholder}
-                  required={field.required}
-                  autocomplete={field.type === 'password' ? 'off' : undefined}
-                  oninput={(event) => setValue(field.key, event.currentTarget.value)}
-                  class="w-full rounded-lg bg-input px-3 py-2.5 text-sm"
-                />
-              {/if}
-              {#if field.description}<span class="mt-1 block text-xs text-muted-foreground">{field.description}</span>{/if}
-              {#if field.role === 'action' && submit?.description}
-                <span class="mt-1 block text-xs text-muted-foreground">{submit.description}</span>
-              {/if}
-            </label>
-          {/each}
-        </div>
-      {/if}
-
-      {#if error}
-        <div role="alert" class="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-          {#if !document}<button data-focusable onclick={load} class="ml-2 font-bold underline">Retry</button>{/if}
-        </div>
-      {/if}
-      {#if message}<p role="status" class="mt-4 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">{message}</p>{/if}
+      {@render formBody()}
     </div>
 
     <footer class="flex shrink-0 justify-end gap-2 border-t border-border bg-card px-5 pt-3" style="padding-bottom: max(1rem, env(safe-area-inset-bottom));">
       <button data-focusable onclick={onclose} class="rounded-md bg-secondary px-4 py-2 text-sm font-bold">Close</button>
-      {#if document && submit && !submit.hidden}
-        <button
-          data-focusable
-          onclick={save}
-          disabled={saving}
-          class="flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-bold disabled:opacity-50 {submit.intent === 'danger' ? 'bg-destructive text-white' : 'bg-primary text-primary-foreground'}"
-        >
-          <Check size={16} /> {saving ? submit.submittingLabel : submit.label}
-        </button>
-      {/if}
+      {@render submitButton()}
     </footer>
   </div>
 </div>
+{/if}

@@ -13,9 +13,71 @@
          (which then stays zoomed). The app has its own UI-scale setting; browser zoom isn't wanted. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>izumi</title>
+    <!-- A pack's startup animation plays at launch: paint black from the first frame so Home never
+         shows before it. The keys are kept by src/lib/startup/animation.ts. -->
+    <style>html.startup-cover::after{content:'';position:fixed;inset:0;z-index:2147483646;background:#000}</style>
+    <!-- A launch that is slow to show anything (a cold start, a startup animation still loading) gets a
+         spinner after 0.7 s, above that cover; it goes once the app is up and nothing covers it. -->
+    <style>
+      #boot-wait{position:fixed;left:50%;top:50%;z-index:2147483647;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:rgba(255,255,255,.85);opacity:0;pointer-events:none;animation:boot-wait-in .2s .7s forwards,boot-wait-spin .9s linear infinite}
+      html.booted:not(.startup-cover) #boot-wait{display:none}
+      @keyframes boot-wait-in{to{opacity:1}}
+      @keyframes boot-wait-spin{to{transform:rotate(360deg)}}
+    </style>
+    <script>
+      try {
+        var store = window.localStorage, info = store.getItem('startup-animation-info-v1')
+        // Rust names the video at every desktop launch; the cached info covers Android, and a cache
+        // emptied while the file was away (a cleared one was never filled again) no longer drops it.
+        if (location.pathname.indexOf('/app') === 0 && (window.__IZUMI_STARTUP_URL__ || (info && info !== 'null'))
+          && store.getItem('startup-animation-enabled-v1') !== 'false'
+          && store.getItem('motion-preference') !== '"reduce"'
+          && !window.sessionStorage.getItem('startup-animation-played')
+          && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+          document.documentElement.classList.add('startup-cover')
+        }
+      } catch (e) { /* storage blocked: no cover, the app starts as usual */ }
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
+    <div id="boot-wait" role="progressbar" aria-label="Starting izumi"></div>
+    <!-- A pack's startup animation starts here, before any app code has run (Rust's launch script
+         names the video), so a launch opens on it; StartupAnimation.svelte takes it over from here.
+         Shown even while Game mode hides the page until its zoom is applied. It starts once the page
+         has loaded and the window is on screen: the window only appears when WebKit has finished
+         loading, and a video in the page keeps it loading (on the Deck the window came 440 ms later). -->
+    <script>
+      (function () {
+        var url = window.__IZUMI_STARTUP_URL__
+        if (!url || !document.documentElement.classList.contains('startup-cover')) return
+        function start() {
+          // The app may have mounted first and started the animation itself.
+          try { if (window.sessionStorage.getItem('startup-animation-played')) return } catch (e) { /* storage blocked */ }
+          var video = document.createElement('video')
+          video.id = 'boot-intro'
+          video.muted = true
+          video.playsInline = true
+          video.preload = 'auto'
+          video.setAttribute('style', 'position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:2147483647;visibility:visible')
+          video.src = url
+          document.body.appendChild(video)
+          var started = video.play()
+          if (started && started.catch) started.catch(function () {})
+        }
+        var begun = false
+        function ready() {
+          if (begun || document.readyState !== 'complete' || document.visibilityState !== 'visible') return
+          begun = true
+          window.removeEventListener('load', ready)
+          document.removeEventListener('visibilitychange', ready)
+          start()
+        }
+        window.addEventListener('load', ready)
+        document.addEventListener('visibilitychange', ready)
+        ready()
+      })()
+    </script>
     <div style="display: contents">%sveltekit.body%</div>
   </body>
 </html>

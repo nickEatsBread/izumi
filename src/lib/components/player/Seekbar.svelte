@@ -6,10 +6,12 @@
   import { scrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
   import { scrubThumbnails } from '$lib/settings/ui'
   import { getDrmEngine } from '$lib/player/drm'
+  import { getNativeDrm } from '$lib/player/native-drm'
   import { onThumbReset, onThumbTile, thumbEpoch, thumbTiles } from '$lib/player/thumb-tiles'
   import type { Segment } from '$lib/stremio/aniskip'
   import { themePresentation } from '$lib/themes/runtime'
   import { cssThemeColor } from '$lib/themes/presentation'
+  import { touchRevealArmed } from '$lib/player/touch-reveal'
 
   // Seekbar for the libmpv player. Renders stacked layers (buffered,
   // OP/ED segment tints, hover-scrub, played) plus chapter ticks and a hover
@@ -188,10 +190,10 @@
     thumbApprox = !!near
     const run = async () => {
       if (my !== reqSeq) return
-      const drm = getDrmEngine()
-      if (drm?.thumbnail) {
+      const preview = getDrmEngine()?.thumbnail ?? getNativeDrm()?.thumbnail
+      if (preview) {
         try {
-          const url = await drm.thumbnail(t)
+          const url = await preview(t)
           if (my !== reqSeq) return
           if (url) {
             const idx = interval > 0 ? Math.round(t / interval) : 0
@@ -270,7 +272,9 @@
     const t = setTimeout(() => { heldT = undefined }, 1500)
     return () => clearTimeout(t)
   })
-  const progressPct = $derived(pct(heldT ?? pos))
+  // While a drag is held the played fill follows the pointer, both ways (the preview bar sits under the
+  // fill, so a drag back towards the start showed nothing moving), as Navigator's slider range does.
+  const progressPct = $derived(pct(seeking ? hoverT : heldT ?? pos))
   const bufferPct = $derived(pct(buffer))
   const hoverPct = $derived(pct(hoverT))
   const seekActive = $derived(hovering || seeking)
@@ -351,6 +355,8 @@
     hoverT = t
   }
   function ondown(e: PointerEvent) {
+    // The touch that revealed the hidden controls is not a press on the bar it revealed.
+    if (gm && touchRevealArmed()) return
     measureBar()
     const t = timeAt(e.clientX)
     hoverT = t

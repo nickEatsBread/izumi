@@ -7,6 +7,7 @@
   import LockKeyhole from '@lucide/svelte/icons/lock-keyhole'
   import { pushNavLayer, topNavLayer } from '$lib/nav/layers'
   import { describeFocus, restoreFocus } from '$lib/nav/focus-memory'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import { pinLockSeconds, pinThrottleMessage } from '$lib/profiles/store'
   import {
     HOUSEHOLD_ACTION_TITLES,
@@ -89,7 +90,7 @@
 
 {#if prompt}
   <div bind:this={root} role="dialog" aria-modal="true" aria-labelledby="household-pin-title" aria-describedby="household-pin-body"
-       data-nav-trap data-nav-escape data-theme-protected
+       data-nav-trap data-nav-escape data-theme-protected use:protectedSurface
        class="fixed inset-0 z-[155] grid place-items-end bg-black/75 sm:place-items-center sm:p-4">
     <div class="w-full max-w-sm rounded-t-2xl border border-border bg-background p-5 shadow-2xl sm:rounded-2xl sm:p-6">
       <p class="flex items-center gap-2 text-xs font-bold text-muted-foreground"><LockKeyhole size={14} /> Main profile PIN</p>

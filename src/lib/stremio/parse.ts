@@ -45,6 +45,9 @@ export interface StremioStreamSubtitle {
   title?: string
 }
 
+/** An episode's age rating ("14", "TV-MA") and the content descriptors its source names beside it. */
+export interface StreamRating { label: string; descriptors?: string[] }
+
 export interface Stream {
   url?: string
   ytId?: string
@@ -109,6 +112,12 @@ export interface Stream {
   __drm?: import('$lib/player/drm').StreamDrm
   /** Seek-bar hover sprite / BIF URL. */
   __previewUrl?: string
+  /** Where a source catalog wants the playhead reported (its own address only). */
+  __progressUrl?: string
+  /** The episode's skip segments as its source marks them, validated by `sourceSkipSegments`. */
+  __skip?: import('./aniskip').Segment[]
+  /** The episode's own age rating as its source gives it (`izumi.rating`), for the player's opening. */
+  __rating?: StreamRating
   /** Provider-supplied network-safe equivalent for Watch Together guests. The local player
    * continues to use the faster loopback source; this is only serialized into the room. */
   __party?: Pick<Stream, 'url' | '__headers' | '__drm' | '__subtitles' | '__audioTracks' | '__previewUrl' | '__audioLang'>

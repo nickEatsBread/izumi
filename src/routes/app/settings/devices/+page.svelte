@@ -12,7 +12,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Copy from '@lucide/svelte/icons/copy'
   import Download from '@lucide/svelte/icons/download'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone'
   import Plus from '@lucide/svelte/icons/plus'
   import Radio from '@lucide/svelte/icons/radio'
@@ -875,7 +875,7 @@
                 </p>
               </div>
               <button type="button" data-focusable disabled={!!busy || !cloudflareTermsAccepted} onclick={() => { h.impact(); createCloudflarePreview() }} class="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
-                {#if busy === 'cloudflare-preview'}<LoaderCircle size={16} class="animate-spin" />{/if}
+                {#if busy === 'cloudflare-preview'}<Spinner inline />{/if}
                 {busy === 'cloudflare-preview' ? 'Preparing your Worker…' : 'Create my private Worker'}
               </button>
               <p class="mt-2 text-xs text-muted-foreground">The security check can take a moment; temporary credentials stay in the app.</p>
@@ -887,7 +887,7 @@
                 <div class="mt-3 flex flex-wrap gap-2">
                   <button type="button" data-focusable onclick={() => openUrl(cloudflarePreview!.claimUrl)} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open Cloudflare claim</button>
                   <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); connectCloudflarePreview() }} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
-                    {#if busy === 'cloudflare-preview-connect'}<LoaderCircle size={16} class="animate-spin" />{/if}
+                    {#if busy === 'cloudflare-preview-connect'}<Spinner inline />{/if}
                     {busy === 'cloudflare-preview-connect' ? 'Connecting…' : 'I claimed it — connect'}
                   </button>
                 </div>
@@ -959,7 +959,7 @@
       {/snippet}
       {#snippet scanningIcon()}
         <span class="grid size-9 place-items-center rounded-lg bg-secondary text-muted-foreground">
-          <LoaderCircle size={18} class="animate-spin" />
+          <Spinner inline />
         </span>
       {/snippet}
       {#snippet disableControl()}
@@ -1320,7 +1320,7 @@
               />
               <p class="mt-1 text-xs text-muted-foreground">Your private Worker keeps this token as an encrypted secret for future updates. It is never sent to the TV.</p>
               <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); updateCloudflareDeployment() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
-                {#if busy === 'cloudflare-update'}<LoaderCircle size={16} class="animate-spin" />{/if}
+                {#if busy === 'cloudflare-update'}<Spinner inline />{/if}
                 {busy === 'cloudflare-update' ? 'Updating Worker…' : 'Install Worker update'}
               </button>
             {:else}
@@ -1362,7 +1362,7 @@
             </div>
           {/if}
           <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); deployCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
-            {#if busy === 'cloudflare-deploy'}<LoaderCircle size={16} class="animate-spin" />{/if}
+            {#if busy === 'cloudflare-deploy'}<Spinner inline />{/if}
             {busy === 'cloudflare-deploy' ? 'Setting up Worker…' : cloudflareAccounts.length > 1 && !cloudflareAccountId ? 'Continue' : 'Deploy into this account'}
           </button>
         </SettingsRow>

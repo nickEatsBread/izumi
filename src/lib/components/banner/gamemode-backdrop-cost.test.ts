@@ -16,13 +16,21 @@ describe('Game mode backdrop cost', () => {
   })
 
   it('does not run main-thread infinite animations in Game mode', () => {
-    // No compositor promotion there, so an infinite transform animation is a repaint per frame.
-    expect(css).toMatch(/html\.gamemode \.skeloader::before \{\s*animation:\s*none;?\s*\}/)
+    // No compositor promotion there, so an infinite transform animation is a repaint per frame. The
+    // loading shimmer is the one kept (a still placeholder reads as stuck); off-screen rows pause it.
+    expect(css).not.toMatch(/html\.gamemode \.skeloader::before \{\s*animation:\s*none/)
+    expect(css).toMatch(/\.deferred-skeleton \.skeloader::before \{\s*animation-play-state:\s*paused;?\s*\}/)
     const artwork = readFileSync(
       fileURLToPath(new URL('../onboarding/SetupArtwork.svelte', import.meta.url)),
       'utf8',
     )
     expect(artwork).toMatch(/:global\(html\.gamemode\) \.poster-column \{\s*animation:\s*none;?\s*\}/)
+  })
+
+  it('lets a placeholder\'s own position utilities beat the shimmer class', () => {
+    // Unlayered, `.skeloader { position: relative }` beat `absolute inset-0` and every loading
+    // banner's shimmer layer was 0 px tall: Home loaded with no banner placeholder at all.
+    expect(css).toContain('@layer components { .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); } }')
   })
 
   it('lets browse images appear in place under Game mode instead of tweening in', () => {

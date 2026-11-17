@@ -61,12 +61,14 @@
   let airings = $state<Airing[]>([])
   let loading = $state(true)
   let error = $state('')
+  let retries = $state(0)
 
   // Weeks are session-cached and in-flight deduped. Only fetch the week the user requested: an
   // automatic next-week prefetch doubled this screen's AniList page count even when Next was never
   // pressed, delaying visible work behind speculative requests on the 30/minute quota.
   $effect(() => {
     const s = start, e = end
+    void retries
     let cancelled = false
     const controller = new AbortController()
     ;(async () => {
@@ -236,9 +238,9 @@
 </script>
 
 {#snippet dayTabs(showHint: boolean)}
-  <div bind:this={dayRow} class="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] snap-x sm:mx-0 sm:overflow-visible sm:px-0">
+  <div bind:this={dayRow} data-part="schedule.daytabs" class="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] snap-x sm:mx-0 sm:overflow-visible sm:px-0">
     {#each SHORT as d, i (d)}
-      <button data-focusable data-nav-down="schedule-first-airing" onclick={() => { if (i !== selected) h.tap(); selected = i }}
+      <button data-focusable data-part="schedule.daytab" data-active={i === selected || undefined} data-today={i === todayIdx || undefined} data-unaired={hasUnaired(i) || undefined} data-nav-down="schedule-first-airing" onclick={() => { if (i !== selected) h.tap(); selected = i }}
         class="relative h-[5.25rem] w-[7.75rem] shrink-0 snap-center rounded-2xl border text-center text-lg font-black transition-colors sm:h-auto sm:w-auto sm:flex-1 sm:shrink sm:rounded-lg sm:py-3 sm:text-sm
                {i === selected ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border/70 bg-secondary hover:bg-accent'}">
         {d}
@@ -253,7 +255,7 @@
     {/each}
   </div>
   {#if showHint}
-    <p class="mb-3 text-xs text-muted-foreground">{$bumperTabs ? 'L2 / R2' : 'L1 / R1'} to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
+    <p data-part="schedule.hint" class="mb-3 text-xs text-muted-foreground">{$bumperTabs ? 'L2 / R2' : 'L1 / R1'} to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
   {/if}
 {/snippet}
 
@@ -266,7 +268,7 @@
 {/snippet}
 
 {#snippet mineEmpty()}
-  <div class="rounded-lg border border-border/50 bg-secondary/40 p-8 text-center">
+  <div data-part="schedule.empty" class="rounded-lg border border-border/50 bg-secondary/40 p-8 text-center">
     {#if !hasMySources(sets)}
       <p class="text-sm font-bold">No shows tracked yet</p>
       <p class="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">Link AniList or MyAnimeList in Settings, or start watching something — your airing shows will appear here.</p>
@@ -280,6 +282,7 @@
 {/snippet}
 
 {#if loading}
+  <div data-part="schedule.loading">
   <div class="-mx-4 flex gap-3 overflow-hidden px-4 sm:mx-0 sm:px-0">
     {#each Array.from({ length: 4 }) as _}
       <div class="skeloader h-[5.25rem] w-[7.75rem] shrink-0 rounded-2xl sm:flex-1"></div>
@@ -290,8 +293,13 @@
       <div class="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3"><div class="skeloader mt-2 h-4 rounded"></div><div class="skeloader h-28 rounded-xl"></div></div>
     {/each}
   </div>
+  </div>
 {:else if error}
-  <p class="text-muted-foreground">Failed to load schedule: {error}</p>
+  <div data-part="schedule.error" role="alert" class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+    <p class="font-bold text-foreground">The schedule couldn't be loaded</p>
+    <p class="mt-1">{error}</p>
+    <button data-focusable type="button" onclick={() => retries++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Try again</button>
+  </div>
 {:else}
   <div class="schedule-panel-in">
     {#if view === 'mine' && mineCount === 0}

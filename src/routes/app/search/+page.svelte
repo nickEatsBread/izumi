@@ -13,11 +13,12 @@
   import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'
   import type { Snapshot } from './$types'
   import {
-    CATALOG_SELECTIONS,
+    isCatalogSelection,
     catalogLabel,
     catalogScreen,
     catalogProvider,
     catalogProviders,
+    enabledCatalogProviders,
     isLegacyAniListCatalog,
     isMergedScreen,
     mergedCatalogProviders,
@@ -26,6 +27,7 @@
   import CatalogSearchPage from '$lib/components/catalog/CatalogSearchPage.svelte'
   import CatalogPlatformLogo from '$lib/components/catalog/CatalogPlatformLogo.svelte'
   import MergedCatalogSearchPage from '$lib/components/catalog/MergedCatalogSearchPage.svelte'
+  import SearchTrending from '$lib/search/SearchTrending.svelte'
   import Layers3 from '@lucide/svelte/icons/layers-3'
   import { m } from '$lib/paraglide/messages.js'
 
@@ -53,11 +55,14 @@
   let debounced = $state<SearchFilters>({ ...seed })
   type MergedScope = 'all' | CatalogSelection
   const requestedScope = sp.get('provider')
-  let mergedScope = $state<MergedScope>(requestedScope && CATALOG_SELECTIONS.includes(requestedScope as CatalogSelection)
-    ? requestedScope as CatalogSelection : 'all')
+  let mergedScope = $state<MergedScope>(isCatalogSelection(requestedScope) ? requestedScope : 'all')
   let mergedQuery = $state(seed.search ?? '')
   let t: ReturnType<typeof setTimeout>
   const mergedSelections = $derived(mergedCatalogProviders($catalogProviders))
+  // Nothing typed or filtered yet: trending titles from the other enabled catalogs sit above the
+  // grid, which is already AniList's trending list. The first keystroke or filter hides them.
+  const browsing = $derived(Object.values(filters).every((value) => value == null || value === '' || (Array.isArray(value) && !value.length)))
+  const trendingSelections = $derived($enabledCatalogProviders.filter((selection) => !isLegacyAniListCatalog(selection)))
 
   $effect(() => {
     if (mergedScope !== 'all' && !mergedSelections.includes(mergedScope)) mergedScope = 'all'
@@ -260,6 +265,7 @@
     <div class="p-4 pt-5 sm:px-8" data-slot="search" data-variant="anilist-scope">
       <div data-slot="search.header" class="contents"><FilterBar bind:filters /></div>
       <div class="mt-6">
+        {#if browsing}<SearchTrending selections={trendingSelections} />{/if}
         {#key key}<SearchResults filters={debounced} />{/key}
       </div>
     </div>
@@ -286,6 +292,7 @@
       <FilterBar bind:filters />
     </div>
     <div class="mt-6">
+      {#if browsing}<SearchTrending selections={trendingSelections} />{/if}
       {#key key}
         <SearchResults filters={debounced} />
       {/key}

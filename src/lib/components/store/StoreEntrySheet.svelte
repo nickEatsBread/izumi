@@ -5,6 +5,7 @@
   import { entryTypeLabel } from '$lib/store/filters'
   import type { StoreEntry } from '$lib/store/types'
   import { navLayer } from '$lib/nav/overlay'
+  import { protectedSurface } from '$lib/themes/safe-mode'
 
   let {
     entry, icon, storeName, thirdParty, trustLabel, installed, elsewhere = false, update, enabled, busy, locked, error = '',
@@ -34,7 +35,7 @@
     ontoggle?: () => void
     onsettings?: () => void
     settingsLabel?: string
-    /** For entries managed on another page (themes). */
+    /** For entries managed on another page (themes, packs). */
     onmanage?: () => void
   } = $props()
 
@@ -46,7 +47,7 @@
         ? install.spec
         : install.type === 'package'
           ? (install.pkg.packageFormat === 'aniyomi-repo' ? install.pkg.apk : install.pkg.package)
-          : install.release.download
+          : install.type === 'pack' || install.type === 'plugin' ? install.url : install.release.download
     try {
       return new URL(url).hostname
     } catch {
@@ -56,6 +57,8 @@
   const live = $derived(entry.install.type === 'addon' || entry.install.type === 'extension')
   const installLabel = $derived(entry.install.type === 'theme'
     ? 'Preview & install'
+    : entry.install.type === 'pack' ? 'Review & set up'
+    : entry.install.type === 'plugin' ? 'Review & install'
     : entry.install.type === 'addon' && entry.install.configureUrl ? 'Configure & install' : 'Install')
 </script>
 
@@ -63,7 +66,7 @@
      onclick={(event) => { if (event.target === event.currentTarget && !busy) onclose() }}>
   <!-- A nav layer: Escape (the shared capture), B and remote Back close only this sheet, never while
        an install or removal is running. -->
-  <div role="dialog" data-theme-protected aria-modal="true" aria-labelledby="store-entry-title" data-nav-trap data-nav-escape
+  <div role="dialog" data-theme-protected use:protectedSurface aria-modal="true" aria-labelledby="store-entry-title" data-nav-trap data-nav-escape
        use:navLayer={{ kind: 'store-entry', onClose: () => { if (busy) return false; onclose() } }} data-nav-scroll-container
        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-background p-5 shadow-2xl sm:rounded-2xl sm:p-6">
     <div class="flex items-start gap-3">
@@ -103,7 +106,7 @@
                   class="rounded-md px-3 py-2 text-sm font-black {enabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-secondary'}">{enabled ? 'Enabled' : 'Enable'}</button>
         {/if}
         {#if onsettings}<button type="button" data-focusable onclick={onsettings} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">{settingsLabel}</button>{/if}
-        {#if onmanage}<button type="button" data-focusable onclick={onmanage} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Manage in Themes</button>{/if}
+        {#if onmanage}<button type="button" data-focusable onclick={onmanage} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Manage in {entry.kind === 'pack' ? 'Sources' : entry.kind === 'plugin' ? 'Plugins' : 'Themes'}</button>{/if}
         {#if onremove}<button type="button" data-focusable disabled={busy} onclick={onremove} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10">Remove</button>{/if}
       {:else if elsewhere}
         <p class="self-center text-sm text-muted-foreground">Already installed from another store or source.</p>

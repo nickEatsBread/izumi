@@ -387,6 +387,9 @@ async function list(path: string, kind: TmdbKind | undefined, signal?: AbortSign
   return mapList(page, kind)
 }
 
+/** This week's trending movies and TV: Home's "Trending This Week" row on its own. */
+export const tmdbTrending = (signal?: AbortSignal): Promise<Media[]> => list('/trending/all/week', undefined, signal)
+
 /** A deliberately broad deck for the local Discovery Queue ranker. TMDB supplies facts and
  * candidates here; profile-local affinity and explicit feedback decide their order elsewhere. */
 export async function loadTmdbDiscoveryQueue(page = 1, signal?: AbortSignal): Promise<Media[]> {

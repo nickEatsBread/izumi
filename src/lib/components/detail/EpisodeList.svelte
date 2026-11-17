@@ -24,7 +24,7 @@
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
-  import { enqueueMany, downloads, keyFor } from '$lib/downloads/store'
+  import { startDownload, downloads, keyFor } from '$lib/downloads/store'
   import {
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
@@ -42,7 +42,7 @@
   import { seriesResumeProgress, seriesUnderWay } from '$lib/detail/resume'
   import { arrivalDayText, episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
-  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Pause from '@lucide/svelte/icons/pause'
   import Check from '@lucide/svelte/icons/check'
   import Search from '@lucide/svelte/icons/search'
@@ -499,7 +499,7 @@
   function confirmDownload() {
     if (!selected.size && followNew === !!subscription) return
     if (selected.size) {
-      enqueueMany(media, [...selected].sort((a, b) => a - b), {
+      void startDownload(media, [...selected].sort((a, b) => a - b), {
         quality: batchQuality,
         cachedOnly: $downloadCachedOnly,
         audio: batchAudio,
@@ -1025,7 +1025,7 @@
               {#if dl.status === 'error'}<Download size={13} class="text-destructive" />
               {:else if dl.status === 'done'}<Check size={13} class="text-green-400" />
               {:else if dl.status === 'downloading'}<span class="text-[0.55rem] font-black tabular-nums text-blue-400">{dl.bytes ? Math.round((dl.downloaded / dl.bytes) * 100) : 0}</span>
-              {:else if dl.status === 'queued'}<Loader size={13} class="animate-spin text-muted-foreground" />
+              {:else if dl.status === 'queued'}<Spinner size="xs" inline class="text-muted-foreground" />
               {:else}<Pause size={12} class="text-amber-400" />{/if}
             </span>
           {/if}

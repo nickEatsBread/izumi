@@ -59,6 +59,13 @@ export type StreamPickerState = {
   // An in-place episode advance (next, previous, auto-advance): a docked mini-player stays docked
   // and simply changes episode, the way any music app's mini-player does.
   keepMini?: boolean
+  // The user is choosing which source to DOWNLOAD (Settings → Downloads → Choose the source): a
+  // pick is handed to `choose` instead of playing, and `suggest` is the row an automatic download
+  // would have saved, offered as the best one.
+  download?: {
+    choose: (stream: Stream) => void
+    suggest: (streams: Stream[]) => Stream | undefined
+  }
 }
 
 export const streamPicker = writable<StreamPickerState | null>(null)
@@ -88,18 +95,6 @@ export const streamPickerDismissedAt = writable(-1e9)
  *  release the account does not already hold is deliberately left alone — so "not ready" is the
  *  normal state and saying so would be noise rather than information. */
 export const nextEpisodeReady = writable<{ mediaId: number; episode: number } | null>(null)
-
-/** Optional end-of-episode prompt. The callbacks own stale-play guards in play.ts; the component
- * only presents them and never needs to understand source resolution. */
-export const upNextPrompt = writable<{
-  mediaId: number
-  episode: number
-  title: string
-  artwork?: string
-  seconds: number
-  play: () => void
-  stay: () => void
-} | null>(null)
 
 // Single-window player session. `playing` toggles the in-app player overlay (and
 // the transparent "hole" that lets mpv, embedded in the main window, show
@@ -167,6 +162,10 @@ export const nowPlayingStream = writable<{
     headers?: Record<string, string>
   }[]
   previewUrl?: string
+  /** The episode's skip segments as the stream's source marks them (`Stream.__skip`). */
+  skip?: import('$lib/stremio/aniskip').Segment[]
+  /** The episode's age rating as its source gives it (`Stream.__rating`). */
+  rating?: import('$lib/stremio/parse').StreamRating
 }>({ url: '', headers: {}, infoHash: null })
 
 /** Source candidates retained after the picker closes. The playback watchdog uses this exact
@@ -251,6 +250,10 @@ export const playerSideSheetOpen = writable(false)
 // readout and still take clicks.
 export const playerTopBarUnderTitlebar = writable(false)
 
+// False while the player's controls have auto-hidden (PlayerOverlay's `controlsVisible`), so the
+// titlebar's window buttons and chips fade out with them. PlayerOverlay resets it to true on close.
+export const playerChromeVisible = writable(true)
+
 /** Bump so Game-mode overlay-add re-snapshots after a d-pad move (no 60fps crawl). */
 export const playerOverlayRev = writable(0)
 export function bumpPlayerOverlay() {
@@ -301,6 +304,12 @@ export const torrentSubtitleState = writable<{
   total: number
   revision: number
 }>({ playbackId: null, status: 'idle', loaded: 0, total: 0, revision: 0 })
+
+// Bumped each time a subtitle track reaches the playing file after it opened (add-on results,
+// debrid and torrent sidecars). mpv never selects such a track itself, so the overlay re-runs its
+// subtitle choice on every bump. The webview's protected player bumps it whenever its audio or
+// subtitle list changes, so the track buttons and menus read the list again.
+export const lateSubtitleRevision = writable(0)
 
 // Cache key (infoHash, else `<mediaId>-<episode>`) of the stream now playing, used
 // by the seekbar to request/poll its scrub-preview sprite sheet. null = no sprite.

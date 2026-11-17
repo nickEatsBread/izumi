@@ -59,8 +59,8 @@ describe('native store index', () => {
       { kind: 'source', sourceType: 'stremio-addon', id: 'no-manifest', name: 'No manifest' },
       { kind: 'source', sourceType: 'package', id: 'no-hash', name: 'No hash', version: '1.0.0', url: 'https://x.test/p.izumi-ext', bytes: 1 },
       { kind: 'theme', id: 'http-theme', name: 'Insecure', version: '1.0.0', themeApi: 1, url: 'http://x.test/t.json', sha256: HASH, bytes: 1 },
-      { kind: 'plugin', id: 'later', name: 'Later' },
-      { kind: 'pack', id: 'later-pack', name: 'Later' },
+      { kind: 'plugin', id: 'no-file-plugin', name: 'No file', version: '1.0.0', pluginApi: 1 },
+      { kind: 'pack', id: 'no-file', name: 'No file', version: '1.0.0' },
       { kind: 'source', sourceType: 'future-type', id: 'future', name: 'Future' },
       { kind: 'widget', id: 'widget', name: 'Widget' },
       { kind: 'source', sourceType: 'stream-provider', id: 'dup', name: 'Dup', manifestUrl: 'https://x.test/a.json' },
@@ -68,7 +68,41 @@ describe('native store index', () => {
       'not an object',
     ]), STORE_URL, 's')
     expect(entries.map((entry) => entry.name)).toEqual(['Dup'])
-    expect(skipped).toBe(5)
+    expect(skipped).toBe(7)
+  })
+
+  it('lists packs with the file their review screen opens', () => {
+    const { entries, skipped } = parseNativeStore(store([
+      { kind: 'pack', id: 'example-pack', name: 'Example Pack', version: '1.0.0', author: 'Someone',
+        description: 'Sets izumi up.', url: 'packs/example-pack/pack.json', sha256: HASH, bytes: 4096 },
+      { kind: 'pack', id: 'too-big', name: 'Too big', version: '1.0.0', url: 'packs/big.json', sha256: HASH, bytes: 64_001 },
+      { kind: 'pack', id: 'no-version', name: 'No version', url: 'packs/x.json', sha256: HASH, bytes: 10 },
+    ]), STORE_URL, 's')
+    expect(skipped).toBe(2)
+    expect(entries).toEqual([expect.objectContaining({
+      key: 's:pack:example-pack', kind: 'pack', name: 'Example Pack', version: '1.0.0', author: 'Someone',
+      install: { type: 'pack', url: 'https://stores.example.test/izumi/packs/example-pack/pack.json', sha256: HASH, bytes: 4096 },
+    })])
+  })
+
+  it('lists plugins with the plugin.json they pin, under any plugin API', () => {
+    const plugin = { kind: 'plugin', name: 'Example Plugin', version: '1.0.0', author: 'Someone', description: 'Does a thing.', sha256: HASH, bytes: 2048, pluginApi: 1 }
+    const { entries, skipped } = parseNativeStore(store([
+      { ...plugin, id: 'example.plugin', url: 'plugins/example/plugin.json' },
+      { ...plugin, id: 'future.plugin', url: 'plugins/future/plugin.json', pluginApi: 2 },
+      { ...plugin, id: 'too-big', url: 'plugins/big/plugin.json', bytes: 64 * 1024 + 1 },
+      { ...plugin, id: 'no-api', url: 'plugins/x/plugin.json', pluginApi: undefined },
+      { ...plugin, id: 'insecure', url: 'http://x.test/plugin.json' },
+      { ...plugin, id: 'no-version', url: 'plugins/y/plugin.json', version: undefined },
+    ]), STORE_URL, 's')
+    expect(skipped).toBe(4)
+    expect(entries).toEqual([
+      expect.objectContaining({
+        key: 's:plugin:example.plugin', kind: 'plugin', name: 'Example Plugin', version: '1.0.0', author: 'Someone',
+        install: { type: 'plugin', url: 'https://stores.example.test/izumi/plugins/example/plugin.json', sha256: HASH, bytes: 2048, pluginApi: 1 },
+      }),
+      expect.objectContaining({ key: 's:plugin:future.plugin', install: expect.objectContaining({ pluginApi: 2 }) }),
+    ])
   })
 
   it('holds native themes to the theme catalog rules', () => {
@@ -114,5 +148,25 @@ describe('native store index', () => {
     expect(entries.map((entry) => entry.id)).toEqual(['plain-addon'])
     expect(skipped).toBe(2)
     expect(() => parseNativeStore(store([], { id: 'prototype' }), STORE_URL, 's')).toThrow('id or name')
+  })
+
+  it('lists a native package only with a build for this device, and installs that build', () => {
+    const builds = {
+      'linux-x86_64': { url: 'https://x.test/linux.izumi-ext', sha256: HASH, bytes: 10 },
+      'windows-x86_64': { url: 'https://x.test/windows.izumi-ext', sha256: 'b'.repeat(64), bytes: 20 },
+    }
+    const doc = store([
+      { kind: 'source', sourceType: 'package', id: 'native-source', name: 'Native', version: '1.0.0', backend: 'izumi-service', builds },
+      { kind: 'source', sourceType: 'package', id: 'broken-builds', name: 'Broken', version: '1.0.0', builds: ['x'] },
+    ])
+    const linux = parseNativeStore(doc, STORE_URL, 's', 'linux-x86_64')
+    expect(linux.skipped).toBe(1)
+    const entry = linux.entries[0]
+    expect(entry.install.type === 'package' && entry.install.pkg).toMatchObject({ package: 'https://x.test/linux.izumi-ext', packageBytes: 10, backend: 'izumi-service' })
+    const windows = parseNativeStore(doc, STORE_URL, 's', 'windows-x86_64').entries[0]
+    expect(windows.install.type === 'package' && windows.install.pkg).toMatchObject({ package: 'https://x.test/windows.izumi-ext' })
+    const mac = parseNativeStore(doc, STORE_URL, 's', 'macos-aarch64')
+    expect(mac.entries).toEqual([])
+    expect(mac.skipped).toBe(1)
   })
 })

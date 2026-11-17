@@ -53,23 +53,23 @@
 </script>
 
 <button type="button" tabindex="-1" class="pointer-events-auto fixed inset-0 z-20 cursor-default" onclick={onclose} aria-label="Close menu"></button>
-<div data-player-context-menu role="menu" bind:clientWidth={w} bind:clientHeight={h}
+<div data-player-context-menu data-part="player.menu" data-variant="context" role="menu" bind:clientWidth={w} bind:clientHeight={h}
      class="pointer-events-auto absolute z-30 w-60 rounded-xl border border-white/10 bg-neutral-900 p-1.5 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]"
      style:left="{pos.left}px" style:top="{pos.top}px" style:visibility={w ? 'visible' : 'hidden'}>
   {#if page?.submenu}
-    <button type="button" role="menuitem" class="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (page = null)}>
+    <button type="button" role="menuitem" data-part="player.menu.back" class="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (page = null)}>
       <ChevronLeft size={16} />{page.label}
     </button>
     {#each page.submenu as choice (choice.label)}
-      <button type="button" role="menuitemradio" aria-checked={choice.checked} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left tabular-nums transition hover:bg-white/10" onclick={() => choose(choice.run)}>
+      <button type="button" role="menuitemradio" aria-checked={choice.checked} data-part="player.menu.item" data-state={choice.checked ? 'active' : undefined} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left tabular-nums transition hover:bg-white/10" onclick={() => choose(choice.run)}>
         <span>{choice.label}</span>{#if choice.checked}<Check size={16} class="shrink-0" />{/if}
       </button>
     {/each}
   {:else}
     {#each items as item (item.label)}
       {#if item.divider}<div class="mx-2 my-1 h-px bg-white/10" role="separator"></div>{/if}
-      <button type="button" role="menuitem" aria-haspopup={item.submenu ? 'menu' : undefined}
-              class="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-white/10"
+      <button type="button" role="menuitem" aria-haspopup={item.submenu ? 'menu' : undefined} data-part="player.menu.item"
+              class="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition hover:bg-white/10"
               onclick={() => (item.submenu ? (page = item) : item.run && choose(item.run))}>
         <item.icon size={16} class="shrink-0 text-white/80" />
         <span class="min-w-0 flex-1 truncate">{item.label}</span>

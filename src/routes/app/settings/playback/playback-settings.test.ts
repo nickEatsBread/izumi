@@ -139,7 +139,7 @@ const EVERY_BUILD = ['seriesRatingPrompt', 'preferredQuality', 'continueSourcePr
 /** Settings the in-app player reads: desktop mpv and the Android full build's embedded player. */
 const IN_APP = [
   'videoQualityPreset', 'qualityNotice', 'rawMpvOptions', 'qualityFailedKeys', 'audioProcessing',
-  'p2pStatusVisibility', 'autoplayNext', 'upNextOverlay', 'keepAwakeWhilePlaying', 'bingePreload',
+  'p2pStatusVisibility', 'autoplayNext', 'keepAwakeWhilePlaying', 'bingePreload',
   'autoSkip', 'skipPreviews', 'skipFiller', 'scrubThumbnails', 'gifIncludeSubtitles', 'seekDuration',
   'audioOutputMode', 'audioPassthroughAc3', 'audioPassthroughEac3', 'audioPassthroughTruehd',
   'audioPassthroughDts', 'audioPassthroughDtsHd', 'audioExclusive', 'dolbyVisionOutputMode',
@@ -149,16 +149,16 @@ const IN_APP = [
 const DESKTOP_ONLY = [
   'windowsVsr', 'systemMediaControls', 'discordRichPresence', 'hideSidebarWhilePlaying', 'playerProgressAnimations',
   'subtitleLineNavigation', 'gifScale', 'gifMaxSeconds', 'playerCacheMb', 'enableExternalPlayer',
-  'externalPlayerPath', 'audioOutputDevice', 'playerTitleTop', 'trailerOpenMode',
+  'externalPlayerPath', 'audioOutputDevice', 'playerTitleTop', 'trailerOpenMode', 'videoFit',
 ]
 const LITE_NOTICE = "This build plays videos in your device's video player, so the in-app player options are not shown."
 
 describe('Playback settings per build (spec §5.1)', () => {
   it('keeps every desktop row, in subcategory order', () => {
     expect(reach('desktop').stores).toEqual([
-      'autoplayNext', 'upNextOverlay', 'bingePreload', 'seriesRatingPrompt', 'autoSkip', 'skipPreviews',
+      'autoplayNext', 'bingePreload', 'seriesRatingPrompt', 'autoSkip', 'skipPreviews',
       'skipFiller', 'seekDuration', 'scrubThumbnails', 'keepAwakeWhilePlaying', 'systemMediaControls',
-      'discordRichPresence', 'hideSidebarWhilePlaying', 'trailerOpenMode', 'p2pStatusVisibility', 'gifIncludeSubtitles', 'gifScale',
+      'discordRichPresence', 'hideSidebarWhilePlaying', 'trailerOpenMode', 'videoFit', 'p2pStatusVisibility', 'gifIncludeSubtitles', 'gifScale',
       'gifMaxSeconds', 'preferredQuality', 'continueSourcePreference', 'videoQualityPreset', 'qualityNotice',
       'rawMpvOptions', 'qualityFailedKeys', 'windowsVsr', 'playerCacheMb', 'audioProcessing', 'audioOutputMode',
       'audioPassthroughAc3', 'audioPassthroughEac3', 'audioPassthroughTruehd', 'audioPassthroughDts',
@@ -214,7 +214,7 @@ describe('Playback settings per build (spec §5.1)', () => {
       'discord-rich-presence', 'dolby-digital', 'dolby-digital-plus', 'dolby-truehd', 'dts', 'dts-hd-dts-x',
       'enable-external-player', 'exclusive-audio-device', 'hide-sidebar-while-playing', 'include-subtitles-in-gifs',
       'keep-screen-awake-while-playing', 'mark-best-releases', 'miniplayer-when-you-leave-the-app',
-      'scrub-preview-thumbnails', 'show-up-next-countdown', 'skip-filler-episodes', 'subtitle-line-navigation',
+      'scrub-preview-thumbnails', 'skip-filler-episodes', 'subtitle-line-navigation',
       'system-media-controls', 'title-at-top-of-player-game-mode',
     ])
   })
@@ -222,7 +222,6 @@ describe('Playback settings per build (spec §5.1)', () => {
   it('uses the keys English already derives, so search anchors do not move in English', () => {
     const en = JSON.parse(read('../../../../../messages/en.json')) as Record<string, string>
     expect(keyForSetting(en.player_autoplay_next)).toBe('auto-play-next-episode')
-    expect(keyForSetting(en.player_up_next_overlay)).toBe('show-up-next-countdown')
     expect(keyForSetting(en.player_series_rating_prompt)).toBe('ask-for-a-rating-when-a-series-ends')
     expect(keyForSetting('Include subtitles in GIFs')).toBe('include-subtitles-in-gifs')
     expect(keyForSetting('Hide sidebar while playing')).toBe('hide-sidebar-while-playing')

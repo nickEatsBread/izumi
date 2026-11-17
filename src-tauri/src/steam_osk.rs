@@ -1,23 +1,26 @@
 //! Steam Deck on-screen keyboard via the Steamworks floating gamepad text input.
 //!
-//! When izumi is added to Steam as a non-Steam game and launched in Game mode, Steam provides the
-//! client pipe + app-id env. We dlopen the host's `libsteam_api.so` at RUNTIME (no build-time SDK
-//! dependency, no bundled .so) and call the flat C API:
-//!   SteamAPI_Init() -> SteamAPI_SteamUtils() -> SteamAPI_ISteamUtils_ShowFloatingGamepadTextInput()
-//! The floating keyboard injects OS keystrokes straight into the focused WebKit field (no read-back
-//! plumbing). If any step fails (not launched via Steam, sandbox blocks the Steam pipe, old SDK),
-//! [`show`] returns false and the frontend falls back to its built-in HTML keyboard.
+//! When izumi is added to Steam as a non-Steam game and launched in Game mode, Steam's floating
+//! keyboard can type straight into the focused WebKit field (OS keystrokes, no read-back plumbing).
+//! izumi talks to Steam's own client library, `steamclient.so`, which every Steam install has (SteamOS
+//! ships no `libsteam_api.so`; only games bundle one). It is dlopened at RUNTIME (no build-time SDK
+//! dependency, nothing bundled) and does what libsteam_api does inside: `CreateInterface
+//! ("SteamClient021")`, a pipe, the user, and `ISteamUtils010`, whose floating keyboard is called
+//! through the interface's vtable. If any step fails, [`show`] returns false and the frontend falls
+//! back to its built-in HTML keyboard.
 //!
-//! Requires the Flatpak to reach the host Steam pipe + the .so: `--filesystem=~/.steam:ro` (see the
-//! manifest). `SteamAPI_RunCallbacks` is pumped on a background thread to keep the pipe alive.
+//! No app id is used: the client reads `SteamAppId` as it loads and refuses a non-Steam shortcut's id
+//! (which Steam itself sets for izumi), and borrowing another app's id would show that app in the
+//! viewer's Steam activity. Loaded without one, it connects as no app at all.
+//!
+//! Requires the Flatpak to reach the host Steam install: `--filesystem=~/.steam:ro` (see the manifest).
 #![cfg(target_os = "linux")]
 
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{c_char, c_int, c_void, CString};
 use std::sync::{Mutex, OnceLock};
 
 extern "C" {
     fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
-    fn dlerror() -> *const c_char;
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 const RTLD_NOW: c_int = 2;
@@ -28,8 +31,87 @@ struct Steam {
     utils: *mut c_void,
     show: ShowFn,
 }
-// SAFETY: the ISteamUtils pointer + fn pointer are process-global; SteamAPI flat calls are
-// serialised through the OnceLock init and only invoked from Tauri command threads.
+
+// ISteamClient021 / ISteamUtils010 vtable slots (isteamclient.h, isteamutils.h). Checked on a Deck:
+// GetAppID answers the app id it connected with and IsSteamRunningOnSteamDeck answers true.
+const CLIENT_CREATE_PIPE: usize = 0;
+const CLIENT_CONNECT_GLOBAL_USER: usize = 2;
+const CLIENT_GET_UTILS: usize = 9;
+const UTILS_GET_APP_ID: usize = 9;
+const UTILS_ON_DECK: usize = 34;
+const UTILS_SHOW_FLOATING: usize = 35;
+
+unsafe fn slot(object: *mut c_void, index: usize) -> *mut c_void {
+    let table = *(object as *const *const *mut c_void);
+    *table.add(index)
+}
+
+/// The floating keyboard through Steam's own client library, loaded without an app id.
+fn init() -> Option<Steam> {
+    let launched = std::env::var_os("SteamAppId");
+    std::env::remove_var("SteamAppId");
+    let steam = unsafe { connect_client() };
+    if let Some(app) = launched {
+        std::env::set_var("SteamAppId", app);
+    }
+    steam
+}
+
+unsafe fn connect_client() -> Option<Steam> {
+    {
+        let mut h = std::ptr::null_mut();
+        for p in [
+            "/home/deck/.local/share/Steam/linux64/steamclient.so",
+            "/home/deck/.steam/sdk64/steamclient.so",
+            "/home/deck/.steam/steam/linux64/steamclient.so",
+        ] {
+            if let Ok(c) = CString::new(p) {
+                h = dlopen(c.as_ptr(), RTLD_NOW);
+                if !h.is_null() {
+                    break;
+                }
+            }
+        }
+        if h.is_null() {
+            crate::player::linux_embed::elog("steam_osk: steamclient.so not found");
+            return None;
+        }
+        let create: unsafe extern "C" fn(*const c_char, *mut c_int) -> *mut c_void =
+            std::mem::transmute(sym(h, "CreateInterface")?);
+        let version = CString::new("SteamClient021").ok()?;
+        let client = create(version.as_ptr(), std::ptr::null_mut());
+        if client.is_null() {
+            crate::player::linux_embed::elog("steam_osk: SteamClient021 unavailable");
+            return None;
+        }
+        let create_pipe: unsafe extern "C" fn(*mut c_void) -> i32 = std::mem::transmute(slot(client, CLIENT_CREATE_PIPE));
+        let connect: unsafe extern "C" fn(*mut c_void, i32) -> i32 = std::mem::transmute(slot(client, CLIENT_CONNECT_GLOBAL_USER));
+        let get_utils: unsafe extern "C" fn(*mut c_void, i32, *const c_char) -> *mut c_void =
+            std::mem::transmute(slot(client, CLIENT_GET_UTILS));
+        let pipe = create_pipe(client);
+        if pipe == 0 || connect(client, pipe) == 0 {
+            crate::player::linux_embed::elog("steam_osk: Steam refused the connection");
+            return None;
+        }
+        let utils_version = CString::new("SteamUtils010").ok()?;
+        let utils = get_utils(client, pipe, utils_version.as_ptr());
+        if utils.is_null() {
+            return None;
+        }
+        // A wrong slot would call the wrong method: connected without an app, GetAppID answers 0, and
+        // the keyboard is only asked for on a Deck.
+        let app_id: unsafe extern "C" fn(*mut c_void) -> u32 = std::mem::transmute(slot(utils, UTILS_GET_APP_ID));
+        let on_deck: unsafe extern "C" fn(*mut c_void) -> bool = std::mem::transmute(slot(utils, UTILS_ON_DECK));
+        if app_id(utils) != 0 || !on_deck(utils) {
+            crate::player::linux_embed::elog("steam_osk: ISteamUtils010 layout not recognised");
+            return None;
+        }
+        crate::player::linux_embed::elog("steam_osk: floating keyboard through steamclient");
+        Some(Steam { utils, show: std::mem::transmute(slot(utils, UTILS_SHOW_FLOATING)) })
+    }
+}
+// SAFETY: the ISteamUtils pointer + fn pointer are process-global; the connection is made once,
+// serialised through the OnceLock init, and only used from Tauri command threads.
 unsafe impl Send for Steam {}
 unsafe impl Sync for Steam {}
 
@@ -43,88 +125,6 @@ unsafe fn sym(h: *mut c_void, name: &str) -> Option<*mut c_void> {
         None
     } else {
         Some(p)
-    }
-}
-
-fn init() -> Option<Steam> {
-    unsafe {
-        // The host Steam ships libsteam_api.so; dlopen it from the usual install locations (the
-        // Flatpak needs --filesystem=~/.steam:ro to read these).
-        let mut h = std::ptr::null_mut();
-        let mut last_error = String::new();
-        for p in [
-            // Current SteamOS puts the host-facing 64-bit SDK shim here.
-            "/home/deck/.local/share/Steam/steamrt64/libsteam_api.so",
-            "/home/deck/.steam/steam/linux64/libsteam_api.so",
-            "/home/deck/.local/share/Steam/linux64/libsteam_api.so",
-            "/home/deck/.steam/sdk64/libsteam_api.so",
-            "libsteam_api.so",
-        ] {
-            if let Ok(c) = CString::new(p) {
-                let _ = dlerror();
-                h = dlopen(c.as_ptr(), RTLD_NOW);
-                if !h.is_null() {
-                    break;
-                }
-                let error = dlerror();
-                if !error.is_null() {
-                    last_error = CStr::from_ptr(error).to_string_lossy().into_owned();
-                }
-            }
-        }
-        if h.is_null() {
-            crate::player::linux_embed::elog(&format!(
-                "steam_osk: libsteam_api.so load failed: {last_error}"
-            ));
-            return None;
-        }
-
-        // Steam needs an app id to locate the pipe. Steam usually sets SteamAppId for a launched
-        // non-Steam game; fall back to 480 (Spacewar test id) if it's absent.
-        if std::env::var_os("SteamAppId").is_none() {
-            std::env::set_var("SteamAppId", "480");
-        }
-
-        // Init — try the classic bool SteamAPI_Init(), then the newer SteamAPI_InitFlat(char*).
-        let ok = if let Some(p) = sym(h, "SteamAPI_Init") {
-            let f: unsafe extern "C" fn() -> bool = std::mem::transmute(p);
-            f()
-        } else if let Some(p) = sym(h, "SteamAPI_InitFlat") {
-            let f: unsafe extern "C" fn(*mut c_char) -> c_int = std::mem::transmute(p);
-            let mut err = [0i8; 1024];
-            f(err.as_mut_ptr()) == 0 // 0 == k_ESteamAPIInitResult_OK
-        } else {
-            false
-        };
-        if !ok {
-            crate::player::linux_embed::elog(
-                "steam_osk: SteamAPI_Init failed (Steam not reachable)",
-            );
-            return None;
-        }
-
-        let utils_fn: unsafe extern "C" fn() -> *mut c_void = std::mem::transmute(
-            sym(h, "SteamAPI_SteamUtils")
-                .or_else(|| sym(h, "SteamAPI_SteamUtils_v011"))
-                .or_else(|| sym(h, "SteamAPI_SteamUtils_v010"))?,
-        );
-        let utils = utils_fn();
-        if utils.is_null() {
-            return None;
-        }
-        let show: ShowFn =
-            std::mem::transmute(sym(h, "SteamAPI_ISteamUtils_ShowFloatingGamepadTextInput")?);
-
-        // Pump callbacks so the pipe stays alive + dismissal events are delivered.
-        if let Some(rc) = sym(h, "SteamAPI_RunCallbacks") {
-            let run: unsafe extern "C" fn() = std::mem::transmute(rc);
-            std::thread::spawn(move || loop {
-                run();
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            });
-        }
-        crate::player::linux_embed::elog("steam_osk: initialised — floating keyboard available");
-        Some(Steam { utils, show })
     }
 }
 

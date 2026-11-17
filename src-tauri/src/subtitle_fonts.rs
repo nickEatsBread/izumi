@@ -33,13 +33,13 @@ pub fn dir() -> Option<&'static Path> {
     DIR.get().map(PathBuf::as_path)
 }
 
-const EBML: u64 = 0x1A45_DFA3;
-const SEGMENT: u64 = 0x1853_8067;
+pub(crate) const EBML: u64 = 0x1A45_DFA3;
+pub(crate) const SEGMENT: u64 = 0x1853_8067;
 const SEEK_HEAD: u64 = 0x114D_9B74;
 const SEEK: u64 = 0x4DBB;
 const SEEK_ID: u64 = 0x53AB;
 const SEEK_POSITION: u64 = 0x53AC;
-const CLUSTER: u64 = 0x1F43_B675;
+pub(crate) const CLUSTER: u64 = 0x1F43_B675;
 const ATTACHMENTS: u64 = 0x1941_A469;
 const ATTACHED_FILE: u64 = 0x61A7;
 const FILE_NAME: u64 = 0x466E;
@@ -57,7 +57,7 @@ struct Element {
 }
 
 /// One EBML variable-length integer at `buf[at..]`: (value, length). IDs keep their marker bit.
-fn vint(buf: &[u8], at: usize, keep_marker: bool) -> Option<(u64, usize)> {
+pub(crate) fn vint(buf: &[u8], at: usize, keep_marker: bool) -> Option<(u64, usize)> {
     let first = *buf.get(at)?;
     let len = first.leading_zeros() as usize + 1;
     if len > 8 {
@@ -95,7 +95,7 @@ fn body_end(element: &Element) -> Option<usize> {
 }
 
 /// The complete child elements of an element body.
-fn children(body: &[u8]) -> Vec<(u64, &[u8])> {
+pub(crate) fn children(body: &[u8]) -> Vec<(u64, &[u8])> {
     let mut out = Vec::new();
     let mut at = 0;
     while let Some(el) = element(body, at) {
@@ -109,7 +109,7 @@ fn children(body: &[u8]) -> Vec<(u64, &[u8])> {
     out
 }
 
-fn uint(bytes: &[u8]) -> u64 {
+pub(crate) fn uint(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0, |value, b| (value << 8) | *b as u64)
 }
 
@@ -493,6 +493,65 @@ pub async fn subtitle_fonts_save(
     save_into(dir, &source, &families, installed).await
 }
 
+/// The largest font a source lists in practice (a full Unicode face) is about 23 MB.
+const MAX_SOURCE_FONT: usize = 40 * 1024 * 1024;
+
+/// Where a source font from `url` is kept: its file name, under a prefix of its own. None for a URL
+/// that does not end in a TrueType/OpenType file.
+fn source_font_path(dir: &Path, url: &str) -> Option<PathBuf> {
+    let url = reqwest::Url::parse(url).ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    let last = url.path_segments()?.next_back()?;
+    let name: String = last
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || "._-".contains(c) { c } else { '_' })
+        .take(80)
+        .collect();
+    let lower = name.to_ascii_lowercase();
+    let font = [".ttf", ".otf", ".ttc"].iter().any(|ext| lower.ends_with(ext));
+    (font && !name.starts_with('.')).then(|| dir.join(format!("source-{name}")))
+}
+
+/// Keep the fonts a source lists for its subtitles (`urls`) in the saved-fonts folder, so mpv finds
+/// the faces its ASS scripts name. A file already kept is not fetched again; anything that is not a
+/// font is dropped. Returns how many of `urls` are now kept.
+#[tauri::command]
+pub async fn subtitle_fonts_fetch(urls: Vec<String>) -> Result<usize, String> {
+    let dir = DIR.get().ok_or("fonts-folder-unavailable")?;
+    let mut kept = 0;
+    for url in urls.iter().take(128) {
+        let Some(path) = source_font_path(dir, url) else {
+            continue;
+        };
+        if path.exists() {
+            kept += 1;
+            continue;
+        }
+        let Ok(response) = crate::download_http_client().get(url).send().await else {
+            continue;
+        };
+        if !response.status().is_success()
+            || response.content_length().unwrap_or(0) > MAX_SOURCE_FONT as u64
+        {
+            continue;
+        }
+        let Ok(data) = response.bytes().await else {
+            continue;
+        };
+        if data.len() > MAX_SOURCE_FONT || names_in(&data).is_empty() {
+            continue;
+        }
+        // Through a temp name: a half-written file would never be rewritten (the name exists).
+        let partial = path.with_extension("partial");
+        std::fs::write(&partial, &data).map_err(|e| e.to_string())?;
+        std::fs::rename(&partial, &path).map_err(|e| e.to_string())?;
+        kept += 1;
+    }
+    Ok(kept)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -685,5 +744,27 @@ mod tests {
         assert!(saved.is_empty());
         assert!(saved_files(&fonts).is_empty());
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn source_fonts_keep_their_file_name_only() {
+        let dir = Path::new("fonts");
+        assert_eq!(
+            source_font_path(dir, "http://127.0.0.1:17871/v/abc/fonts/arialbd.ttf"),
+            Some(dir.join("source-arialbd.ttf"))
+        );
+        assert_eq!(
+            source_font_path(dir, "https://h/x/Adobe%20Arabic-Bold.OTF?v=1"),
+            Some(dir.join("source-Adobe_20Arabic-Bold.OTF"))
+        );
+        for url in [
+            "http://h/fonts/..%2F..%2Fevil.so",
+            "http://h/fonts/",
+            "http://h/fonts/.ttf",
+            "file:///etc/arial.ttf",
+            "http://h/sub.ass",
+        ] {
+            assert_eq!(source_font_path(dir, url), None, "{url}");
+        }
     }
 }

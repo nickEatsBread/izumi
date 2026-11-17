@@ -47,7 +47,7 @@ export async function companionDiscovery(fallback: Media[]): Promise<CompanionDi
       return [item.key, ...(item.aliases ?? [])]
     })
   const safe = media.filter(item => profileAllowsMedia(item, viewer) && (get(showAdult) || !item.isAdult))
-  // Rank in the AGPL client; the independently licensed TV consumes results, not engine code.
+  // Rank in the GPL client; the independently licensed TV consumes results, not engine code.
   // Discovery saves remain in the pool so a TV undo can restore them.
   const hidden = [...new Set(excluded)]
   const ranked = rankDiscoveryQueue(safe, signals, { records: {} }, { limit: 60, signalLimit: 100, excludedKeys: hidden })

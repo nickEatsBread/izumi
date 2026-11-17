@@ -14,6 +14,8 @@ export type SyncStatus =
 export interface SyncRecord {
   deviceId: string;
   payload: string;
+  /** The payload's content hash (device sync only; the hosted provider has none). */
+  hash?: string;
 }
 
 /** `open` = holds a room and will hand out its ticket (join it).

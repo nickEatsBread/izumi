@@ -1,10 +1,11 @@
 import type { Stream } from './parse'
 import { get, writable } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
-import { preferredAudioLang, preferredSubLang, providerLanguages, providerAudio } from '$lib/settings/ui'
+import { providerLanguages, providerAudio } from '$lib/settings/ui'
+import { languagesForMedia } from '$lib/settings/catalog-languages'
 import { runningStreamExtensions } from '$lib/extensions/manager'
 import { JVM_SOURCES_PLAY_DEADLINE_MS } from '$lib/extensions/jvm-runtime-state'
-import { isBcp47Locale, normalizeLang, subtitleTitle, trackLang } from './sublang'
+import { isBcp47Locale, langsEqual, normalizeLang, subtitleTitle, trackLang } from './sublang'
 import { parseStreamDrm } from '$lib/player/drm'
 import { memo, cacheableList } from './online-cache'
 import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
@@ -119,14 +120,10 @@ export interface SnSettings { episodeServers?: string[]; supportsDub?: boolean; 
 
 // Provider content languages are ISO 639-1 in the manifests ('fr'); the user's setting is ISO 639-2
 // ('eng'). Map the handful we care about so the two can be compared.
-const SUB_LANG_ALIASES: Record<string, string[]> = { eng: ['en', 'eng'], jpn: ['ja', 'jp', 'jpn'] }
-
 /** True when a provider serves content in the user's preferred subtitle language. Providers that
  *  declare nothing are treated as unknown (neither match nor mismatch) — never dropped. */
 export function matchesPreferredLang(providerLang: string | undefined, preferred: string): boolean {
-  if (!providerLang) return false
-  const want = SUB_LANG_ALIASES[preferred] ?? [preferred]
-  return want.includes(providerLang.toLowerCase())
+  return langsEqual(providerLang, preferred)
 }
 
 /** Rank for source ordering: 0 = preferred language, 1 = undeclared, 2 = a different language.
@@ -456,8 +453,9 @@ export async function resolveOnlineStreams(
   // without this a French provider silently wins the race and the episode plays with French subs.
   // Sort only; nothing is dropped, since a foreign provider is often the sole source for a show.
   // `sort` is stable, so providers within a rank keep their configured order.
-  const subLang = get(preferredSubLang)
-  const prefLang = subLang === 'none' ? 'eng' : subLang
+  const languages = languagesForMedia(media)
+  const subLang = languages.subtitle[0]
+  const prefLang = !subLang || subLang === 'none' ? 'eng' : subLang
   // Drop providers whose language the user doesn't want BEFORE any query — a skipped provider
   // costs nothing, so this is the cheapest speed control as well as a relevance one.
   const allowedLangs = get(providerLanguages)
@@ -494,7 +492,7 @@ export async function resolveOnlineStreams(
     if (media.seasonYear && formatMarker) variants.push(`${knownTitle} ${formatMarker} ${media.seasonYear}`)
     return variants
   })
-  const preferDub = get(preferredAudioLang) === 'eng'
+  const preferDub = normalizeLang(languages.audio[0]) === 'eng'
   // Search + resolve the requested episode for one sub/dub pass. null = no match this pass.
   // Both hops are memoized: neither the search nor the episode list depends on WHICH episode was
   // asked for, so re-running them per episode was pure waste — the dominant cost of opening the

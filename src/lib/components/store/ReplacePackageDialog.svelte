@@ -1,5 +1,6 @@
 <script lang="ts">
   import { navLayer } from '$lib/nav/overlay'
+  import { protectedSurface } from '$lib/themes/safe-mode'
 
   let { name, installedFrom, storeName, onconfirm, oncancel }: {
     name: string
@@ -16,7 +17,7 @@
      onclick={(event) => { if (event.target === event.currentTarget) oncancel() }}>
   <!-- A nav layer: Escape (the shared capture), B and remote Back cancel only this question, even
        when it sits on top of another store sheet. -->
-  <div role="alertdialog" data-theme-protected aria-modal="true" aria-labelledby="replace-package-title" aria-describedby="replace-package-body" data-nav-trap data-nav-escape
+  <div role="alertdialog" data-theme-protected use:protectedSurface aria-modal="true" aria-labelledby="replace-package-title" aria-describedby="replace-package-body" data-nav-trap data-nav-escape
        use:navLayer={{ kind: 'replace-package', onClose: () => oncancel() }}
        class="w-full max-w-md rounded-t-2xl border border-border bg-background p-5 shadow-2xl sm:rounded-2xl sm:p-6">
     <h2 id="replace-package-title" class="text-lg font-black">Replace {name}?</h2>

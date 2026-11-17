@@ -311,6 +311,26 @@ pub async fn stop_all(services: tauri::State<'_, ExtensionServices>) -> Result<(
     .map_err(|e| e.to_string())
 }
 
+/// Stops every service before the process ends. Tauri ends the process without dropping managed
+/// state, so the Drop below never ran on quit: a service outlived izumi, and Steam kept the game
+/// "running" on its abort screen. Stopped side by side so quitting waits for the slowest only.
+pub fn stop_all_on_exit(app: &AppHandle) {
+    let Some(services) = app.try_state::<ExtensionServices>() else {
+        return;
+    };
+    let Ok(mut running) = services.0.lock() else {
+        return;
+    };
+    let stopping: Vec<_> = running
+        .drain()
+        .map(|(_, service)| std::thread::spawn(move || stop(service)))
+        .collect();
+    drop(running);
+    for handle in stopping {
+        let _ = handle.join();
+    }
+}
+
 impl Drop for ExtensionServices {
     fn drop(&mut self) {
         let Ok(running) = self.0.get_mut() else {

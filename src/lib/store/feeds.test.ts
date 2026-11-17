@@ -2,12 +2,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
-  BUILTIN_STORES, MAX_USER_STORES, addStore, allStores, claimStorePin, directoryEnabled, enabledStores, hiddenBuiltinStores,
+  BUILTIN_STORES, MAX_USER_STORES, PLUGIN_STORE_URL, addStore, allStores, claimStorePin, directoryEnabled, enabledStores, hiddenBuiltinStores,
   normalizeHiddenBuiltins, normalizeStoreFeeds, normalizeStorePins, pinStoreKey, pruneStorePins, registerCatalogStore, removeStore,
   setStoreEnabled, storeIdForUrl, storePins, userStores,
 } from './feeds'
 import { ADDON_DIRECTORY_ID } from './types'
-import { disabledExtensions } from '$lib/settings/ui'
+import { disabledExtensions, extensionUrls } from '$lib/settings/ui'
+import { addonUrls } from '$lib/stremio/sources'
 
 const KEY = 'c'.repeat(64)
 const OTHER = 'd'.repeat(64)
@@ -27,6 +28,17 @@ describe('store registry', () => {
     // These two URLs collide under a single 32-bit FNV-1a hash.
     expect(storeIdForUrl('https://stores.example.test/6ny8ydj1/index.json'))
       .not.toBe(storeIdForUrl('https://stores.example.test/97t69kgt/index.json'))
+  })
+
+  it('lists the plugin marketplace for browsing, with nothing installed from it by default', () => {
+    expect(get(allStores).find((store) => store.id === 'izumi-plugins'))
+      .toMatchObject({ url: PLUGIN_STORE_URL, name: 'izumi plugins', builtin: true, enabled: true })
+    expect(get(extensionUrls)).toEqual([])
+    expect(get(addonUrls)).toEqual([])
+    expect(() => addStore(PLUGIN_STORE_URL, 'Copy')).toThrow('built in')
+    setStoreEnabled('izumi-plugins', false)
+    expect(get(enabledStores).map((store) => store.id)).not.toContain('izumi-plugins')
+    expect(get(allStores).map((store) => store.id)).toContain('izumi-plugins')
   })
 
   it('lists built-in stores first and user stores after them', () => {
@@ -56,7 +68,7 @@ describe('store registry', () => {
     setStoreEnabled(BUILTIN_STORES[0].id, false)
     setStoreEnabled(feed.id, false)
     setStoreEnabled(ADDON_DIRECTORY_ID, false)
-    expect(get(enabledStores).map((store) => store.id)).toEqual([BUILTIN_STORES[1].id])
+    expect(get(enabledStores).map((store) => store.id)).toEqual(BUILTIN_STORES.slice(1).map((store) => store.id))
     expect(get(allStores)).toHaveLength(BUILTIN_STORES.length + 1)
     expect(get(directoryEnabled)).toBe(false)
     removeStore(feed.id)

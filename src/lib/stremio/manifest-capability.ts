@@ -7,6 +7,8 @@ export interface AddonCatalogExtra {
   isRequired?: boolean
   options?: string[]
   optionsLimit?: number
+  /** izumi-only: artwork for some of the options (a category's backdrop on the Categories screen). */
+  izumi?: { images?: Record<string, string> }
 }
 
 export interface AddonCatalog {
@@ -16,6 +18,15 @@ export interface AddonCatalog {
   /** Legacy manifest field. Modern add-ons expose these as genre extra options. */
   genres?: string[]
   extra?: AddonCatalogExtra[]
+  /** izumi-only hints: `home: false` keeps the listing off Home (Browse still lists it);
+   *  `homeFilters: false` offers no filtered Home rows (one per genre, say), only the plain one;
+   *  `browse: false` keeps it out of Browse's listings; `menu` lists it in the drawer as its own
+   *  screen (a watchlist, a history), opening on a wall of the named extra's options first when it
+   *  names one (`extra: "season"`). */
+  izumi?: { home?: boolean; homeFilters?: boolean; browse?: boolean; menu?: { label?: string; icon?: string; extra?: string } }
+  /** Legacy manifest fields: the extra names a catalog takes, and those it requires. */
+  extraSupported?: string[]
+  extraRequired?: string[]
 }
 
 export interface AddonManifest {
@@ -35,6 +46,11 @@ export interface AddonManifest {
 /** Whether a manifest declares support for this stream type and id namespace. Unknown manifests
  * remain accepted, matching local Izumi's fail-open dispatch behaviour. */
 export function acceptsStreamId(manifest: AddonManifest | null, type: string, id: string): boolean {
+  return acceptsResourceId(manifest, 'stream', type, id)
+}
+
+/** acceptsStreamId for any resource (`meta`, `subtitles`, …). */
+export function acceptsResourceId(manifest: AddonManifest | null, name: string, type: string, id: string): boolean {
   const resources = manifest?.resources
   if (!resources?.length) return true
   const matches = (types: string[] | undefined, prefixes: string[] | undefined) =>
@@ -42,9 +58,11 @@ export function acceptsStreamId(manifest: AddonManifest | null, type: string, id
     && (!prefixes?.length || prefixes.some((prefix) => id.startsWith(prefix)))
   for (const resource of resources) {
     if (typeof resource === 'string') {
-      if (resource === 'stream' && matches(manifest?.types, manifest?.idPrefixes)) return true
-    } else if (resource && resource.name === 'stream'
-      && matches(resource.types ?? manifest?.types, resource.idPrefixes ?? manifest?.idPrefixes)) {
+      if (resource === name && matches(manifest?.types, manifest?.idPrefixes)) return true
+    } else if (resource && resource.name === name
+      // An object resource without its own idPrefixes accepts every id (Stremio's rule); the
+      // manifest-level prefixes only apply to bare string resources.
+      && matches(resource.types ?? manifest?.types, resource.idPrefixes)) {
       return true
     }
   }

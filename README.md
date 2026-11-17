@@ -33,16 +33,6 @@ A native anime library manager for browsing, tracking, and playing from the sour
 >
 > izumi is intended solely as a **personal media library manager** for organizing, tracking, and playing content that you **legally own**. Users are responsible for ensuring that all media content used with this application has been **legally** obtained and that its use complies with all applicable **copyright laws**.
 
-## Supported sources
-
-- **Stremio add-ons** — add stream and subtitle add-ons by manifest URL, including the Stremio add-ons used in Nuvio and Omni, and browse their results together in one source picker.
-- **Nuvio providers** — add a Nuvio JavaScript provider manifest or repository URL in Sources. Providers resolve movies and mapped TV episodes directly, with playback headers and subtitles. See [compatibility and setup](docs/nuvio-omni-sources.md).
-- **Nuvio Cloud** — sign in or create an account, manage profiles, edit cloud collections and artwork, and browse community collections. Manage sources, library, resume points, watch history, and client preferences with reviewed transfers between Nuvio and izumi. Collection imports support Stremio catalogs, TMDB feeds, and Trakt lists. See [account setup and compatibility](docs/nuvio-account.md).
-- **Aniyomi / Mihon-compatible extensions** — use supported anime-source extensions from the Tachiyomi ecosystem when distributed as verified `.izumi-ext` packages (desktop only).
-- **Community extension formats** — load native izumi JavaScript providers, Miru video extensions, Seanime online-stream providers, and anime torrent providers from a GitHub repository, manifest, or package catalog.
-- **Flexible playback** — play direct HTTP streams, resolve torrents through a supported debrid service, stream torrents with the built-in P2P engine, or watch files from your local library.
-- **Tracking services** — connect AniList or MyAnimeList, with playback progress synced back to your account.
-
 ## Features
 
 - **Browse** — weekly schedule, search with filters, rich detail pages (banner, description, trailer, relations, per-episode cards).
@@ -54,13 +44,38 @@ A native anime library manager for browsing, tracking, and playing from the sour
   controls): custom seekbar with **on-demand scrub thumbnails**, chapter popouts, AniSkip
   OP/ED/recap skipping, AnimeThemes-aware first-play, audio/subtitle menus, video-fit toggle,
   screenshot, next/prev episode, full controller/d-pad navigation.
-- **Offline** — download a resolved stream to disk and play it back locally.
-- **Automatic downloads** — follow a show and collect aired episodes using per-series quality,
-  audio, codec, cache, delay, and starting-episode rules.
+- **Downloads** — save episodes to watch offline, or follow a show and have new episodes
+  downloaded automatically.
 - **Watch Together** — host or join synchronized playback rooms across paired Izumi devices;
   every participant resolves their own source while the host controls play, pause, and seeking.
 - **Settings** — interface (UI scale, episode layout), sources, extensions, network, accounts,
   downloads.
+- **Store** — browse sources, themes, plugins and packs from izumi's stores or any store you add.
+  Nothing is installed until you choose it.
+
+## Make themes and plugins
+
+- **Themes** are JSON packages that restyle izumi without running code. Build one with the
+  [theme guide](https://github.com/nickEatsBread/izumi-themes/blob/main/docs/building-a-theme.md) and
+  submit it to [izumi-themes](https://github.com/nickEatsBread/izumi-themes#submitting-a-theme).
+- **Plugins** add features and run in izumi's plugin sandbox (beta), **sources** are packaged as
+  signed `.izumi-ext` files, and **packs** set izumi up with sources, a theme and a startup video in
+  one link. Build them with the
+  [plugin](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/building-a-plugin.md),
+  [source](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/building-a-source.md) and
+  [pack](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/building-a-pack.md) guides and
+  submit them to [izumi-plugins](https://github.com/nickEatsBread/izumi-plugins), or
+  [run a marketplace of your own](https://github.com/nickEatsBread/izumi-plugins/blob/main/docs/running-a-marketplace.md).
+- How the client handles them: [plugins, sources, packs and stores](docs/PLUGINS.md) and [themes](docs/THEMES.md).
+
+## Supported sources
+
+- **Stremio add-ons** — add stream and subtitle add-ons by manifest URL, including the Stremio add-ons used in Nuvio and Omni, and browse their results together in one source picker.
+- **Nuvio** — add Nuvio providers and connect your Nuvio account ([providers](docs/nuvio-omni-sources.md), [account](docs/nuvio-account.md)).
+- **Aniyomi / Mihon-compatible extensions** — use supported anime-source extensions from the Tachiyomi ecosystem.
+- **Community extension formats** — load native izumi JavaScript providers, Miru video extensions, Seanime online-stream providers, and anime torrent providers from a GitHub repository, manifest, or package catalog, plus torrent RSS feeds.
+- **Flexible playback** — play direct HTTP streams, resolve torrents through a supported debrid service, stream torrents with the built-in P2P engine, or watch files from your local library.
+- **Tracking services** — connect AniList or MyAnimeList, with playback progress synced back to your account.
 
 ## Get started
 izumi will notify you of updates to keep izumi up-to-date. Grab your platform below, or browse all files on the [**Releases**](https://github.com/nickEatsBread/izumi/releases/latest) page.
@@ -83,9 +98,6 @@ curl -fsSL https://flatpak.izumi.watch/install.sh | bash
 The raw `.flatpakref` is still published for other distributions. Note that SteamOS hands it to Discover, which cannot add a remote that carries its own signing key — it opens and closes again without installing anything, which is what the installer exists to work around.
 
 **Samsung Tizen:** [izumi Companion setup guide](/docs/companion/setup)
-
-> [!WARNING]
-> On Windows, you may need to do the following to run the install after open: SmartScreen → **More info → Run anyway**.
 
 [exe]: https://izumi.watch/download#windows
 [msi]: https://izumi.watch/download#windows
@@ -130,6 +142,6 @@ Release builds for Windows, macOS, Linux, Steam Deck, and Android are on the [Re
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE) © izumi contributors.
+[GPL-3.0-or-later](LICENSE) © izumi contributors.
 
 izumi embeds **libmpv** (mpv, **LGPL-2.1-or-later**) as a replaceable dynamic library. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

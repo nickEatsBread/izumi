@@ -1,28 +1,40 @@
 <script lang="ts">
   import {
     preferredAudioLang, preferredSubLang, titleLanguage, providerAudio, providerLanguages, downloadAudio,
-    extensionUrls,
+    extensionUrls, disabledPlugins,
   } from '$lib/settings/ui'
   import { fetchExtensionInfo, installedExtensionPackages } from '$lib/extensions/manager'
   import { langName } from '$lib/player/track-label'
-  import { PLAYBACK_LANGUAGES } from '$lib/shared/languages'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
+  import { storedOrder, type LanguageCatalog } from '$lib/settings/catalog-languages'
+  import { catalogProviders } from '$lib/settings/catalog'
+  import { sourceCatalogs, sourceSelection } from '$lib/catalog/source-catalogs'
+  import LanguageOrderRow from '$lib/components/settings/LanguageOrderRow.svelte'
+  import CatalogLanguageRows from '$lib/components/settings/CatalogLanguageRows.svelte'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
+  import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import { rememberLanguagePicks } from '$lib/player/language-memory'
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime.js'
 
   const locale = getLocale()
   const changeLocale = (value: string) => setLocale(value as Locale)
 
-  const subtitleLanguages = [
-    ...PLAYBACK_LANGUAGES.slice(0, 2),
-    { value: 'none', label: m.cast_subtitles_off() },
-    ...PLAYBACK_LANGUAGES.slice(2),
-  ]
+  // The global rows store an order as comma-separated codes; empty is Automatic.
+  const joined = (order: string[]) => (order.length ? order.join(',') : 'auto')
+  // Each catalog the user can play from: the anime catalog behind any anime platform, TMDB and
+  // Stremio when enabled, and every source catalog.
+  const languageCatalogs = $derived<Array<{ catalog: LanguageCatalog; name: string }>>([
+    ...($catalogProviders.some((provider) => ['auto', 'anilist', 'kitsu', 'jvm'].includes(provider)) ? [{ catalog: 'anime' as const, name: 'Anime' }] : []),
+    ...($catalogProviders.includes('tmdb') ? [{ catalog: 'tmdb' as const, name: 'TMDB' }] : []),
+    ...($catalogProviders.includes('stremio') ? [{ catalog: 'stremio' as const, name: 'Stremio add-ons' }] : []),
+    ...$sourceCatalogs.filter((source) => !$disabledPlugins.includes(source.packageId))
+      .map((source) => ({ catalog: sourceSelection(source.packageId), name: source.name })),
+  ])
 
   const langLabel = (code: string) => langName(code) ?? code.toUpperCase()
   // Languages the added sources declare sort first. They never limit the list: a source may declare
@@ -60,8 +72,26 @@
   </SettingsSubcategory>
 
   <SettingsSubcategory id="playback">
-    <SettingsChoiceRow settingKey="audio-language" title={m.player_audio_language()} value={$preferredAudioLang} onChange={(value) => ($preferredAudioLang = value as typeof $preferredAudioLang)} options={PLAYBACK_LANGUAGES} searchable />
-    <SettingsChoiceRow settingKey="subtitle-language" title={m.player_subtitle_language()} value={$preferredSubLang} onChange={(value) => ($preferredSubLang = value as typeof $preferredSubLang)} options={subtitleLanguages} searchable />
+    <LanguageOrderRow settingKey="audio-language" title={m.player_audio_language()} description="For every catalog without its own order" order={storedOrder($preferredAudioLang) ?? []} onChange={(order) => ($preferredAudioLang = joined(order))} unsetLabel="Automatic" />
+    <LanguageOrderRow settingKey="subtitle-language" title={m.player_subtitle_language()} description="Automatic: English for anime, your system language elsewhere" order={storedOrder($preferredSubLang) ?? []} onChange={(order) => ($preferredSubLang = joined(order))} unsetLabel="Automatic" allowOff />
+  </SettingsSubcategory>
+
+  <SettingsSubcategory id="catalogs">
+    <SettingsRow
+      settingKey="remember-language-picks"
+      title="Remember what I pick in the player"
+      description={$rememberLanguagePicks ? 'Picks while watching become that catalog’s languages for this profile' : 'Picks while watching apply to that series only'}
+      learnMore="Change the audio or subtitles while watching and the next title from the same catalog starts in them. A series you picked a track in keeps that exact track. A source whose account holds its languages gets the change too, as if you changed it in its settings."
+      onActivate={() => ($rememberLanguagePicks = !$rememberLanguagePicks)}
+      pressed={$rememberLanguagePicks}
+    >
+      {#snippet control()}
+        <SettingsSwitch value={$rememberLanguagePicks} onToggle={() => ($rememberLanguagePicks = !$rememberLanguagePicks)} label="Remember what I pick in the player" interactive={false} />
+      {/snippet}
+    </SettingsRow>
+    {#each languageCatalogs as entry (entry.catalog)}
+      <CatalogLanguageRows catalog={entry.catalog} name={entry.name} />
+    {/each}
   </SettingsSubcategory>
 
   <SettingsSubcategory id="sources">

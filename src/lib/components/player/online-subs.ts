@@ -35,6 +35,21 @@ export function candidateApiKey(p: SubProviderId): string {
   return OPEN_SUBS_API_KEY
 }
 
+/** The `player_add_subtitle` arguments for a picked candidate, shared by every menu that downloads
+ *  one. `episode` picks that episode's file out of a season archive. */
+export function downloadArgs(c: SubtitleCandidate, token: string) {
+  return {
+    provider: c.provider,
+    url: candidateDownloadUrl(c),
+    fileId: c.download?.fileId,
+    episode: c.download?.episode,
+    lang: c.lang ?? 'und',
+    title: candidateTitle(c),
+    apiKey: candidateApiKey(c.provider),
+    token,
+  }
+}
+
 /** A candidate is "loaded" when a selected sub track carries its exact `sub-add` title. */
 export function isCandidateLoaded(c: SubtitleCandidate, loadedTitles: string[]): boolean {
   return loadedTitles.includes(candidateTitle(c))

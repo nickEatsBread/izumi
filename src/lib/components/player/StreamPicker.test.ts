@@ -93,7 +93,7 @@ describe('mobile source picker layout', () => {
     expect(source).toContain('return !isTextEntryField(item)')
     expect(source).toContain("target.scrollIntoView({ block: 'nearest'")
     expect(source).toContain('spinnerFrame = (spinnerFrame + 1) % 8')
-    expect(source).toContain('class:animate-spin={!$gameMode}')
+    expect(source.match(/<Spinner size="xs" frame=\{\$gameMode \? spinnerFrame : undefined\} \/>/g)).toHaveLength(2)
   })
 
   it('shares the nav text-field test and stops the auto countdown when a select takes focus', () => {
@@ -105,7 +105,10 @@ describe('mobile source picker layout', () => {
   })
 
   it('keeps instant automatic selection out of the source-list dialog', () => {
-    expect(source).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
+    expect(source).toContain('{#if ($isAndroid ? autoImmediate : autoPicking) && !playbackError}')
+    // Elsewhere the list stays away while an automatic pick is coming or under way: it flashed
+    // between the resolve and the player. An error, or nothing to take, shows it again.
+    expect(source).toContain('const autoPicking = $derived(autoImmediate && !error && (resolving || busy || !!best))')
     expect(source).not.toContain('<AndroidPreparingPlayer')
     expect(source).toContain('<AndroidConnectionStatus')
     expect(source).not.toContain('class="android-prepare fixed inset-x-4')

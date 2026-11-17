@@ -200,6 +200,11 @@ mod linux {
                     return;
                 }
             };
+            // Dropping the portal request spawns zbus cleanup onto the current Tokio runtime. Its
+            // drop happens after `block_on` returns, so the whole worker runs inside the runtime's
+            // context; otherwise releasing the inhibitor panicked and aborted izumi on desktops
+            // whose portal answers (KDE in Steam Deck Desktop Mode).
+            let _context = runtime.enter();
 
             // Open lazily on the first active frame. Native-Wayland sessions send a defensive
             // `false` to this worker and should not create an otherwise unused X11 connection.

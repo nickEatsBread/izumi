@@ -3,10 +3,15 @@
 
   const HOME_CACHE_MS = 5 * 60_000
   const providerHomeCache = new Map<string, { storedAt: number; home: CatalogHomeData; complete: boolean }>()
+  /** The rows each screen had on or near the screen when the viewer left it, built at once on return. */
+  const shownRows = new Map<string, Set<string>>()
+  /** Each row's size when the viewer left (its height and bottom margin, which collapses with the next
+   *  row's gap): a row above the screen comes back as a placeholder of exactly that size. */
+  const rowSizes = new Map<string, Map<string, { height: number; margin: number }>>()
 </script>
 
 <script lang="ts">
-  import { goto } from '$app/navigation'
+  import { beforeNavigate, goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
   import HeroPlaceholder from '$lib/components/banner/HeroPlaceholder.svelte'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
@@ -20,22 +25,35 @@
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
-  import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
+  import { catalogLabel, catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
+  import { forgetSourceAddon, isSourceSelection, sourcePackageOf } from '$lib/catalog/source-catalogs'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW, HERO_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { homeCollections } from '$lib/catalog/collections/store'
   import { collectionIdOf, collectionRowOptions } from '$lib/catalog/collections/rows'
-  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { homeLayoutFor, openThemeScreen } from '$lib/themes/layout-state'
   import { themePresentation } from '$lib/themes/runtime'
   import { isThemeBlockId, resolveThemeHome, themeHomeHas } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
-  import { mediaHref } from '$lib/anilist/media'
+  import { cardCover, mediaHref } from '$lib/anilist/media'
+  import { playSourceTitle } from '$lib/catalog/source-play'
   import { anilistUser } from '$lib/anilist/account'
-  import { isMobile } from '$lib/platform'
+  import { isMobile, isTv } from '$lib/platform'
+  import { nearViewport } from '$lib/util/near-viewport'
+  import { homeBusy, warmRowsBelow } from '$lib/util/image-warm'
+  import { idle } from '$lib/util/idle'
+  import { startupAnimationPlaying } from '$lib/startup/animation'
+  import { extensionServiceSettings } from '$lib/extensions/manager'
+  import { sourceProfiles } from '$lib/extensions/source-profiles'
+  import { coverWidthFor } from '$lib/components/cards/SmallCard.svelte'
+  import { densityScale, resolveRow } from '$lib/themes/presentation'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
 
+  // API 8: on a theme screen its entries replace the theme's Home (layout-state.ts homeLayoutFor).
+  const activeThemeLayout = homeLayoutFor(openThemeScreen())
   // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
   // keyed carousels a fresh proxy identity on every progressive update; in dev builds the sixth
   // replacement triggers an extremely expensive stack capture for every card. Keep the snapshot
@@ -59,11 +77,57 @@
   const collectionIds = $derived(resolveCatalogHomeRows($catalogProvider, [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...collectionOptions], $catalogHomeLayouts)
     .flatMap((row) => (row.enabled && collectionIdOf(row.id)) || []))
   const sectionMap = $derived(new Map((home?.sections ?? []).map((section) => [section.id, section])))
+  // A source catalog's own Continue Watching (its cross-device list) takes the Continue row's place.
+  const ownContinue = $derived(home?.continue ? sectionMap.get(home.continue) : undefined)
+  const sourceScreen = $derived(isSourceSelection($catalogProvider))
+  // A source answers with nothing until it is set up (signed in): its settings open from here.
+  let sourceSetup = $state(false)
+  // A source's own featured title the viewer has started resumes from the banner where the source
+  // says they are up to, as the source's own app does; every other title opens its page.
+  async function playFromHero(media: Media) {
+    if (!sourceScreen || !media.catalog || !media.sourceFacts?.card) return goto(mediaHref(media))
+    try {
+      if (!(await playSourceTitle(media, media.sourceFacts.card.videoId))) void goto(mediaHref(media))
+    } catch {
+      void goto(mediaHref(media))
+    }
+  }
+  // "Who's watching?" once a session on a source's screen whose account has more than one profile,
+  // after the startup video, as the source's own handheld app asks at launch.
+  $effect(() => {
+    const selection = $catalogProvider
+    if (!isSourceSelection(selection) || $startupAnimationPlaying) return
+    const asked = `source-profiles-asked:${selection}`
+    try {
+      if (sessionStorage.getItem(asked)) return
+      sessionStorage.setItem(asked, '1')
+    } catch { return }
+    let live = true
+    extensionServiceSettings(sourcePackageOf(selection))
+      .then((document) => { if (live && sourceProfiles(document)) void goto('/app/source-profiles') })
+      .catch(() => {})
+    return () => { live = false }
+  })
+  // A profile switch (Who's watching?) reads the source's rows afresh.
+  $effect(() => {
+    const changed = () => {
+      if (!isSourceSelection($catalogProvider)) return
+      forgetSourceAddon(sourcePackageOf($catalogProvider))
+      retry++
+    }
+    window.addEventListener('source-profile-changed', changed)
+    return () => window.removeEventListener('source-profile-changed', changed)
+  })
+  function closeSourceSetup() {
+    sourceSetup = false
+    if (isSourceSelection($catalogProvider)) forgetSourceAddon(sourcePackageOf($catalogProvider))
+    retry++
+  }
   // Shared by the user's own resolved rows and a theme row naming an id the user has hidden (a
   // theme layout can show a row regardless of the user's own Edit Home choices).
   function toContentRow(id: string): ContentRow | null {
     if (id === 'hero') return { id, kind: 'hero' }
-    if (id === 'continue') return { id, kind: 'continue' }
+    if (id === 'continue') return ownContinue ? { id, kind: 'section', section: ownContinue } : sourceScreen ? null : { id, kind: 'continue' }
     if (isBlockId(id) || isThemeBlockId(id)) return { id, kind: 'block' }
     const collectionId = collectionIdOf(id)
     if (collectionId) return { id, kind: 'collection', collectionId }
@@ -75,7 +139,7 @@
     const options = [
       HERO_HOME_ROW,
       CONTINUE_HOME_ROW,
-      ...home.sections.map((section) => ({ id: section.id, title: section.title })),
+      ...home.sections.filter((section) => section.id !== home!.continue).map((section) => ({ id: section.id, title: section.title })),
       ...collectionOptions,
       ...blockRowOptions($catalogProvider, $catalogHomeLayouts, $homeBlocks),
     ]
@@ -93,7 +157,7 @@
   // for AniList's rows: its slots take this catalog's poster rows, and the rows it left follow it.
   const themeHome = $derived($activeThemeLayout?.home && home
     ? resolveThemeHome($activeThemeLayout.home, $catalogProvider,
-      [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections.filter((section) => section.presentation !== 'providers' && section.presentation !== 'editorial')].map((option) => option.id),
+      [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections.filter((section) => section.id !== home!.continue && section.presentation !== 'providers' && section.presentation !== 'editorial')].map((option) => option.id),
       contentRows.flatMap((row) => (row.kind === 'section' ? [row.id] : [])))
     : null)
   const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
@@ -106,6 +170,86 @@
   // While Edit Home is open, phones must still show every block (including a side-column one that
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
   const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
+
+  // A cached Home (coming back from a series page) used to build every row and card in one pass:
+  // hundreds of cards held the Deck's page for over a second before anything showed. The first
+  // screenful renders at once; a row further down stays a skeleton until it comes near the screen,
+  // then joins, one row a frame. Coming back builds at once only the rows that were on the screen or
+  // the one above when the viewer left (skeletons there, where the page reopens, looked broken;
+  // rebuilding every row within two screens held Back for 0.47 s on the Deck); the rows below join
+  // a frame at a time. A refreshed answer keeps what is shown.
+  const FIRST_ROWS = 4
+  // Starts from the rows remembered on leaving, so a return never draws a frame of skeletons first.
+  let revealed = $state(new Set<string>(shownRows.get($catalogProvider)))
+  let revealQueue: string[] = []
+  let revealFrame = 0
+  function reveal(id: string) {
+    if (revealed.has(id) || revealQueue.includes(id)) return
+    revealQueue.push(id)
+    if (!revealFrame) revealFrame = requestAnimationFrame(revealNext)
+  }
+  function revealNext() {
+    revealFrame = 0
+    const id = revealQueue.shift()
+    if (id) revealed = new Set(revealed).add(id)
+    if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)
+  }
+  $effect(() => {
+    revealed = new Set(shownRows.get($catalogProvider))
+    revealQueue = []
+    return () => { cancelAnimationFrame(revealFrame); revealFrame = 0 }
+  })
+  beforeNavigate(() => {
+    const near = new Set<string>()
+    const sizes = new Map<string, { height: number; margin: number }>()
+    const height = window.innerHeight
+    for (const id of homeRowIds) {
+      // A row's carousel is named `<screen>:<role or id>` (HomeRowFrame's row context).
+      const row = document.querySelector<HTMLElement>(`[data-row="${CSS.escape(`${$catalogProvider}:${themeHome?.roles[id] ?? id}`)}"]`)
+      // One without a carousel to measure (a block) is built on return, wherever it was.
+      if (!row) { if (rowShown(id)) near.add(id); continue }
+      const box = row.getBoundingClientRect()
+      sizes.set(id, { height: box.height, margin: parseFloat(getComputedStyle(row).marginBottom) || 0 })
+      // On screen it is built on return; above it, a placeholder of its exact size stands in until it
+      // comes near, so the restored scroll lands where it was (rebuilding every row within two screens
+      // held Back for 0.47 s on the Deck).
+      if (box.bottom > 0 && box.top < height) near.add(id)
+    }
+    shownRows.set($catalogProvider, near)
+    rowSizes.set($catalogProvider, sizes)
+  })
+  const returnSizes = rowSizes.get($catalogProvider)
+  const returning = shownRows.has($catalogProvider)
+  const rowShown = (id: string) => $homeEditorOpen || (!returning && homeRowIds.indexOf(id) < FIRST_ROWS) || revealed.has(id)
+  // The rest are built ahead while Home sits still, one per quiet moment: built as the first walk
+  // down reached them, each held a Deck frame for 70-140 ms mid-scroll. Not during the startup
+  // video, a scroll, a banner change or playback; a row the walk reaches first still joins as above.
+  const AHEAD_QUIET_MS = 600
+  $effect(() => {
+    if (!home || $homeEditorOpen) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let handle = idle(next, 1000)
+    function next() {
+      const id = homeRowIds.find((row) => !rowShown(row) && !revealQueue.includes(row))
+      if (!id) return
+      if (homeBusy(AHEAD_QUIET_MS) || $startupAnimationPlaying || document.documentElement.classList.contains('startup-cover')) {
+        timer = setTimeout(() => (handle = idle(next, 1000)), 300)
+        return
+      }
+      reveal(id)
+      handle = idle(next, 1000)
+    }
+    return () => { handle.cancel(); clearTimeout(timer) }
+  })
+  // The covers a row still waiting to be built will show (its SmallCards' own URLs, first cards only),
+  // so Home can decode them before the row is reached (warmRowsBelow).
+  function pendingCovers(id: string): string[] {
+    const row = toContentRow(id)
+    if (row?.kind !== 'section' || row.section.presentation === 'providers' || row.section.presentation === 'editorial') return []
+    const width = coverWidthFor(resolveRow($themePresentation, `${$catalogProvider}:${themeHome?.roles[id] ?? id}`), densityScale($themePresentation),
+      row.section.presentation === 'ranked', $isTv, $isMobile)
+    return row.section.media.slice(0, 8).map((media) => cardCover(media, width))
+  }
 
   $effect(() => {
     const selection = $catalogProvider
@@ -140,11 +284,13 @@
     const publish = (result: CatalogHome, complete = false) => {
       if (abort.signal.aborted) return
       home = result
-      providerHomeCache.set(cacheKey, { storedAt: Date.now(), home: result, complete })
+      // An empty answer is not kept: a source that is not set up yet answers with nothing.
+      if (result.hero.length || result.sections.length) providerHomeCache.set(cacheKey, { storedAt: Date.now(), home: result, complete })
       if (result.hero.length || result.sections.length) loading = false
     }
     void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal, undefined, publish)).then((result) => {
-      publish(result, result.partial !== true)
+      // A source's Home carries the viewer's own progress: shown from the cache at once, always read again.
+      publish(result, result.partial !== true && !isSourceSelection(selection))
     }).catch((reason) => {
       if (!abort.signal.aborted) {
         error = reason instanceof Error ? reason.message : String(reason)
@@ -173,11 +319,11 @@
 
 <!-- The bounded Aniyomi loader now reconciles rows in two batches, so its placeholders can use the
      same loading shimmer as every other catalog without repeatedly remounting the card tree. -->
-<div data-slot="home" data-variant="catalog" class="pb-16">
+<div data-slot="home" data-variant="catalog" class="pb-16" use:warmRowsBelow={pendingCovers}>
   {#snippet heroBlock()}
     {#if home?.hero.length}
       <Hero medias={heroSlides} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
-        onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
+        onplay={(media) => void playFromHero(media)} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
     {:else if loading && !$themePresentation?.hero?.hidden}
       <HeroPlaceholder />
     {/if}
@@ -189,25 +335,26 @@
 
   <div class="space-y-5">
     {#if !home || themeHome}<CollectionsHome ids={collectionIds} />{/if}
-    {#if (themeHomeHas($activeThemeLayout?.home, 'continue') ?? continueEnabled) && !home}
+    {#if (themeHomeHas($activeThemeLayout?.home, 'continue') ?? continueEnabled) && !home && !sourceScreen}
       {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
     {/if}
 
     {#if error}
       <div class="mx-4 rounded-xl border border-destructive/30 bg-destructive/10 p-5 sm:mx-8">
-        <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'Aniyomi sources' : $catalogProvider.toUpperCase()}</h2>
+        <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'Aniyomi sources' : sourceScreen ? catalogLabel($catalogProvider) : $catalogProvider.toUpperCase()}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{error}</p>
         {#if tmdbNeedsConfiguration}
           <a href="/app/settings/library" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
         {:else}
           <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
+          {#if sourceScreen}<button data-focusable onclick={() => (sourceSetup = true)} class="ml-2 mt-4 rounded-md bg-secondary px-4 py-2 text-sm font-bold">Source settings</button>{/if}
         {/if}
       </div>
     {/if}
 
     {#if loading && !home}
       {#each Array.from({ length: 4 }) as _}
-        <div class="px-4 sm:px-8">
+        <div data-part="row.pending" data-state="loading" class="px-4 sm:px-8">
           <div class="mb-3 h-5 w-40 rounded skeloader"></div>
           <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
         </div>
@@ -216,7 +363,15 @@
       {#snippet contentRow(id: string)}
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
-        {#if row}
+        {#if row && !rowShown(id)}
+          {@const size = returnSizes?.get(id)}
+          <div data-part="row.pending" data-pending-row={id} class="px-4 sm:px-8" class:overflow-hidden={!!size} aria-hidden="true"
+               style:height={size ? `${size.height}px` : undefined} style:margin-bottom={size ? `${size.margin}px` : undefined}
+               use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}>
+            <div class="mb-3 h-5 w-40 rounded skeloader"></div>
+            <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
+          </div>
+        {:else if row}
           <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.kind === 'collection' ? (collectionOptions.find((option) => option.id === row.id)?.title ?? row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
             {#if row.kind === 'hero'}
               {@render heroBlock()}
@@ -229,16 +384,24 @@
             {:else}
               {@const section = row.section}
               <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
-                showCatalogSource={$catalogProvider !== 'jvm'} />
+                showCatalogSource={$catalogProvider !== 'jvm' && !sourceScreen} />
             {/if}
           </HomeRowFrame>
         {/if}
       {/snippet}
       <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} asideGap={$activeThemeLayout?.asideGap} asideStart={$activeThemeLayout?.asideStart} stack="space-y-5" row={contentRow} />
-      {#if !contentRows.length && !error}
+      {#if sourceScreen && !home.hero.length && !home.sections.length && !error}
+        <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">
+          {catalogLabel($catalogProvider)} has nothing to show yet. Sign in or finish setting it up.
+          <div><button data-focusable onclick={() => (sourceSetup = true)} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Open {catalogLabel($catalogProvider)} settings</button></div>
+        </div>
+      {:else if !contentRows.length && !error}
         <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">This provider returned no browseable catalogs.</div>
       {/if}
     {/if}
   </div>
 </div>
 {#if listMedia}<MediaListSheet media={listMedia} onclose={() => (listMedia = null)} />{/if}
+{#if sourceSetup && isSourceSelection($catalogProvider)}
+  <ExtensionServiceSettings id={sourcePackageOf($catalogProvider)} name={catalogLabel($catalogProvider)} onclose={closeSourceSetup} />
+{/if}

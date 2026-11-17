@@ -1,10 +1,10 @@
 [package]
 name = "izumi"
-version = "0.1.74"
+version = "0.1.76"
 description = "A native desktop anime client"
 authors = ["izumi contributors"]
 edition = "2021"
-license = "AGPL-3.0-or-later"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,9 +25,15 @@ bench = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Builds the Linux Widevine host shim (native/widevine/host.cc); unused on other targets.
+cc = "1"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# The ignored live DRM-download test drives the async path; it needs the tokio test macro + runtime.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# `tauri::test::mock_app()` lets the ignored live test drive the DRM command wrapper, not just its core.
+tauri = { version = "2", features = ["test"] }
 
 # Size-optimized release build (shrinks the shipped native lib — the debug .so is ~163 MB of
 # symbols/unoptimized code that never ships). strip drops symbols (big win, no runtime cost),
@@ -102,6 +108,20 @@ n0-future = "0.3"
 # downloads keep byte-for-byte range semantics.
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2", "charset", "cookies", "gzip", "brotli", "multipart", "json"] }
 futures-util = "0.3"
+# Decrypting DRM downloads: produce a clear, offline-watchable MP4 instead of storing encrypted
+# segments plus a persistent licence. `widevine` runs the L3 licence exchange (device/challenge/
+# keys); `aes`+`ctr`+`cipher` implement AES-CTR for CENC sample decryption; `data-encoding` decodes
+# the base64 pssh box. All pure Rust, so the Android target keeps cross-compiling (the command is
+# desktop-only at runtime). GPL-3.0 `widevine` is compatible with this crate's GPL-3.0-or-later.
+widevine = "0.1"
+aes = "0.8"
+ctr = "0.9"
+cipher = "0.4"
+# The Widevine device pool (widevine_device.rs): `hmac` signs the gated pool requests (with the
+# `sha2` below), `rsa` parses the published PEM key so the `.wvd` is assembled in memory. Both are
+# the versions `widevine` already pulls in, so nothing new enters the tree.
+hmac = "0.12"
+rsa = "0.9"
 # Signed `.izumi-ext` packages are installed on desktop and Android. These are all pure-Rust
 # dependencies; keeping them cross-platform lets Android verify exactly the same hashes,
 # signatures, archive bounds, and manifest ABI before an extension APK can reach the runtime.
@@ -183,6 +203,10 @@ rustls-platform-verifier = "0.7.0"
 # librqbit uses AWS-LC's legacy SHA-1 implementation for torrent piece hashes.
 # Bundle NASM for Windows builders instead of requiring a system installation.
 aws-lc-rs = { version = "1.17.3", features = ["prebuilt-nasm"] }
+# Loads Google's Widevine module (widevinecdm.dll) for the pure-Rust CDM host (src/widevine/).
+# Linux links a C++ shim through the CDM ABI instead (see build.rs); Windows cannot, so the host
+# vtable is built in Rust and the module is opened at runtime.
+libloading = "0.8"
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Devices_Display",
@@ -215,6 +239,9 @@ objc2-app-kit = { version = "0.3.2", features = [
   "NSOpenGL",
   "NSOpenGLView",
 ] }
+# Loads Google's Widevine module (libwidevinecdm.dylib) for the same pure-Rust CDM host Windows uses
+# (src/widevine/host_win.rs); see the Windows entry above.
+libloading = "0.8"
 
 # Linux: embed mpv via its OpenGL render API into a wl_subsurface placed below the
 # transparent webview (see player/linux_embed.rs). gtk3/gdk/glib match Tauri 2.11's
@@ -261,8 +288,12 @@ ashpd = { version = "0.13", default-features = false, features = ["tokio", "flat
 # yet. vendor/README.md explains how to update them. Edit upstream.json, not this block.
 [patch.crates-io]
 librqbit = { path = "vendor/librqbit" }
-librqbit-bencode = { path = "vendor/librqbit-bencode" }
-librqbit-dht = { path = "vendor/librqbit-dht" }
-librqbit-peer-protocol = { path = "vendor/librqbit-peer-protocol" }
+librqbit-lsd = { path = "vendor/librqbit-lsd" }
 librqbit-utp = { path = "vendor/librqbit-utp" }
 # END librqbit-vendor
+
+# `widevine` is vendored (0.1.0) for one behavioural fix the licence server requires: an Android
+# request id must be the OEMCrypto uppercase-hex *string* (32 bytes), not the 16 raw bytes, or the
+# request is refused. See vendor/widevine/README.vendor.md. The request also goes out with a plain
+# client id — Crunchyroll refuses Privacy Mode with these devices.
+widevine = { path = "vendor/widevine" }

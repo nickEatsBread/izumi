@@ -16,7 +16,7 @@ peer allows.
  1 file changed, 136 insertions(+), 6 deletions(-)
 
 diff --git a/crates/librqbit/src/torrent_state/live/mod.rs b/crates/librqbit/src/torrent_state/live/mod.rs
-index 443b51afebe40f6f38c131f3ef624566618b4315..ae993d236783db789eb8da1fee648d1717414f6d 100644
+index d91ae31d3d3fb9b49ee596b460e33e8dff252d8b..d2006946c52ed1833c843f611aafcdd61ff57a67 100644
 --- a/crates/librqbit/src/torrent_state/live/mod.rs
 +++ b/crates/librqbit/src/torrent_state/live/mod.rs
 @@ -1013,9 +1013,19 @@ impl TorrentStateLive {
@@ -95,7 +95,7 @@ index 443b51afebe40f6f38c131f3ef624566618b4315..ae993d236783db789eb8da1fee648d17
  }
  
  // All peer state that would never be used by other actors should pe put here.
-@@ -1834,24 +1891,31 @@ impl PeerHandler {
+@@ -1828,24 +1885,31 @@ impl PeerHandler {
              .fetch_add(piece.len() as u64, Ordering::Relaxed);
          self.counters.fetched_chunks.fetch_add(1, Ordering::Relaxed);
  
@@ -132,7 +132,7 @@ index 443b51afebe40f6f38c131f3ef624566618b4315..ae993d236783db789eb8da1fee648d17
  
          if !should_process {
              return Ok(());
-@@ -2103,7 +2167,11 @@ impl PeerHandler {
+@@ -2097,7 +2161,11 @@ impl PeerHandler {
      fn can_send_request(&self) -> bool {
          let (i_am_choked, request_window) = {
              let flow = self.lock_flow_control("can_send_request");
@@ -145,7 +145,7 @@ index 443b51afebe40f6f38c131f3ef624566618b4315..ae993d236783db789eb8da1fee648d17
          };
  
          if i_am_choked {
-@@ -2142,3 +2210,65 @@ fn format_peer_client_name(value: &ByteBuf<'_>) -> Option<String> {
+@@ -2136,3 +2204,65 @@ fn format_peer_client_name(value: &ByteBuf<'_>) -> Option<String> {
  
      Some(client_name)
  }

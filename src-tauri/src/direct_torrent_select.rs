@@ -196,6 +196,11 @@ fn parsed_file_episode(name: &str) -> FileEpisode {
     parsed
 }
 
+/// The episode number a release filename names, if any.
+pub(crate) fn file_episode(name: &str) -> Option<u32> {
+    parsed_file_episode(name).episode
+}
+
 fn is_extra(name: &str) -> bool {
     static EXTRA: OnceLock<Regex> = OnceLock::new();
     rx(
@@ -616,6 +621,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1]
         );
+    }
+
+    #[test]
+    fn reads_the_episode_a_subtitle_archive_entry_names() {
+        assert_eq!(
+            file_episode("frieren.beyond.journeys.end.s01e28.japanese.webrip.nf.en.srt"),
+            Some(28)
+        );
+        assert_eq!(
+            file_episode("[group] sousou no frieren - 05 (1080p).ass"),
+            Some(5)
+        );
+        assert_eq!(file_episode("english sdh.srt"), None);
     }
 
     #[test]
