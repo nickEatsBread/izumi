@@ -1,6 +1,8 @@
 import path from "node:path";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import adapter from "@sveltejs/adapter-static";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
 
 /** Git worktrees under `.codex-tmp` still resolve packages from the main checkout. */
@@ -22,7 +24,15 @@ export default defineConfig(async () => ({
       strategy: ["localStorage", "preferredLanguage", "baseLocale"],
       emitTsDeclarations: true,
     }),
-    sveltekit(),
+    // Tauri has no Node.js server for SSR, so adapter-static with an index.html fallback runs the
+    // site as an SPA. See https://svelte.dev/docs/kit/single-page-apps and
+    // https://v2.tauri.app/start/frontend/sveltekit/
+    sveltekit({
+      preprocess: vitePreprocess(),
+      adapter: adapter({ fallback: "index.html" }),
+      // SvelteKit 3 replaced `$lib` with the `#lib` subpath import; this keeps the existing imports.
+      alias: { $lib: "src/lib" },
+    }),
   ],
 
   // @lucide/svelte ships a ~3.4KB ISC header in EVERY icon module, which Vite inlines by default:
