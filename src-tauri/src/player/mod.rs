@@ -1936,6 +1936,9 @@ fn prefer_full_dialogue_subtitle(mpv: &Mpv) {
 /// subs). Best-effort; ignored if unset.
 fn set_langs(mpv: &Mpv, alang: &Option<String>, slang: &Option<String>) {
     if let Some(a) = alang {
+        // `aid` survives `loadfile` like `sid` below: an audio track picked in the last file would
+        // otherwise outrank this file's language order.
+        let _ = mpv.set_property("aid", "auto");
         let _ = mpv.set_property("alang", a.as_str());
     }
     if let Some(s) = slang {

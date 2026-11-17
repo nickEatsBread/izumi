@@ -57,6 +57,19 @@ describe('installCatalogPackage', () => {
     expect(get(packageOrigins)).toEqual({ 'example.pkg': STORE })
   })
 
+  it('stops an installed service before replacing its files, and only a service', async () => {
+    answer([{ ...onDisk, backend: 'izumi-service' }])
+    packageOrigins.set({ 'example.pkg': STORE })
+    await installCatalogPackage({ ...pkg, backend: 'izumi-service' }, STORE)
+    const commands = mocks.invoke.mock.calls.map(([command]) => command)
+    expect(commands.indexOf('extension_service_stop')).toBeGreaterThan(-1)
+    expect(commands.indexOf('extension_service_stop')).toBeLessThan(commands.indexOf('extension_install_url'))
+    mocks.invoke.mockClear()
+    answer([onDisk])
+    await installCatalogPackage(pkg, STORE)
+    expect(mocks.invoke.mock.calls.map(([command]) => command).slice(0, 2)).toEqual(['extension_list', 'extension_install_url'])
+  })
+
   it('updates an installed package only from the store it came from', async () => {
     answer([onDisk])
     packageOrigins.set({ 'example.pkg': STORE })

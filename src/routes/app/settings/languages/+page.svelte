@@ -16,6 +16,8 @@
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
+  import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import { rememberLanguagePicks } from '$lib/player/language-memory'
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime.js'
 
@@ -75,6 +77,18 @@
   </SettingsSubcategory>
 
   <SettingsSubcategory id="catalogs">
+    <SettingsRow
+      settingKey="remember-language-picks"
+      title="Remember what I pick in the player"
+      description={$rememberLanguagePicks ? 'Picks while watching become that catalog’s languages for this profile' : 'Picks while watching apply to that series only'}
+      learnMore="Change the audio or subtitles while watching and the next title from the same catalog starts in them. A series you picked a track in keeps that exact track. A source whose account holds its languages gets the change too, as if you changed it in its settings."
+      onActivate={() => ($rememberLanguagePicks = !$rememberLanguagePicks)}
+      pressed={$rememberLanguagePicks}
+    >
+      {#snippet control()}
+        <SettingsSwitch value={$rememberLanguagePicks} onToggle={() => ($rememberLanguagePicks = !$rememberLanguagePicks)} label="Remember what I pick in the player" interactive={false} />
+      {/snippet}
+    </SettingsRow>
     {#each languageCatalogs as entry (entry.catalog)}
       <CatalogLanguageRows catalog={entry.catalog} name={entry.name} />
     {/each}
