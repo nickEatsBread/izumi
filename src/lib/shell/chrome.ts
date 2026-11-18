@@ -5,12 +5,14 @@
 import { derived, writable } from 'svelte/store'
 import { hideSidebarWhilePlaying } from '$lib/settings/ui'
 import { playing } from '$lib/player/session'
-import { shellNav } from '$lib/themes/runtime'
+import { shellNav, themePresentation } from '$lib/themes/runtime'
+import { resolvePlayerDock } from '$lib/themes/presentation'
 
-/** The left sidebar steps aside while the player is open (Player setting), so the windowed video,
- *  its controls and the native surface take its width. A top or bottom bar is unaffected. */
-export const sidebarHiddenForPlayback = derived([hideSidebarWhilePlaying, playing, shellNav],
-  ([hide, open, nav]) => hide && open && nav === 'sidebar')
+/** The navigation steps aside while the player is open (Player setting), so the windowed video, its
+ *  controls and the native surface take its room: the sidebar, the top bar or the drawer. A player
+ *  docked inside the browse UI keeps a top bar or drawer around it, and a bottom bar (phones) stays. */
+export const navHiddenForPlayback = derived([hideSidebarWhilePlaying, playing, shellNav, themePresentation],
+  ([hide, open, nav, presentation]) => hide && open && (nav === 'sidebar' || ((nav === 'top' || nav === 'drawer') && !resolvePlayerDock(presentation).docked)))
 
 interface Claim { bar: boolean }
 

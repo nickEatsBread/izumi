@@ -12,7 +12,7 @@ describe('player mount follows the navigation placement', () => {
   it('no longer insets the left edge unconditionally while windowed', () => {
     expect(overlay).not.toContain("class:left-14={!$fullscreen && !gmMode && !$pictureInPicture}")
     expect(overlay).toContain("class:left-14={!docked && windowedChrome && sidebarRail}")
-    expect(overlay).toContain("style:top={!docked && windowedChrome && $shellNav === 'top' ? 'var(--theme-top-bar)' : undefined}")
+    expect(overlay).toContain("style:top={!docked && windowedChrome && $shellNav === 'top' && !$navHiddenForPlayback ? 'var(--theme-top-bar)' : undefined}")
     expect(overlay).toContain("style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}")
   })
 
@@ -31,19 +31,19 @@ describe('player mount follows the navigation placement', () => {
   })
 })
 
-describe('hide sidebar while playing', () => {
-  it('drops only the left sidebar, only while the player is open, unless turned off', () => {
+describe('hide navigation while playing', () => {
+  it('drops the sidebar, top bar or drawer only while the player is open, unless turned off or docked', () => {
     expect(read('../../settings/ui.ts')).toContain("export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', true)")
-    expect(read('../../shell/chrome.ts')).toContain("([hide, open, nav]) => hide && open && nav === 'sidebar')")
-    expect(layout).toContain("{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}")
+    expect(read('../../shell/chrome.ts')).toContain("([hide, open, nav, presentation]) => hide && open && (nav === 'sidebar' || ((nav === 'top' || nav === 'drawer') && !resolvePlayerDock(presentation).docked)))")
+    expect(layout).toContain("{:else if !$navHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}")
   })
 
   it('gives the sidebar width to the video, its docked stage, the Back button and the native surface', () => {
-    expect(overlay).toContain("const sidebarRail = $derived($shellNav === 'sidebar' && !$sidebarHiddenForPlayback)")
+    expect(overlay).toContain("const sidebarRail = $derived($shellNav === 'sidebar' && !$navHiddenForPlayback)")
     expect(overlay).toContain("style:left={docked ? (sidebarRail ? '3.5rem' : '0') : undefined}")
     expect(overlay).toContain('void sidebarRail')
-    expect(read('./Controls.svelte')).toContain("const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0")
-    expect(layout).toContain('sidebarHidden: $sidebarHiddenForPlayback,')
+    expect(read('./Controls.svelte')).toContain("const playerLeft = $shellNav === 'sidebar' && !$navHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0")
+    expect(layout).toContain('navHidden: $navHiddenForPlayback,')
   })
 })
 
@@ -84,7 +84,7 @@ describe('docked watch layout', () => {
     expect(runtime).toContain("!mobile && !tv && resolvePlayerControls(presentation).window === 'full' && !resolvePlayerDock(presentation).docked")
     const layout = read('../../../routes/app/+layout.svelte')
     expect(layout).toContain('chrome: $playing && !$fullscreen && !$gameMode && !$pictureInPicture && !$playerCoversWindow,')
-    expect(layout).toContain("{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}")
+    expect(layout).toContain("{:else if !$navHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}")
   })
 
   it('mounts the video in a stage sized by the theme with the episode rail beside or below it', () => {

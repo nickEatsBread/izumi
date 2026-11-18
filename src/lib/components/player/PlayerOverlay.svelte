@@ -82,7 +82,7 @@
   import { protectedSurface } from '$lib/themes/safe-mode'
   import { oskDismissedAt, playerStage, playerChromeVisible, lateSubtitleRevision } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
-  import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
+  import { navHiddenForPlayback } from '$lib/shell/chrome'
   import DockEpisodes from './DockEpisodes.svelte'
   import WatchToolbar from './WatchToolbar.svelte'
   import WatchInfo from './WatchInfo.svelte'
@@ -156,7 +156,7 @@
   // navigation occupies and reports its geometry to the native surface.
   const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture && !$playerCoversWindow)
   // The sidebar is beside the video, unless the player setting tucks it away during playback.
-  const sidebarRail = $derived($shellNav === 'sidebar' && !$sidebarHiddenForPlayback)
+  const sidebarRail = $derived($shellNav === 'sidebar' && !$navHiddenForPlayback)
   // A theme's docked watch layout: the video keeps to a stage with the episode rail beside or below
   // it while the browse chrome stays. Phones, fullscreen, picture-in-picture and Game mode keep the
   // whole container — there is no room to give up there.
@@ -2179,7 +2179,7 @@
   style:width={docked ? (!pageFlow && dock.episodes === 'below' ? `${dock.width}%` : '100%') : undefined}
   style:max-height={docked && (!pageFlow || columnFlow) ? '100%' : undefined}
   style:box-shadow={pageFlow ? '0 0 0 200vmax hsl(var(--background))' : undefined}
-  style:top={!docked && windowedChrome && $shellNav === 'top' ? 'var(--theme-top-bar)' : undefined}
+  style:top={!docked && windowedChrome && $shellNav === 'top' && !$navHiddenForPlayback ? 'var(--theme-top-bar)' : undefined}
   style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}
   onclick={onOverlayTap}
   oncontextmenu={onOverlayContextMenu}

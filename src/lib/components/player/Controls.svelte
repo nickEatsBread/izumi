@@ -59,7 +59,7 @@
   import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, lateSubtitleRevision, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
-  import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
+  import { navHiddenForPlayback } from '$lib/shell/chrome'
   import { resolvePlayerControls } from '$lib/themes/presentation'
   import { protectedSurface } from '$lib/themes/safe-mode'
   import { loadEpisodeMeta, episodeName } from '$lib/player/episode-info'
@@ -184,17 +184,17 @@
   const titleTop = $derived(gm && $playerTitleTop)
 
   // Windowed desktop playback starts the player at the window's top edge, under the transparent
-  // 32px titlebar (unless the navigation bar sits on top). Back shares the top row with the P2P
+  // 32px titlebar (unless a navigation bar stays on top). Back shares the top row with the P2P
   // readout, so while this bar is up the titlebar yields its pointer events and the bar carries
   // the window-drag strip instead.
-  const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && ($shellNav !== 'top' || $playerCoversWindow))
+  const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && ($shellNav !== 'top' || $playerCoversWindow || $navHiddenForPlayback))
   // Keep Back clear of the titlebar's leading slot when the player starts at the window's left edge,
   // but only while that slot holds something: macOS's traffic lights always, elsewhere the GIF
   // indicator while recording. Otherwise Back keeps the bar's own 16px edge, as Navigator's does.
   const backInset = $derived.by(() => {
     if (!underTitlebar || (!$isMacOS && $gifRecordingStart == null)) return undefined
     const slot = $isMacOS ? 7 : 3.5
-    const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0
+    const playerLeft = $shellNav === 'sidebar' && !$navHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0
     return `${Math.max(1, slot + 0.5 - playerLeft)}rem`
   })
   $effect(() => {

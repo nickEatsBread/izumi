@@ -1,6 +1,9 @@
 import { get } from 'svelte/store'
 import { describe, expect, it } from 'vitest'
-import { bottomBarRoom, bottomNavSuppressed, suppressBottomNav } from './chrome'
+import { bottomBarRoom, bottomNavSuppressed, navHiddenForPlayback, suppressBottomNav } from './chrome'
+import { playing } from '$lib/player/session'
+import { hideSidebarWhilePlaying } from '$lib/settings/ui'
+import { themeStudioPreview } from '$lib/settings/theme-studio'
 
 describe('bottom navigation suppression', () => {
   it('stays hidden until every claim is released', () => {
@@ -27,5 +30,31 @@ describe('bottom navigation suppression', () => {
     covered()
     expect(get(bottomBarRoom)).toBe(true)
     expect(get(bottomNavSuppressed)).toBe(false)
+  })
+})
+
+describe('navigation while playing', () => {
+  const layout = (presentation: object) => themeStudioPreview.set({ presentation } as never)
+
+  it('tucks a sidebar, top bar or drawer away while the player is open, when the setting is on', () => {
+    hideSidebarWhilePlaying.set(true)
+    for (const nav of ['sidebar', 'top', 'drawer']) {
+      layout({ shell: { nav } })
+      playing.set(false)
+      expect(get(navHiddenForPlayback)).toBe(false)
+      playing.set(true)
+      expect(get(navHiddenForPlayback)).toBe(true)
+    }
+    hideSidebarWhilePlaying.set(false)
+    expect(get(navHiddenForPlayback)).toBe(false)
+  })
+
+  it('keeps a top bar around a player docked in the page', () => {
+    hideSidebarWhilePlaying.set(true)
+    playing.set(true)
+    layout({ shell: { nav: 'top' }, player: { layout: 'docked' } })
+    expect(get(navHiddenForPlayback)).toBe(false)
+    playing.set(false)
+    themeStudioPreview.set(null)
   })
 })

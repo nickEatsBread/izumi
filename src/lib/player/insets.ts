@@ -17,8 +17,8 @@ export interface InsetContext {
    *  picture-in-picture render edge to edge, so every inset is 0. */
   chrome: boolean
   nav: ThemeNavPlacement
-  /** The sidebar is tucked away for playback, so a `sidebar` placement takes no room. */
-  sidebarHidden?: boolean
+  /** The navigation is tucked away for playback, so its placement takes no room. */
+  navHidden?: boolean
   /** The player root's measured edges, or null before it has mounted. */
   stage: StageFractions | null
   viewport: { width: number; height: number }
@@ -72,9 +72,9 @@ export function playerInsets(context: InsetContext): PlayerInsets {
   }
   // Not measured yet: the chrome's own extent, scaled like the page (CSS zoom on the root).
   const scale = context.uiScale > 0 ? context.uiScale : 1
-  if (context.nav === 'top') return { left: 0, top: px(TOP_BAR_HEIGHT * scale), right: 0, bottom: 0 }
+  if (context.nav === 'top') return { left: 0, top: context.navHidden ? 0 : px(TOP_BAR_HEIGHT * scale), right: 0, bottom: 0 }
   if (context.nav === 'bottom') return { left: 0, top: 0, right: 0, bottom: px((context.bottomNav ?? BOTTOM_NAV_HEIGHT) * scale) }
-  return { left: context.sidebarHidden ? 0 : px(SIDEBAR_WIDTH * scale), top: 0, right: 0, bottom: 0 }
+  return { left: context.navHidden ? 0 : px(SIDEBAR_WIDTH * scale), top: 0, right: 0, bottom: 0 }
 }
 
 export const sameInsets = (a: PlayerInsets | null, b: PlayerInsets) =>

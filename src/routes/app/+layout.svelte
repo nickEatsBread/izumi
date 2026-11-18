@@ -73,7 +73,7 @@
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
-  import { bottomBarRoom, bottomNavSuppressed, sidebarHiddenForPlayback } from '$lib/shell/chrome'
+  import { bottomBarRoom, bottomNavSuppressed, navHiddenForPlayback } from '$lib/shell/chrome'
   import { resetScrollChrome, startScrollChrome } from '$lib/components/shell/scroll-chrome'
   import { trackFocusProgress } from '$lib/motion/tween'
   import { initOffline } from '$lib/stores/offline'
@@ -565,7 +565,7 @@
     const insets = playerInsets({
       chrome: $playing && !$fullscreen && !$gameMode && !$pictureInPicture && !$playerCoversWindow,
       nav: $shellNav,
-      sidebarHidden: $sidebarHiddenForPlayback,
+      navHidden: $navHiddenForPlayback,
       stage: $playerStage,
       viewport: { width: window.innerWidth, height: window.innerHeight },
       dpr: window.devicePixelRatio,
@@ -667,7 +667,7 @@
 {#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && (!$androidMpvActive || $androidMiniPlayer)}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
   <!-- A theme's `player.window: "full"` gives the windowed player the whole window too (the titlebar stays). -->
-  {#if $isMobile || $shellNav === 'bottom'}{#if !$bottomNavSuppressed}<BottomNav />{/if}{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}
+  {#if $isMobile || $shellNav === 'bottom'}{#if !$bottomNavSuppressed}<BottomNav />{/if}{:else if !$navHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile && !$isTv}<Titlebar />{/if}
