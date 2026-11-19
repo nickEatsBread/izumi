@@ -10,7 +10,8 @@
   import { anilistDegradedBannerVisible } from '$lib/anilist/degraded'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
-  import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'
+  import { afterNavigate, beforeNavigate } from '$app/navigation'
+import { mirrorUrl } from '$lib/navigation/mirror-url'
   import type { Snapshot } from './$types'
   import {
     isCatalogSelection,
@@ -201,11 +202,7 @@
     }
     const query = params.toString()
     const next = query ? `${page.url.pathname}?${query}` : page.url.pathname
-    // Compare against the live URL so this settles instead of re-writing every run.
-    if (next === page.url.pathname + page.url.search) return
-    // Guarded: replaceState throws if the router has not finished initialising (an effect can run
-    // during the first navigation), and a failed URL sync must never break the search itself.
-    try { replaceState(next, page.state) } catch { /* URL stays as-is; results are unaffected */ }
+    mirrorUrl(next)
   })
 </script>
 

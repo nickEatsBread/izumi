@@ -12,7 +12,8 @@
   import { fade } from 'svelte/transition'
   import { getContextClient } from '@urql/svelte'
   import { page } from '$app/state'
-  import { afterNavigate, replaceState } from '$app/navigation'
+  import { afterNavigate } from '$app/navigation'
+  import { mirrorUrl } from '$lib/navigation/mirror-url'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
   import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
@@ -137,8 +138,7 @@
   $effect(() => {
     if (!catalog) return
     const next = page.url.pathname + browseSearch(activeSort, activeGenre, sorts[0]?.value ?? '')
-    if (next === location.pathname + location.search) return
-    try { replaceState(next, page.state) } catch { /* router not ready: the view still works */ }
+    mirrorUrl(next)
   })
 
   // `layout.browse`: blocks a theme places in the side column, under the categories, resolved like

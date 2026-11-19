@@ -10,7 +10,7 @@ const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.ur
 
 describe('search URL state', () => {
   it('mirrors the settled filters into the URL', () => {
-    expect(page).toContain("import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'")
+    expect(page).toContain("import { mirrorUrl } from '$lib/navigation/mirror-url'")
     for (const param of ['search', 'sort', 'genre', 'season', 'year']) {
       expect(page).toContain(`params.set('${param}'`)
     }
@@ -18,7 +18,7 @@ describe('search URL state', () => {
 
   it('replaces rather than pushes, so Back leaves the page', () => {
     // pushState would stack an entry per debounced edit and make Back crawl through the query.
-    expect(page).toContain('replaceState(next, page.state)')
+    expect(page).toContain('mirrorUrl(next)')
     expect(page).not.toContain('pushState(')
   })
 
@@ -30,7 +30,10 @@ describe('search URL state', () => {
   })
 
   it('settles instead of rewriting the URL on every run', () => {
-    expect(page).toContain('if (next === page.url.pathname + page.url.search) return')
+    // A shallow replace never changes page.url, so comparing against it rewrote the URL forever and
+    // froze the page; mirrorUrl compares against the address bar (mirror-url.test.ts).
+    expect(page).not.toContain('page.url.pathname + page.url.search')
+    expect(page).not.toContain('replaceState(next, page.state)')
   })
 
   it('keeps browse controls below the fixed degraded alert', () => {
