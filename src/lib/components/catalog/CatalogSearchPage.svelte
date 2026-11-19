@@ -1,7 +1,7 @@
 <script lang="ts">
   import { setContext, untrack } from 'svelte'
   import { page } from '$app/state'
-  import { replaceState } from '$app/navigation'
+  import { mirrorUrl } from '$lib/navigation/mirror-url'
   import Search from '@lucide/svelte/icons/search'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import X from '@lucide/svelte/icons/x'
@@ -278,9 +278,7 @@
     if (isTmdb && watchProviderName) params.set('watchProviderName', watchProviderName)
     if (isJvm && jvmSourceId) params.set('source', jvmSourceId)
     const next = params.size ? `${page.url.pathname}?${params}` : page.url.pathname
-    if (next !== page.url.pathname + page.url.search) {
-      try { replaceState(next, page.state) } catch { /* router not ready */ }
-    }
+    mirrorUrl(next)
   })
 
   async function loadMore() {

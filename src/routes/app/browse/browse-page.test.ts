@@ -40,7 +40,7 @@ describe('Browse page', () => {
   it('keeps the view in the address bar without stacking history', () => {
     expect(page).toContain("page.url.searchParams.get('sort')")
     expect(page).toContain("page.url.searchParams.get('genre')")
-    expect(page).toContain('replaceState(next, page.state)')
+    expect(page).toContain('mirrorUrl(next)')
     expect(page).not.toContain('pushState(')
   })
 
